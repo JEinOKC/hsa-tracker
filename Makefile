@@ -1,4 +1,4 @@
-.PHONY: help setup-wizard dev-build dev-up dev-rebuild dev-down dev-logs prod-up prod-down prod-logs tf-init tf-plan tf-apply tf-destroy db-migrate db-upgrade db-downgrade db-reset test-backend test-frontend test-all clean format lint
+.PHONY: help setup-wizard dev-build dev-up dev-rebuild dev-down dev-logs prod-up prod-down prod-logs tf-init tf-plan tf-apply tf-destroy db-init db-migrate db-upgrade db-downgrade db-reset test-backend test-frontend test-all clean format lint
 
 # Default target
 .DEFAULT_GOAL := help
@@ -129,6 +129,13 @@ prod-logs: ## View production logs
 # ==========================================
 # Database Commands
 # ==========================================
+
+db-init: ## Initialize database with first migration (run this once after first setup)
+	@echo "$(BLUE)Creating initial database migration...$(NC)"
+	$(DOCKER_COMPOSE_CMD) -f docker-compose.dev.yml exec backend alembic revision --autogenerate -m "Initial migration - user authentication tables"
+	@echo "$(BLUE)Running migration...$(NC)"
+	$(DOCKER_COMPOSE_CMD) -f docker-compose.dev.yml exec backend alembic upgrade head
+	@echo "$(GREEN)✓ Database initialized$(NC)"
 
 db-migrate: ## Create a new database migration
 	@read -p "Enter migration name: " name; \
