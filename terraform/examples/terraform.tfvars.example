@@ -1,0 +1,21 @@
+# AWS Configuration
+aws_region = "us-east-1"
+
+# Environment
+environment = "production"
+
+# S3 Bucket Configuration
+bucket_name_prefix = "hsa-tracker-receipts"
+enable_versioning  = true
+
+# Lifecycle Management
+# Transition receipts to Glacier after 1 year (cost savings)
+lifecycle_transition_days = 365
+
+# Delete old versions after 90 days (0 to disable)
+lifecycle_expiration_days = 90
+
+# Encryption
+# Set to true for enhanced encryption with KMS (additional cost)
+# Set to false for standard AES256 encryption (free)
+enable_kms_encryption = false
