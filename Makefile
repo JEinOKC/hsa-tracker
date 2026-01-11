@@ -1,4 +1,4 @@
-.PHONY: help setup-wizard dev-up dev-down dev-logs prod-up prod-down prod-logs tf-init tf-plan tf-apply tf-destroy db-migrate db-upgrade db-downgrade db-reset test-backend test-frontend test-all clean format lint
+.PHONY: help setup-wizard dev-build dev-up dev-rebuild dev-down dev-logs prod-up prod-down prod-logs tf-init tf-plan tf-apply tf-destroy db-migrate db-upgrade db-downgrade db-reset test-backend test-frontend test-all clean format lint
 
 # Default target
 .DEFAULT_GOAL := help
@@ -73,10 +73,23 @@ setup: ## Quick setup (create config files from examples)
 # Development Commands
 # ==========================================
 
+dev-build: ## Build development containers (after code changes)
+	@echo "$(BLUE)Building development containers...$(NC)"
+	$(DOCKER_COMPOSE_CMD) -f docker-compose.dev.yml build
+	@echo "$(GREEN)✓ Development containers built$(NC)"
+
 dev-up: ## Start development environment
 	@echo "$(BLUE)Starting development environment...$(NC)"
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.dev.yml up -d
 	@echo "$(GREEN)✓ Development environment started$(NC)"
+	@echo "Frontend: http://localhost:3000"
+	@echo "Backend API: http://localhost:8000"
+	@echo "API Docs: http://localhost:8000/docs"
+
+dev-rebuild: ## Rebuild and restart development environment
+	@echo "$(BLUE)Rebuilding and restarting development environment...$(NC)"
+	$(DOCKER_COMPOSE_CMD) -f docker-compose.dev.yml up -d --build
+	@echo "$(GREEN)✓ Development environment rebuilt and started$(NC)"
 	@echo "Frontend: http://localhost:3000"
 	@echo "Backend API: http://localhost:8000"
 	@echo "API Docs: http://localhost:8000/docs"
