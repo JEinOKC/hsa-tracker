@@ -4,9 +4,38 @@ from typing import Optional, List
 from pydantic import BaseModel, EmailStr
 
 
-# Registration & Login
+# Passkey-Only Registration & Login
+class PasskeyRegisterStartRequest(BaseModel):
+    """Start passkey-only registration (no email, no password)"""
+
+    username: str  # Unique username identifier
+    display_name: str  # Full name for display
+
+
+class PasskeyRegisterCompleteRequest(BaseModel):
+    """Complete passkey registration"""
+
+    username: str
+    credential: dict  # WebAuthn credential from browser
+    device_name: Optional[str] = None  # Optional friendly name
+
+
+class PasskeyLoginStartRequest(BaseModel):
+    """Start passkey login"""
+
+    username: str  # Username to authenticate
+
+
+class PasskeyLoginCompleteRequest(BaseModel):
+    """Complete passkey login"""
+
+    username: str
+    credential: dict  # WebAuthn assertion from browser
+
+
+# Legacy Email/Password Registration & Login (deprecated in favor of passkey-only)
 class RegisterRequest(BaseModel):
-    """User registration request"""
+    """User registration request (legacy - use passkey instead)"""
 
     email: EmailStr
     password: str

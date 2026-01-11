@@ -6,16 +6,17 @@ from pydantic import BaseModel, EmailStr, UUID4
 
 
 class UserBase(BaseModel):
-    """Base user schema"""
+    """Base user schema - passkey-first design"""
 
-    email: EmailStr
+    username: str  # Primary identifier (required for passkey-only)
     display_name: str
+    email: Optional[EmailStr] = None  # Optional - not required for passkey-only auth
 
 
 class UserCreate(UserBase):
     """Schema for creating a user"""
 
-    password: str
+    password: Optional[str] = None  # Optional for passkey-only users
 
 
 class UserUpdate(BaseModel):

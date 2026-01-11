@@ -10,12 +10,13 @@ from app.database import Base
 
 
 class User(Base):
-    """User account model"""
+    """User account model - supports passkey-only authentication"""
 
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email = Column(String(255), unique=True, nullable=False, index=True)
+    username = Column(String(255), unique=True, nullable=False, index=True)  # Primary identifier for passkey auth
+    email = Column(String(255), unique=True, nullable=True, index=True)  # Optional - not required for passkey-only
     hashed_password = Column(String(255), nullable=True)  # Nullable for passkey-only users
     display_name = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
@@ -29,7 +30,7 @@ class User(Base):
     backup_codes = relationship("UserBackupCode", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
-        return f"<User(id={self.id}, email={self.email})>"
+        return f"<User(id={self.id}, username={self.username})>"
 
 
 class UserPasskey(Base):
@@ -39,10 +40,20 @@ class UserPasskey(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    credential_id = Column(String(1024), unique=True, nullable=False, index=True)
-    public_key = Column(Text, nullable=False)
-    sign_count = Column(Integer, default=0, nullable=False)
-    device_name = Column(String(255), nullable=True)  # User-friendly name (e.g., "iPhone", "YubiKey")
+
+    # WebAuthn credential data
+    credential_id = Column(String(1024), unique=True, nullable=False, index=True)  # Base64url encoded
+    public_key = Column(Text, nullable=False)  # COSE-encoded public key
+    sign_count = Column(Integer, default=0, nullable=False)  # Signature counter for security
+
+    # Additional WebAuthn data
+    aaguid = Column(String(255), nullable=True)  # Authenticator AAGUID
+    transports = Column(String(255), nullable=True)  # JSON array of transport types (usb, nfc, ble, internal)
+
+    # User-friendly metadata
+    device_name = Column(String(255), nullable=True)  # User-assigned name (e.g., "iPhone", "YubiKey")
+
+    # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_used_at = Column(DateTime, nullable=True)
 
