@@ -85,6 +85,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "receipts" {
     id     = "transition-old-receipts"
     status = "Enabled"
 
+    # Apply to all objects in the bucket
+    filter {}
+
     transition {
       days          = var.lifecycle_transition_days
       storage_class = "GLACIER_IR"
