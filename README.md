@@ -23,53 +23,56 @@ HSA Tracker is a self-hosted application designed to help families track Health 
 
 ## Quick Start
 
+**New to AWS or Terraform? No problem!** We have an interactive setup wizard that guides you through everything.
+
+### Super Simple Setup (Recommended)
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/yourusername/hsa-tracker.git
+cd hsa-tracker
+
+# 2. Run the setup wizard
+make setup-wizard
+```
+
+That's it! The wizard will:
+- ✅ Check prerequisites and guide you to install what's missing
+- ✅ Help you choose between Doppler (secure secrets) or .env files (simple)
+- ✅ Guide you through creating an AWS account (if needed)
+- ✅ Automatically create your S3 bucket with Terraform
+- ✅ Generate all secrets and configure everything
+- ✅ Start the application
+
+**Time to complete:** 5-10 minutes (first time)
+
+📖 **[See the complete setup guide →](./SETUP_GUIDE.md)**
+
 ### Prerequisites
 
-- Docker & Docker Compose
-- AWS Account (for S3 receipt storage)
-- Terraform (for AWS infrastructure setup)
+- **Docker Desktop** - [Download here](https://www.docker.com/products/docker-desktop)
+- **AWS Account** - [Sign up here](https://aws.amazon.com) (free tier available)
+- **Doppler Account** (optional but recommended) - [Sign up here](https://www.doppler.com)
 
-### Installation (< 15 minutes)
+Everything else is optional - the wizard will guide you!
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/yourusername/hsa-tracker.git
-   cd hsa-tracker
-   ```
+### After Setup
 
-2. **Initial setup**
-   ```bash
-   make setup
-   ```
-   This creates `.env` and `terraform/terraform.tfvars` files from examples.
+```bash
+# Access the application
+open http://localhost:3000
 
-3. **Configure environment**
-   Edit `.env` with your settings:
-   ```bash
-   nano .env
-   ```
+# Create your first user
+# Click "Create one" → Fill in the form → Start tracking!
+```
 
-4. **Set up AWS infrastructure**
-   ```bash
-   # Edit terraform/terraform.tfvars with your AWS region preferences
-   nano terraform/terraform.tfvars
-
-   # Initialize and apply Terraform
-   make tf-init
-   make tf-apply
-   ```
-
-   Copy the output credentials to your `.env` file.
-
-5. **Start the application**
-   ```bash
-   make dev-up
-   ```
-
-6. **Access the application**
-   - Frontend: http://localhost:3000
-   - Backend API: http://localhost:8000
-   - API Documentation: http://localhost:8000/docs
+**Daily use:**
+```bash
+make dev-up    # Start the app
+make dev-down  # Stop the app
+make dev-logs  # View logs
+make help      # See all commands
+```
 
 ## Architecture
 
