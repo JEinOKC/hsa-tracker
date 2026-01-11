@@ -89,8 +89,82 @@ else
     exit 1
 fi
 
-# Step 2: Choose secrets management
-print_header "Step 2: Choose Secrets Management"
+# Step 2: Detect existing configuration
+print_header "Step 2: Checking Existing Setup"
+
+# Check if secrets are already configured
+SECRETS_CONFIGURED=false
+USE_DOPPLER=false
+
+# Check Doppler first (preferred)
+if command -v doppler &> /dev/null && doppler setup --no-interactive get project &> /dev/null 2>&1; then
+    if doppler secrets get SECRET_KEY &> /dev/null 2>&1; then
+        print_success "Found existing Doppler configuration with secrets"
+        SECRETS_CONFIGURED=true
+        USE_DOPPLER=true
+    fi
+fi
+
+# Fall back to .env if Doppler not configured
+if [ "$SECRETS_CONFIGURED" = false ] && [ -f ".env" ] && grep -q "SECRET_KEY" .env 2>/dev/null; then
+    print_success "Found existing .env file with secrets"
+    SECRETS_CONFIGURED=true
+    USE_DOPPLER=false
+fi
+
+# Check if Terraform has been applied
+TERRAFORM_APPLIED=false
+if [ -f "terraform/terraform.tfstate" ] && [ -s "terraform/terraform.tfstate" ]; then
+    print_success "Terraform infrastructure already created"
+    TERRAFORM_APPLIED=true
+    # Extract existing values
+    cd terraform
+    if terraform output s3_bucket_name &> /dev/null; then
+        S3_BUCKET=$(terraform output -raw s3_bucket_name)
+        S3_REGION=$(terraform output -raw s3_bucket_region)
+        S3_ACCESS_KEY=$(terraform output -raw aws_access_key_id)
+        S3_SECRET_KEY=$(terraform output -raw aws_secret_access_key)
+        print_info "S3 Bucket: $S3_BUCKET"
+    fi
+    cd ..
+fi
+
+# Check if containers are running
+CONTAINERS_RUNNING=false
+if docker-compose -f docker-compose.dev.yml ps --services --filter "status=running" 2>/dev/null | grep -q .; then
+    print_success "Docker containers are already running"
+    CONTAINERS_RUNNING=true
+fi
+
+echo ""
+if [ "$SECRETS_CONFIGURED" = true ] && [ "$TERRAFORM_APPLIED" = true ]; then
+    print_success "Setup appears to be complete!"
+    echo ""
+    echo "What would you like to do?"
+    echo "  1) Just start/restart containers (recommended if setup is done)"
+    echo "  2) Reconfigure everything from scratch"
+    echo "  3) Exit"
+    echo ""
+    read -p "Choose an option [1]: " QUICK_OPTION
+    QUICK_OPTION=${QUICK_OPTION:-1}
+
+    if [ "$QUICK_OPTION" = "1" ]; then
+        print_info "Skipping to container startup..."
+        SKIP_TO_CONTAINERS=true
+    elif [ "$QUICK_OPTION" = "3" ]; then
+        echo "Exiting. Run 'make dev-up' to start containers."
+        exit 0
+    else
+        SKIP_TO_CONTAINERS=false
+    fi
+else
+    SKIP_TO_CONTAINERS=false
+fi
+
+if [ "$SKIP_TO_CONTAINERS" = false ]; then
+
+# Step 3: Choose secrets management
+print_header "Step 3: Choose Secrets Management"
 echo "HSA Tracker needs to store sensitive information like:"
 echo "  - Database passwords"
 echo "  - JWT secret keys"
@@ -112,7 +186,16 @@ echo "  ✗ Secrets stored locally in plain text"
 echo "  ✗ Hard to share with team"
 echo ""
 
-if ask_yes_no "Do you want to use Doppler for secrets management?"; then
+if [ "$SECRETS_CONFIGURED" = true ]; then
+    echo "Detected existing configuration."
+    if ask_yes_no "Keep existing secrets configuration?"; then
+        print_info "Using existing configuration"
+    else
+        SECRETS_CONFIGURED=false
+    fi
+fi
+
+if [ "$SECRETS_CONFIGURED" = false ] && ask_yes_no "Do you want to use Doppler for secrets management?"; then
     USE_DOPPLER=true
 
     # Check for Doppler CLI
@@ -180,8 +263,23 @@ else
     print_info "Will use .env file for secrets"
 fi
 
-# Step 3: AWS Setup
-print_header "Step 3: AWS Infrastructure Setup"
+# Step 4: AWS Setup
+print_header "Step 4: AWS Infrastructure Setup"
+
+if [ "$TERRAFORM_APPLIED" = true ]; then
+    print_success "AWS infrastructure already configured"
+    echo "S3 Bucket: $S3_BUCKET"
+    echo "Region: $S3_REGION"
+    echo ""
+    if ! ask_yes_no "Do you want to reconfigure AWS infrastructure?"; then
+        print_info "Using existing AWS infrastructure"
+    else
+        TERRAFORM_APPLIED=false
+    fi
+fi
+
+if [ "$TERRAFORM_APPLIED" = false ]; then
+
 echo "HSA Tracker stores receipt images in AWS S3 (Simple Storage Service)."
 echo ""
 echo "What is S3?"
@@ -326,8 +424,11 @@ else
     S3_SECRET_KEY="not-configured"
 fi
 
-# Step 4: Application Configuration
-print_header "Step 4: Application Configuration"
+fi  # End of TERRAFORM_APPLIED check
+
+# Step 5: Application Configuration
+if [ "$SECRETS_CONFIGURED" = false ]; then
+print_header "Step 5: Application Configuration"
 echo "Let's set up the rest of your application secrets..."
 echo ""
 
@@ -423,8 +524,12 @@ EOF
     print_success "Created .env file"
 fi
 
-# Step 5: Start the application
-print_header "Step 5: Starting the Application"
+fi  # End of SECRETS_CONFIGURED check
+
+fi  # End of SKIP_TO_CONTAINERS check
+
+# Step 6: Start the application
+print_header "Step 6: Starting the Application"
 
 if [ "$USE_DOPPLER" = true ]; then
     print_info "Starting containers with Doppler..."
