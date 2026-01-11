@@ -32,6 +32,3 @@ pytz==2024.1
 
 # HTTP Client (for health checks)
 requests==2.31.0
-
-# CORS
-python-cors==1.0.0
