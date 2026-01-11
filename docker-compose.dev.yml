@@ -12,7 +12,7 @@ services:
     volumes:
       - postgres_data_dev:/var/lib/postgresql/data
     ports:
-      - "5432:5432"  # Expose for local development tools
+      - "${POSTGRES_PORT:-5433}:5432"  # Configurable host port (default 5433 to avoid conflicts)
     networks:
       - hsa-tracker-network
     healthcheck:
@@ -46,15 +46,15 @@ services:
       - JWT_REFRESH_TOKEN_EXPIRE_DAYS=7
       - WEBAUTHN_RP_ID=localhost
       - WEBAUTHN_RP_NAME=HSA Tracker Dev
-      - WEBAUTHN_ORIGIN=http://localhost:3000
-      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+      - WEBAUTHN_ORIGIN=http://localhost:${FRONTEND_PORT:-3001}
+      - CORS_ORIGINS=http://localhost:${FRONTEND_PORT:-3001},http://localhost:5173
       - MAX_UPLOAD_SIZE_MB=10
       - ALLOWED_MIME_TYPES=image/jpeg,image/png,image/heic,application/pdf
     volumes:
       - ./backend:/app  # Mount source code for hot reload
       - backend_cache:/root/.cache  # Cache pip packages
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8001}:8000"  # Configurable host port (default 8001 to avoid conflicts)
     networks:
       - hsa-tracker-network
     command: >
@@ -72,13 +72,13 @@ services:
     depends_on:
       - backend
     environment:
-      - VITE_API_URL=http://localhost:8000/api/v1
+      - VITE_API_URL=http://localhost:${BACKEND_PORT:-8001}/api/v1
       - VITE_WEBAUTHN_RP_ID=localhost
     volumes:
       - ./frontend:/app  # Mount source code for hot reload
       - /app/node_modules  # Prevent overwriting node_modules
     ports:
-      - "3000:5173"  # Vite dev server port
+      - "${FRONTEND_PORT:-3001}:5173"  # Configurable host port (default 3001 to avoid conflicts)
     networks:
       - hsa-tracker-network
     command: npm run dev -- --host 0.0.0.0

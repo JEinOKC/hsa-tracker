@@ -471,6 +471,11 @@ if [ "$USE_DOPPLER" = true ]; then
     doppler secrets set POSTGRES_PASSWORD="$DB_PASSWORD" --silent
     doppler secrets set POSTGRES_DB="hsatracker" --silent
 
+    # Port configuration (using non-conflicting defaults)
+    doppler secrets set POSTGRES_PORT="5433" --silent
+    doppler secrets set BACKEND_PORT="8001" --silent
+    doppler secrets set FRONTEND_PORT="3001" --silent
+
     print_success "All secrets saved to Doppler!"
 
 else
@@ -482,6 +487,12 @@ APP_NAME=HSA Tracker
 APP_ENV=development
 DEBUG=true
 SECRET_KEY=$SECRET_KEY
+
+# Port Configuration (using non-conflicting defaults)
+# Change these if you have port conflicts with other services
+POSTGRES_PORT=5433
+BACKEND_PORT=8001
+FRONTEND_PORT=3001
 
 # Database Configuration
 DATABASE_TYPE=postgresql
@@ -502,17 +513,17 @@ JWT_REFRESH_TOKEN_EXPIRE_DAYS=7
 # WebAuthn Configuration
 WEBAUTHN_RP_ID=localhost
 WEBAUTHN_RP_NAME=HSA Tracker
-WEBAUTHN_ORIGIN=http://localhost:3000
+WEBAUTHN_ORIGIN=http://localhost:3001
 
 # CORS Settings
-CORS_ORIGINS=http://localhost:3000,http://localhost:80
+CORS_ORIGINS=http://localhost:3001,http://localhost:80
 
 # File Upload Settings
 MAX_UPLOAD_SIZE_MB=10
 ALLOWED_MIME_TYPES=image/jpeg,image/png,image/heic,application/pdf
 
 # Frontend Configuration
-VITE_API_URL=http://localhost:8000/api/v1
+VITE_API_URL=http://localhost:8001/api/v1
 VITE_WEBAUTHN_RP_ID=localhost
 
 # PostgreSQL Configuration
@@ -567,12 +578,15 @@ echo ""
 print_success "HSA Tracker is now running!"
 echo ""
 echo "Access your application:"
-echo "  Frontend: http://localhost:3000"
-echo "  Backend API: http://localhost:8000"
-echo "  API Docs: http://localhost:8000/docs"
+echo "  Frontend: http://localhost:3001"
+echo "  Backend API: http://localhost:8001"
+echo "  API Docs: http://localhost:8001/docs"
+echo ""
+echo "Note: Using non-standard ports (3001, 8001, 5433) to avoid conflicts."
+echo "You can change these in your .env file if needed."
 echo ""
 echo "Next steps:"
-echo "  1. Open http://localhost:3000 in your browser"
+echo "  1. Open http://localhost:3001 in your browser"
 echo "  2. Click 'Create one' to register your first user"
 echo "  3. Start tracking your HSA expenses!"
 echo ""

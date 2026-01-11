@@ -46,14 +46,14 @@ services:
       - JWT_REFRESH_TOKEN_EXPIRE_DAYS=${JWT_REFRESH_TOKEN_EXPIRE_DAYS:-7}
       - WEBAUTHN_RP_ID=${WEBAUTHN_RP_ID:-localhost}
       - WEBAUTHN_RP_NAME=${WEBAUTHN_RP_NAME:-HSA Tracker}
-      - WEBAUTHN_ORIGIN=${WEBAUTHN_ORIGIN:-http://localhost:3000}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+      - WEBAUTHN_ORIGIN=${WEBAUTHN_ORIGIN:-http://localhost:3001}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3001}
       - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-10}
       - ALLOWED_MIME_TYPES=${ALLOWED_MIME_TYPES}
     volumes:
       - ./backend/data:/app/data  # For SQLite if used
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8001}:8000"  # Configurable host port (default 8001 to avoid conflicts)
     networks:
       - hsa-tracker-network
     command: >
@@ -68,14 +68,14 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - VITE_API_URL=${VITE_API_URL:-http://localhost:8000/api/v1}
+        - VITE_API_URL=${VITE_API_URL:-http://localhost:8001/api/v1}
         - VITE_WEBAUTHN_RP_ID=${VITE_WEBAUTHN_RP_ID:-localhost}
     container_name: hsa-tracker-frontend
     restart: unless-stopped
     depends_on:
       - backend
     ports:
-      - "3000:80"
+      - "${FRONTEND_PORT:-3001}:80"  # Configurable host port (default 3001 to avoid conflicts)
     networks:
       - hsa-tracker-network
 

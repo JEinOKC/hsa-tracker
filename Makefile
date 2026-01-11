@@ -82,17 +82,17 @@ dev-up: ## Start development environment
 	@echo "$(BLUE)Starting development environment...$(NC)"
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.dev.yml up -d
 	@echo "$(GREEN)✓ Development environment started$(NC)"
-	@echo "Frontend: http://localhost:3000"
-	@echo "Backend API: http://localhost:8000"
-	@echo "API Docs: http://localhost:8000/docs"
+	@echo "Frontend: http://localhost:3001 (configurable via FRONTEND_PORT)"
+	@echo "Backend API: http://localhost:8001 (configurable via BACKEND_PORT)"
+	@echo "API Docs: http://localhost:8001/docs"
 
 dev-rebuild: ## Rebuild and restart development environment
 	@echo "$(BLUE)Rebuilding and restarting development environment...$(NC)"
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.dev.yml up -d --build
 	@echo "$(GREEN)✓ Development environment rebuilt and started$(NC)"
-	@echo "Frontend: http://localhost:3000"
-	@echo "Backend API: http://localhost:8000"
-	@echo "API Docs: http://localhost:8000/docs"
+	@echo "Frontend: http://localhost:3001 (configurable via FRONTEND_PORT)"
+	@echo "Backend API: http://localhost:8001 (configurable via BACKEND_PORT)"
+	@echo "API Docs: http://localhost:8001/docs"
 
 dev-down: ## Stop development environment
 	@echo "$(BLUE)Stopping development environment...$(NC)"
