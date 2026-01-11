@@ -10,6 +10,8 @@ from alembic import context
 # Import the Base and all models
 from app.database import Base
 from app.config import settings
+# Import all models so Alembic can detect them
+from app.models import User, UserPasskey, UserTOTP, UserBackupCode  # noqa: F401
 
 # this is the Alembic Config object
 config = context.config
