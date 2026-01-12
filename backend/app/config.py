@@ -39,10 +39,10 @@ class Settings(BaseSettings):
     # WebAuthn (Passkeys)
     webauthn_rp_id: str = "localhost"
     webauthn_rp_name: str = "HSA Tracker"
-    webauthn_origin: str = "http://localhost:3000"
+    webauthn_origin: str = "http://localhost:3001"
 
     # CORS
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3001"
 
     @property
     def cors_origins_list(self) -> List[str]:
