@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import RegisterForm from '../components/auth/RegisterForm'
+import PasskeyRegisterForm from '../components/auth/PasskeyRegisterForm'
 
 export default function Register() {
   return (
@@ -8,10 +8,10 @@ export default function Register() {
         <div className="bg-white rounded-lg shadow-lg p-8">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Create Account</h1>
-            <p className="text-gray-600">Get started with HSA Tracker</p>
+            <p className="text-gray-600">Secure, passwordless authentication</p>
           </div>
 
-          <RegisterForm />
+          <PasskeyRegisterForm />
 
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">

@@ -16,6 +16,7 @@ email-validator==2.1.0
 # Authentication
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+bcrypt==3.2.2  # Pin to 3.x for passlib compatibility
 pyotp==2.9.0
 webauthn==2.2.0  # WebAuthn/Passkey authentication
 qrcode[pil]==7.4.2
