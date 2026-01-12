@@ -16,6 +16,7 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
     ResidentKeyRequirement,
     PublicKeyCredentialDescriptor,
+    AttestationConveyancePreference,
 )
 from webauthn.helpers.cose import COSEAlgorithmIdentifier
 
@@ -65,7 +66,7 @@ def create_registration_options(
         user_id=user_id,
         user_name=username,
         user_display_name=display_name,
-        attestation="none",  # No attestation needed for most use cases
+        attestation=AttestationConveyancePreference.NONE,  # No attestation needed for most use cases
         authenticator_selection=AuthenticatorSelectionCriteria(
             resident_key=ResidentKeyRequirement.REQUIRED,  # Require discoverable credentials
             user_verification=UserVerificationRequirement.REQUIRED,  # Require biometric/PIN
