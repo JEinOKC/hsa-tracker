@@ -114,14 +114,14 @@ def verify_registration_credential(
 
 def create_authentication_options(
     user_credentials: list,
-    user_verification: str = "required"
+    user_verification: UserVerificationRequirement = UserVerificationRequirement.REQUIRED
 ) -> Dict[str, Any]:
     """
     Generate WebAuthn authentication options for passkey login
 
     Args:
         user_credentials: List of user's passkey credentials
-        user_verification: Level of user verification ("required", "preferred", "discouraged")
+        user_verification: Level of user verification (enum)
 
     Returns:
         Authentication options dict for frontend

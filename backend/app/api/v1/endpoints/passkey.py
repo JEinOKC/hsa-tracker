@@ -26,6 +26,7 @@ from app.utils.webauthn import (
     bytes_to_base64url,
     base64url_to_bytes,
 )
+from webauthn.helpers.structs import UserVerificationRequirement
 from app.config import settings
 
 router = APIRouter()
@@ -207,7 +208,7 @@ async def passkey_login_start(
     challenge = generate_challenge()
     options = create_authentication_options(
         user_credentials=credentials,
-        user_verification="required"
+        user_verification=UserVerificationRequirement.REQUIRED
     )
 
     # Store challenge
