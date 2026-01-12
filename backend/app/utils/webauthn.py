@@ -60,8 +60,8 @@ def create_registration_options(
         Registration options dict for frontend
     """
     options = generate_registration_options(
-        rp_id=settings.WEBAUTHN_RP_ID,
-        rp_name=settings.WEBAUTHN_RP_NAME,
+        rp_id=settings.webauthn_rp_id,
+        rp_name=settings.webauthn_rp_name,
         user_id=user_id,
         user_name=username,
         user_display_name=display_name,
@@ -100,7 +100,7 @@ def verify_registration_credential(
         credential=credential,
         expected_challenge=expected_challenge,
         expected_origin=expected_origin,
-        expected_rp_id=settings.WEBAUTHN_RP_ID,
+        expected_rp_id=settings.webauthn_rp_id,
     )
 
     return {
@@ -145,7 +145,7 @@ def create_authentication_options(
         )
 
     options = generate_authentication_options(
-        rp_id=settings.WEBAUTHN_RP_ID,
+        rp_id=settings.webauthn_rp_id,
         timeout=60000,  # 60 seconds
         allow_credentials=allow_credentials,
         user_verification=user_verification,
@@ -178,7 +178,7 @@ def verify_authentication_credential(
         credential=credential,
         expected_challenge=expected_challenge,
         expected_origin=expected_origin,
-        expected_rp_id=settings.WEBAUTHN_RP_ID,
+        expected_rp_id=settings.webauthn_rp_id,
         credential_public_key=credential_public_key,
         credential_current_sign_count=credential_current_sign_count,
     )

@@ -116,7 +116,7 @@ async def passkey_register_complete(
         verified = verify_registration_credential(
             credential=request.credential,
             expected_challenge=challenge_data["challenge"],
-            expected_origin=settings.WEBAUTHN_ORIGIN
+            expected_origin=settings.webauthn_origin
         )
     except Exception as e:
         raise HTTPException(
@@ -280,7 +280,7 @@ async def passkey_login_complete(
         verified = verify_authentication_credential(
             credential=request.credential,
             expected_challenge=challenge_data["challenge"],
-            expected_origin=settings.WEBAUTHN_ORIGIN,
+            expected_origin=settings.webauthn_origin,
             credential_public_key=base64url_to_bytes(passkey.public_key),
             credential_current_sign_count=passkey.sign_count
         )
