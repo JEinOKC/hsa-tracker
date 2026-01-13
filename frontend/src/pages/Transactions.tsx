@@ -1,6 +1,24 @@
+/**
+ * Transactions/Expenses Page - Main expense tracking interface
+ */
+
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import TransactionForm from '../components/transactions/TransactionForm'
+import TransactionList from '../components/transactions/TransactionList'
 
 export default function Transactions() {
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const [showForm, setShowForm] = useState(false)
+
+  const handleSuccess = () => {
+    // Refresh the transaction list
+    setRefreshTrigger((prev) => prev + 1)
+
+    // Hide form after successful submission
+    setShowForm(false)
+  }
+
   return (
     <div className="container mx-auto px-4 py-8">
       <header className="mb-8 flex items-center justify-between">
@@ -8,47 +26,54 @@ export default function Transactions() {
           <Link to="/" className="text-blue-600 hover:text-blue-800 text-sm mb-2 inline-block">
             ← Back to Dashboard
           </Link>
-          <h1 className="text-4xl font-bold text-gray-900">Transactions</h1>
+          <h1 className="text-4xl font-bold text-gray-900">Expenses</h1>
+          <p className="text-gray-600 mt-1">Track your HSA expenses and receipts</p>
         </div>
-        <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium">
-          Add Transaction
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+        >
+          {showForm ? 'Cancel' : 'Add Expense'}
         </button>
       </header>
 
-      <div className="bg-white rounded-lg shadow">
-        <div className="p-6">
-          <div className="text-center py-12">
-            <svg
-              className="mx-auto h-12 w-12 text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-              />
-            </svg>
-            <h3 className="mt-2 text-sm font-medium text-gray-900">No transactions</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Get started by adding your first expense.
+      <div className="space-y-6">
+        {/* Info Banner */}
+        {!showForm && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h3 className="text-sm font-medium text-blue-900 mb-1">
+              Track Your HSA Expenses
+            </h3>
+            <p className="text-sm text-blue-700">
+              Add your medical expenses to track HSA-eligible purchases and manage reimbursements.
+              Click "Add Expense" above to get started.
             </p>
-            <div className="mt-6">
-              <button className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
-                Add Transaction
-              </button>
-            </div>
           </div>
-        </div>
-      </div>
+        )}
 
-      <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="text-sm font-medium text-blue-900 mb-2">💡 Quick Tip</h3>
-        <p className="text-sm text-blue-700">
-          You can upload multiple receipts per transaction. Supported formats: JPEG, PNG, HEIC, and PDF.
-        </p>
+        {/* Add Expense Form */}
+        {showForm && (
+          <TransactionForm
+            onSuccess={handleSuccess}
+            onCancel={() => setShowForm(false)}
+          />
+        )}
+
+        {/* Transactions List */}
+        <TransactionList refreshTrigger={refreshTrigger} />
+
+        {/* Quick Tip */}
+        {!showForm && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h3 className="text-sm font-medium text-blue-900 mb-2">💡 Quick Tips</h3>
+            <ul className="text-sm text-blue-700 list-disc list-inside space-y-1">
+              <li>You can upload receipts after creating an expense</li>
+              <li>Supported formats: JPEG, PNG, HEIC, and PDF</li>
+              <li>Track reimbursement status for expenses paid out-of-pocket</li>
+              <li>All HSA-eligible categories are pre-loaded for you</li>
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   )
