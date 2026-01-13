@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User, UserPasskey
+from app.models.family import Family, FamilyMember, FamilyMemberRelationship
 from app.schemas.auth import (
     PasskeyRegisterStartRequest,
     PasskeyRegisterCompleteRequest,
@@ -137,6 +138,24 @@ async def passkey_register_complete(
 
     db.add(user)
     db.flush()  # Get user.id before creating passkey
+
+    # Auto-create family for user (invisible to user initially)
+    family = Family(
+        name=f"{challenge_data['display_name']}'s Family",
+    )
+    db.add(family)
+    db.flush()  # Get family.id
+
+    # Auto-create family member for user (self)
+    family_member = FamilyMember(
+        family_id=family.id,
+        user_id=user.id,
+        name=challenge_data["display_name"],
+        relationship=FamilyMemberRelationship.SELF,
+        is_tax_dependent=False,
+        is_active=True,
+    )
+    db.add(family_member)
 
     # Store passkey credential
     passkey = UserPasskey(

@@ -6,6 +6,8 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.api.v1.router import api_router
+from app.database import SessionLocal
+from app.db.seed_categories import seed_categories_if_needed
 
 # Create FastAPI app
 app = FastAPI(
@@ -61,6 +63,15 @@ async def startup_event():
     print(f"Environment: {settings.app_env}")
     print(f"Debug mode: {settings.debug}")
     print(f"Database: {settings.database_type}")
+
+    # Seed default expense categories if needed
+    try:
+        db = SessionLocal()
+        print("Checking default expense categories...")
+        seed_categories_if_needed(db)
+        db.close()
+    except Exception as e:
+        print(f"Warning: Failed to seed categories: {e}")
 
 
 @app.on_event("shutdown")
