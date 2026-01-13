@@ -1,0 +1,16 @@
+# Development Dockerfile with Vite dev server
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dependencies
+# (package.json will be mounted, but we copy it here for layer caching)
+COPY package*.json ./
+RUN npm install
+
+# Expose Vite dev server port
+EXPOSE 5173
+
+# The actual source code will be mounted as a volume
+# Command will be specified in docker-compose.dev.yml

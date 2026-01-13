@@ -1,0 +1,13 @@
+/*
+ * Custom Theme Override
+ *
+ * Users can override default theme variables here.
+ * This file can be mounted as a volume in docker-compose for easy customization.
+ *
+ * Example:
+ *
+ * :root {
+ *   --color-primary: #9333ea;
+ *   --font-family-base: 'Roboto', sans-serif;
+ * }
+ */
