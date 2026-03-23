@@ -1,3 +1,5 @@
+@import './custom-theme.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -54,5 +56,3 @@ code {
   background: #555;
 }
 
-/* Import custom theme overrides if present */
-@import './custom-theme.css';
