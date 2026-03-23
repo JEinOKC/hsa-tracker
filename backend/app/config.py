@@ -1,6 +1,6 @@
 """Application configuration using Pydantic Settings"""
 
-from typing import List
+from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins from comma-separated string"""
         return [origin.strip() for origin in self.cors_origins.split(",")]
+
+    # Teller.io bank integration (optional, per-install)
+    teller_app_id: Optional[str] = None
+    teller_cert_b64: Optional[str] = None
+    teller_private_key_b64: Optional[str] = None
+    teller_env: str = "sandbox"  # "sandbox" or "production"
 
     # File Upload
     max_upload_size_mb: int = 10

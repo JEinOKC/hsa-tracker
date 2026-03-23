@@ -193,6 +193,43 @@ make dev-logs
 make dev-down
 ```
 
+### Connect a Bank Account (Teller)
+
+1. Go to **Bank Accounts** (`/bank`)
+2. Click **+ Connect Bank** — the Teller Connect modal will open
+3. Choose any bank from the list
+4. Enter credentials (**sandbox only** — see below)
+5. Once connected, click **Sync** on the account card to pull transactions
+6. Click an account card to view its synced transactions in the right pane
+7. All synced transactions are also visible on the **Transactions** page (`/transactions`)
+
+#### Sandbox test credentials
+
+When `VITE_TELLER_ENV=sandbox`, Teller Connect does not connect to real banks. Use these credentials at the bank login screen:
+
+| Scenario | Username | Password | Extra |
+|---|---|---|---|
+| Normal enrollment | `username` | `password` | — |
+| OTP / MFA flow | `otp` | `password` | Enter `0000` as the code |
+| Security question flow | `challenge` | `password` | Answer: `blue` |
+| Enrollment that immediately disconnects | `disconnected` | `password` | — |
+
+Any password other than `password` will trigger a "incorrect details" error — this is expected sandbox behaviour, not a bug.
+
+#### Switching to real bank data
+
+Change one env var and restart:
+
+```bash
+# Real banks, up to 100 enrollments, free (uses existing Teller cert)
+VITE_TELLER_ENV=development
+
+# Production (requires Teller approval + new cert from Teller dashboard)
+VITE_TELLER_ENV=production
+```
+
+---
+
 ### Add an Expense
 
 1. Go to **Transactions** page

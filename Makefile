@@ -11,10 +11,16 @@ RED := \033[0;31m
 NC := \033[0m # No Color
 
 # Detect if Doppler is available and configured
-DOPPLER_CONFIGURED := $(shell doppler setup --no-interactive get project 2>/dev/null)
-ifdef DOPPLER_CONFIGURED
+HAS_DOPPLER := $(shell command -v doppler 2>/dev/null)
+DOPPLER_PROJECT := $(shell doppler configure get project --plain 2>/dev/null)
+ifneq ($(HAS_DOPPLER),)
+ifneq ($(DOPPLER_PROJECT),)
 	DOCKER_COMPOSE_CMD := doppler run -- docker-compose
 	RUN_CMD := doppler run --
+else
+	DOCKER_COMPOSE_CMD := docker-compose
+	RUN_CMD :=
+endif
 else
 	DOCKER_COMPOSE_CMD := docker-compose
 	RUN_CMD :=
