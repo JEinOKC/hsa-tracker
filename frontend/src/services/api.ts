@@ -28,33 +28,41 @@ api.interceptors.request.use(
   }
 )
 
+function clearSessionAndRedirect() {
+  localStorage.removeItem('access_token')
+  localStorage.removeItem('refresh_token')
+  window.location.href = '/login'
+}
+
 // Response interceptor for token refresh
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
 
-    // If 401 and we haven't retried yet, try to refresh token
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
 
       const refreshToken = localStorage.getItem('refresh_token')
-      if (refreshToken) {
-        try {
-          // TODO: Implement refresh token endpoint
-          // For now, just redirect to login
-          localStorage.removeItem('access_token')
-          localStorage.removeItem('refresh_token')
-          window.location.href = '/login'
-        } catch (refreshError) {
-          // Refresh failed, redirect to login
-          localStorage.removeItem('access_token')
-          localStorage.removeItem('refresh_token')
-          window.location.href = '/login'
-        }
-      } else {
-        // No refresh token, redirect to login
-        window.location.href = '/login'
+      if (!refreshToken) {
+        clearSessionAndRedirect()
+        return Promise.reject(error)
+      }
+
+      try {
+        const { data } = await axios.post(
+          `${API_URL}/auth/refresh`,
+          { refresh_token: refreshToken },
+          { headers: { 'Content-Type': 'application/json' } }
+        )
+        localStorage.setItem('access_token', data.access_token)
+        localStorage.setItem('refresh_token', data.refresh_token)
+        originalRequest.headers = originalRequest.headers ?? {}
+        originalRequest.headers.Authorization = `Bearer ${data.access_token}`
+        return api(originalRequest)
+      } catch {
+        clearSessionAndRedirect()
+        return Promise.reject(error)
       }
     }
 
