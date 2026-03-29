@@ -17,6 +17,8 @@ from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
+from sqlalchemy import func
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -24,6 +26,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.bank import BankConnection, BankTransaction
+from app.models.family import FamilyMember
 from app.models.user import User
 from app.providers import get_teller_provider, is_teller_configured
 
@@ -206,6 +209,78 @@ async def get_bank_status(
     return BankStatusResponse(
         teller_configured=is_teller_configured(),
         active_connections=active,
+    )
+
+
+class DashboardSummaryResponse(BaseModel):
+    hsa_spending: float
+    pending_reimbursement: float
+    hsa_transaction_count: int
+    has_family_members: bool
+    has_bank_connections: bool
+    has_synced_transactions: bool
+    has_hsa_transactions: bool
+
+
+@router.get("/summary", response_model=DashboardSummaryResponse)
+async def get_dashboard_summary(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Aggregate stats for the dashboard, scoped to the given date range."""
+    user_connection_ids = (
+        db.query(BankConnection.id)
+        .filter(BankConnection.user_id == current_user.id, BankConnection.is_active == True)
+        .subquery()
+    )
+
+    def date_filters():
+        f = [
+            BankTransaction.connection_id.in_(user_connection_ids),
+            BankTransaction.is_hsa_eligible == True,
+        ]
+        if start_date:
+            f.append(BankTransaction.transaction_date >= start_date)
+        if end_date:
+            f.append(BankTransaction.transaction_date <= end_date)
+        return f
+
+    hsa_spending = (
+        db.query(func.sum(BankTransaction.amount))
+        .filter(*date_filters())
+        .scalar() or 0
+    )
+
+    pending = (
+        db.query(func.sum(BankTransaction.amount))
+        .filter(*date_filters(), BankTransaction.reimbursement_status.is_(None))
+        .scalar() or 0
+    )
+
+    hsa_count = (
+        db.query(func.count(BankTransaction.id))
+        .filter(*date_filters())
+        .scalar() or 0
+    )
+
+    has_family = db.query(FamilyMember).filter(FamilyMember.user_id == current_user.id).first() is not None
+    has_connections = db.query(BankConnection).filter(
+        BankConnection.user_id == current_user.id, BankConnection.is_active == True
+    ).first() is not None
+    has_transactions = db.query(BankTransaction).filter(
+        BankTransaction.connection_id.in_(user_connection_ids)
+    ).first() is not None
+
+    return DashboardSummaryResponse(
+        hsa_spending=float(hsa_spending),
+        pending_reimbursement=float(pending),
+        hsa_transaction_count=int(hsa_count),
+        has_family_members=has_family,
+        has_bank_connections=has_connections,
+        has_synced_transactions=has_transactions,
+        has_hsa_transactions=int(hsa_count) > 0,
     )
 
 

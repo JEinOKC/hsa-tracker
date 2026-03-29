@@ -82,9 +82,22 @@ export const HSA_CATEGORIES = [
   { value: 'other', label: 'Other HSA' },
 ]
 
+export interface DashboardSummary {
+  hsa_spending: number
+  pending_reimbursement: number
+  hsa_transaction_count: number
+  has_family_members: boolean
+  has_bank_connections: boolean
+  has_synced_transactions: boolean
+  has_hsa_transactions: boolean
+}
+
 export const bankService = {
   getStatus: () =>
     api.get<BankStatus>('/bank/status').then(r => r.data),
+
+  getDashboardSummary: (params?: { start_date?: string; end_date?: string }) =>
+    api.get<DashboardSummary>('/bank/summary', { params }).then(r => r.data),
 
   connect: (accessToken: string) =>
     api.post<BankAccount[]>('/bank/connect', { access_token: accessToken }).then(r => r.data),
