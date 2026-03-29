@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { bankService, BankTransaction, HSA_CATEGORIES } from '../services/bank'
 import { familyService, FamilyMember } from '../services/family'
 
@@ -185,66 +186,132 @@ function TxnRow({ txn, members, showCategory, onChange }: TxnRowProps) {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 50
 type Tab = 'all' | 'hsa'
 
 export default function Transactions() {
-  const [tab, setTab] = useState<Tab>('all')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab: Tab = (searchParams.get('tab') as Tab) === 'hsa' ? 'hsa' : 'all'
+
   const [transactions, setTransactions] = useState<BankTransaction[]>([])
   const [members, setMembers] = useState<FamilyMember[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // Filters
+  const [showBackToTop, setShowBackToTop] = useState(false)
+
+  useEffect(() => {
+    const onScroll = () => setShowBackToTop(window.scrollY > 400)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  // Filters (all server-side)
   const [search, setSearch] = useState('')
   const [filterMember, setFilterMember] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
 
-  const load = useCallback(async (activeTab: Tab) => {
+  // Debounce search so we don't fire on every keystroke
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+  const loadingMoreRef = useRef(false)
+  const handleSearchChange = (value: string) => {
+    setSearch(value)
+    if (debounceTimer.current) clearTimeout(debounceTimer.current)
+    debounceTimer.current = setTimeout(() => setDebouncedSearch(value), 300)
+  }
+
+  const buildParams = useCallback((offset: number) => ({
+    is_hsa_eligible: tab === 'hsa' ? true : undefined,
+    search: debouncedSearch || undefined,
+    family_member_id: filterMember || undefined,
+    start_date: startDate || undefined,
+    end_date: endDate || undefined,
+    limit: PAGE_SIZE,
+    offset,
+  }), [tab, debouncedSearch, filterMember, startDate, endDate])
+
+  // Initial / filter-change load — resets the list
+  const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const [txns, fam] = await Promise.all([
-        bankService.listAllTransactions({
-          is_hsa_eligible: activeTab === 'hsa' ? true : undefined,
-          limit: 500,
-        }),
+        bankService.listAllTransactions(buildParams(0)),
         familyService.list(),
       ])
       setTransactions(txns)
       setMembers(fam)
+      setHasMore(txns.length === PAGE_SIZE)
     } catch {
       setError('Failed to load transactions.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [buildParams])
 
-  useEffect(() => { load(tab) }, [tab, load])
+  useEffect(() => { load() }, [load])
+
+  const loadMore = useCallback(async () => {
+    if (loadingMoreRef.current) return
+    loadingMoreRef.current = true
+    setLoadingMore(true)
+    try {
+      const more = await bankService.listAllTransactions(buildParams(transactions.length))
+      setTransactions(prev => [...prev, ...more])
+      setHasMore(more.length === PAGE_SIZE)
+    } catch {
+      setError('Failed to load more transactions.')
+    } finally {
+      loadingMoreRef.current = false
+      setLoadingMore(false)
+    }
+  }, [buildParams, transactions.length])
+
+  // Auto-load when sentinel scrolls into view
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) loadMore() },
+      { rootMargin: '200px' },
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [loadMore])
 
   const handleChange = useCallback((updated: BankTransaction) => {
     setTransactions(prev => prev.map(t => t.id === updated.id ? updated : t))
   }, [])
 
   const switchTab = (next: Tab) => {
-    setTab(next)
+    setSearchParams(next === 'all' ? {} : { tab: next })
     setSearch('')
+    setDebouncedSearch('')
     setFilterMember('')
+    setStartDate('')
+    setEndDate('')
   }
 
-  // Client-side filter on top of server results
-  const visible = transactions.filter(t => {
-    if (search && !t.description?.toLowerCase().includes(search.toLowerCase())) return false
-    if (filterMember && t.family_member_id !== filterMember) return false
-    if (startDate && t.transaction_date < startDate) return false
-    if (endDate && t.transaction_date > endDate) return false
-    return true
-  })
+  const clearFilters = () => {
+    setSearch('')
+    setDebouncedSearch('')
+    setFilterMember('')
+    setStartDate('')
+    setEndDate('')
+  }
 
   const hsaTotal = tab === 'hsa'
-    ? visible.reduce((sum, t) => sum + parseFloat(t.amount), 0)
+    ? transactions.reduce((sum, t) => sum + parseFloat(t.amount), 0)
     : null
 
+  const hasFilters = !!(search || filterMember || startDate || endDate)
+
   return (
+    <>
     <div className="container mx-auto px-4 py-8 max-w-5xl">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -254,7 +321,7 @@ export default function Transactions() {
         </div>
         {hsaTotal !== null && (
           <div className="text-right">
-            <p className="text-xs text-gray-400">HSA total</p>
+            <p className="text-xs text-gray-400">HSA total{hasMore ? ' (partial)' : ''}</p>
             <p className="text-xl font-bold text-green-700">{formatAmount(hsaTotal.toFixed(2))}</p>
           </div>
         )}
@@ -283,7 +350,7 @@ export default function Transactions() {
           type="text"
           placeholder="Search description…"
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={e => handleSearchChange(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <select
@@ -307,9 +374,9 @@ export default function Transactions() {
           onChange={e => setEndDate(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
-        {(search || filterMember || startDate || endDate) && (
+        {hasFilters && (
           <button
-            onClick={() => { setSearch(''); setFilterMember(''); setStartDate(''); setEndDate('') }}
+            onClick={clearFilters}
             className="text-xs text-gray-400 hover:text-gray-600 px-2"
           >
             Clear
@@ -334,14 +401,16 @@ export default function Transactions() {
         )}
         {loading ? (
           <div className="p-12 text-center text-gray-400">Loading transactions…</div>
-        ) : visible.length === 0 ? (
+        ) : transactions.length === 0 ? (
           <div className="p-12 text-center text-gray-400">
             {tab === 'hsa'
               ? 'No HSA transactions yet. Switch to "All Transactions" and click Mark on any row.'
-              : 'No transactions found. Connect a bank account and sync to get started.'}
+              : hasFilters
+                ? 'No transactions match your filters.'
+                : 'No transactions found. Connect a bank account and sync to get started.'}
           </div>
         ) : (
-          visible.map(txn => (
+          transactions.map(txn => (
             <TxnRow
               key={txn.id}
               txn={txn}
@@ -353,12 +422,40 @@ export default function Transactions() {
         )}
       </div>
 
-      {visible.length > 0 && (
-        <p className="text-xs text-gray-400 mt-3 text-right">
-          {visible.length} transaction{visible.length !== 1 ? 's' : ''}
-          {visible.length < transactions.length ? ` (filtered from ${transactions.length})` : ''}
-        </p>
+      {/* Sentinel for auto infinite-scroll */}
+      {!loading && hasMore && (
+        <div ref={sentinelRef} className="h-1" />
+      )}
+
+      {/* Footer: count + manual fallback button */}
+      {!loading && transactions.length > 0 && (
+        <div className="mt-3 flex items-center justify-between">
+          <p className="text-xs text-gray-400">
+            {transactions.length} transaction{transactions.length !== 1 ? 's' : ''} loaded
+            {hasMore ? ' — scroll for more' : ''}
+          </p>
+          {hasMore && (
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="text-xs text-gray-400 hover:text-blue-600 disabled:opacity-50"
+            >
+              {loadingMore ? 'Loading…' : 'Load more'}
+            </button>
+          )}
+        </div>
       )}
     </div>
+
+    {/* Back to top */}
+    {showBackToTop && (
+      <button
+        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        className="fixed bottom-6 right-6 z-50 bg-white border border-gray-200 shadow-md rounded-full px-4 py-2 text-sm text-gray-600 hover:text-blue-600 hover:border-blue-300 transition-colors"
+      >
+        ↑ Back to top
+      </button>
+    )}
+    </>
   )
 }

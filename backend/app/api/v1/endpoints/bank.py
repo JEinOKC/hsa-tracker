@@ -216,7 +216,8 @@ async def list_all_transactions(
     is_hsa_eligible: Optional[bool] = Query(None, description="Filter by HSA eligibility (omit = all, true = HSA only, false = non-HSA only)"),
     family_member_id: Optional[UUID] = Query(None),
     status: Optional[str] = Query(None, description="posted or pending"),
-    limit: int = Query(100, le=1000),
+    search: Optional[str] = Query(None, description="Case-insensitive substring match on description"),
+    limit: int = Query(50, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -241,10 +242,12 @@ async def list_all_transactions(
         query = query.filter(BankTransaction.family_member_id == family_member_id)
     if status:
         query = query.filter(BankTransaction.status == status)
+    if search:
+        query = query.filter(BankTransaction.description.ilike(f"%{search}%"))
 
     txns = (
         query
-        .order_by(BankTransaction.transaction_date.desc())
+        .order_by(BankTransaction.transaction_date.desc(), BankTransaction.id.desc())
         .offset(offset)
         .limit(limit)
         .all()
@@ -404,7 +407,7 @@ async def list_account_transactions(
 
     return (
         query
-        .order_by(BankTransaction.transaction_date.desc())
+        .order_by(BankTransaction.transaction_date.desc(), BankTransaction.id.desc())
         .offset(offset)
         .limit(limit)
         .all()
