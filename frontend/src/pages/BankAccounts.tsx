@@ -157,7 +157,7 @@ export default function BankAccounts() {
         <button
           onClick={handleConnect}
           disabled={connecting || !tellerConfigured}
-          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium px-5 py-2 rounded-lg"
+          className="bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white font-medium px-5 py-2 rounded-lg"
           title={!tellerConfigured ? 'Teller is not configured on this server.' : undefined}
         >
           {connecting ? 'Connecting…' : '+ Connect Bank'}
@@ -189,7 +189,7 @@ export default function BankAccounts() {
               <div
                 key={account.id}
                 className={`bg-white rounded-lg shadow p-4 cursor-pointer border-2 transition-colors ${
-                  selectedAccount?.id === account.id ? 'border-blue-500' : 'border-transparent hover:border-gray-200'
+                  selectedAccount?.id === account.id ? 'border-sky-500' : 'border-transparent hover:border-gray-200'
                 }`}
                 onClick={() => loadTransactions(account)}
               >
@@ -225,7 +225,7 @@ export default function BankAccounts() {
                   <button
                     onClick={e => { e.stopPropagation(); handleSync(account.id) }}
                     disabled={syncing === account.id}
-                    className="flex-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium py-1.5 rounded disabled:opacity-50"
+                    className="flex-1 text-xs bg-sky-50 hover:bg-sky-100 text-sky-700 font-medium py-1.5 rounded disabled:opacity-50"
                   >
                     {syncing === account.id ? 'Syncing…' : 'Sync'}
                   </button>

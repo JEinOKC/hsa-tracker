@@ -134,16 +134,52 @@ function CategoryPicker({ txn, onChange }: CategoryPickerProps) {
   )
 }
 
+// ─── Inline reimburse toggle ──────────────────────────────────────────────────
+
+interface ReimburseToggleProps {
+  txn: BankTransaction
+  onChange: (updated: BankTransaction) => void
+}
+
+function ReimburseToggle({ txn, onChange }: ReimburseToggleProps) {
+  const [saving, setSaving] = useState(false)
+
+  const toggle = async () => {
+    const next = txn.reimbursement_status === 'reimbursed' ? null : 'reimbursed'
+    setSaving(true)
+    try {
+      const updated = await bankService.annotateTransaction(txn.id, { reimbursement_status: next })
+      onChange(updated)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (saving) return <span className="text-xs text-gray-400 w-24 inline-block text-center">…</span>
+
+  if (txn.reimbursement_status === 'reimbursed')
+    return (
+      <button onClick={toggle} className="text-xs font-medium px-2 py-0.5 rounded bg-purple-100 text-purple-700 hover:bg-purple-200 w-24">
+        Reimbursed
+      </button>
+    )
+  return (
+    <button onClick={toggle} className="text-xs font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-400 hover:bg-gray-200 w-24">
+      Reimburse
+    </button>
+  )
+}
+
 // ─── Transaction row ──────────────────────────────────────────────────────────
 
 interface TxnRowProps {
   txn: BankTransaction
   members: FamilyMember[]
-  showCategory: boolean
+  tab: Tab
   onChange: (updated: BankTransaction) => void
 }
 
-function TxnRow({ txn, members, showCategory, onChange }: TxnRowProps) {
+function TxnRow({ txn, members, tab, onChange }: TxnRowProps) {
   const amount = parseFloat(txn.amount)
   return (
     <div className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 border-b border-gray-50 last:border-0">
@@ -164,20 +200,29 @@ function TxnRow({ txn, members, showCategory, onChange }: TxnRowProps) {
         {formatAmount(txn.amount)}
       </span>
 
-      {/* HSA toggle */}
-      <div className="shrink-0">
-        <HsaToggle txn={txn} onChange={onChange} />
-      </div>
+      {/* HSA toggle (not shown on reimbursed tab) */}
+      {tab !== 'reimbursed' && (
+        <div className="shrink-0">
+          <HsaToggle txn={txn} onChange={onChange} />
+        </div>
+      )}
 
       {/* Person picker */}
       <div className="shrink-0">
         <MemberPicker txn={txn} members={members} onChange={onChange} />
       </div>
 
-      {/* Category (HSA tab only) */}
-      {showCategory && (
+      {/* Category (HSA + reimbursed tabs) */}
+      {(tab === 'hsa' || tab === 'reimbursed') && (
         <div className="shrink-0">
           <CategoryPicker txn={txn} onChange={onChange} />
+        </div>
+      )}
+
+      {/* Reimburse toggle (HSA + reimbursed tabs) */}
+      {(tab === 'hsa' || tab === 'reimbursed') && (
+        <div className="shrink-0">
+          <ReimburseToggle txn={txn} onChange={onChange} />
         </div>
       )}
     </div>
@@ -187,11 +232,12 @@ function TxnRow({ txn, members, showCategory, onChange }: TxnRowProps) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 50
-type Tab = 'all' | 'hsa'
+type Tab = 'all' | 'hsa' | 'reimbursed'
 
 export default function Transactions() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const tab: Tab = (searchParams.get('tab') as Tab) === 'hsa' ? 'hsa' : 'all'
+  const rawTab = searchParams.get('tab')
+  const tab: Tab = rawTab === 'hsa' ? 'hsa' : rawTab === 'reimbursed' ? 'reimbursed' : 'all'
 
   const [transactions, setTransactions] = useState<BankTransaction[]>([])
   const [members, setMembers] = useState<FamilyMember[]>([])
@@ -225,7 +271,8 @@ export default function Transactions() {
   }
 
   const buildParams = useCallback((offset: number) => ({
-    is_hsa_eligible: tab === 'hsa' ? true : undefined,
+    is_hsa_eligible: (tab === 'hsa' || tab === 'reimbursed') ? true : undefined,
+    reimbursement_status: tab === 'reimbursed' ? 'reimbursed' : tab === 'hsa' ? 'null' : undefined,
     search: debouncedSearch || undefined,
     family_member_id: filterMember || undefined,
     start_date: startDate || undefined,
@@ -304,7 +351,7 @@ export default function Transactions() {
     setEndDate('')
   }
 
-  const hsaTotal = tab === 'hsa'
+  const tabTotal = (tab === 'hsa' || tab === 'reimbursed')
     ? transactions.reduce((sum, t) => sum + parseFloat(t.amount), 0)
     : null
 
@@ -319,27 +366,32 @@ export default function Transactions() {
           <h1 className="text-3xl font-bold text-gray-900">Transactions</h1>
           <p className="text-gray-500 mt-1">Review and tag transactions as HSA-eligible.</p>
         </div>
-        {hsaTotal !== null && (
+        {tabTotal !== null && (
           <div className="text-right">
-            <p className="text-xs text-gray-400">HSA total{hasMore ? ' (partial)' : ''}</p>
-            <p className="text-xl font-bold text-green-700">{formatAmount(hsaTotal.toFixed(2))}</p>
+            <p className="text-xs text-gray-400">
+              {tab === 'reimbursed' ? 'Reimbursed total' : 'HSA total'}
+              {hasMore ? ' (partial)' : ''}
+            </p>
+            <p className={`text-xl font-bold ${tab === 'reimbursed' ? 'text-purple-700' : 'text-green-700'}`}>
+              {formatAmount(tabTotal.toFixed(2))}
+            </p>
           </div>
         )}
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 mb-4 border-b border-gray-200">
-        {(['all', 'hsa'] as Tab[]).map(t => (
+        {(['all', 'hsa', 'reimbursed'] as Tab[]).map(t => (
           <button
             key={t}
             onClick={() => switchTab(t)}
             className={`px-5 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
               tab === t
-                ? 'border-blue-600 text-blue-600'
+                ? 'border-sky-600 text-sky-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            {t === 'all' ? 'All Transactions' : 'HSA Transactions'}
+            {t === 'all' ? 'All Transactions' : t === 'hsa' ? 'HSA Transactions' : 'Reimbursed'}
           </button>
         ))}
       </div>
@@ -351,12 +403,12 @@ export default function Transactions() {
           placeholder="Search description…"
           value={search}
           onChange={e => handleSearchChange(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-sky-500"
         />
         <select
           value={filterMember}
           onChange={e => setFilterMember(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
         >
           <option value="">All people</option>
           {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -365,14 +417,14 @@ export default function Transactions() {
           type="date"
           value={startDate}
           onChange={e => setStartDate(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
         />
         <span className="self-center text-gray-400 text-sm">to</span>
         <input
           type="date"
           value={endDate}
           onChange={e => setEndDate(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
         />
         {hasFilters && (
           <button
@@ -389,9 +441,10 @@ export default function Transactions() {
         <span className="w-24 shrink-0">Date</span>
         <span className="flex-1">Description</span>
         <span className="w-20 text-right shrink-0">Amount</span>
-        <span className="w-16 shrink-0">HSA?</span>
+        {tab !== 'reimbursed' && <span className="w-16 shrink-0">HSA?</span>}
         <span className="w-[110px] shrink-0">Person</span>
-        {tab === 'hsa' && <span className="w-[130px] shrink-0">Category</span>}
+        {(tab === 'hsa' || tab === 'reimbursed') && <span className="w-[130px] shrink-0">Category</span>}
+        {(tab === 'hsa' || tab === 'reimbursed') && <span className="w-24 shrink-0">Reimbursed?</span>}
       </div>
 
       {/* Body */}
@@ -403,11 +456,13 @@ export default function Transactions() {
           <div className="p-12 text-center text-gray-400">Loading transactions…</div>
         ) : transactions.length === 0 ? (
           <div className="p-12 text-center text-gray-400">
-            {tab === 'hsa'
-              ? 'No HSA transactions yet. Switch to "All Transactions" and click Mark on any row.'
-              : hasFilters
-                ? 'No transactions match your filters.'
-                : 'No transactions found. Connect a bank account and sync to get started.'}
+            {tab === 'reimbursed'
+              ? 'No reimbursed transactions yet. Switch to "HSA Transactions" and click Reimburse on any row.'
+              : tab === 'hsa'
+                ? 'No HSA transactions yet. Switch to "All Transactions" and click Mark on any row.'
+                : hasFilters
+                  ? 'No transactions match your filters.'
+                  : 'No transactions found. Connect a bank account and sync to get started.'}
           </div>
         ) : (
           transactions.map(txn => (
@@ -415,7 +470,7 @@ export default function Transactions() {
               key={txn.id}
               txn={txn}
               members={members}
-              showCategory={tab === 'hsa'}
+              tab={tab}
               onChange={handleChange}
             />
           ))
@@ -438,7 +493,7 @@ export default function Transactions() {
             <button
               onClick={loadMore}
               disabled={loadingMore}
-              className="text-xs text-gray-400 hover:text-blue-600 disabled:opacity-50"
+              className="text-xs text-gray-400 hover:text-sky-600 disabled:opacity-50"
             >
               {loadingMore ? 'Loading…' : 'Load more'}
             </button>
@@ -451,7 +506,7 @@ export default function Transactions() {
     {showBackToTop && (
       <button
         onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-        className="fixed bottom-6 right-6 z-50 bg-white border border-gray-200 shadow-md rounded-full px-4 py-2 text-sm text-gray-600 hover:text-blue-600 hover:border-blue-300 transition-colors"
+        className="fixed bottom-6 right-6 z-50 bg-white border border-gray-200 shadow-md rounded-full px-4 py-2 text-sm text-gray-600 hover:text-sky-600 hover:border-sky-300 transition-colors"
       >
         ↑ Back to top
       </button>

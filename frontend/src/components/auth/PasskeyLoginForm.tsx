@@ -44,9 +44,9 @@ export default function PasskeyLoginForm() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="font-semibold text-blue-900 mb-2">🔐 Passwordless Login</h3>
-        <p className="text-sm text-blue-700">
+      <div className="bg-sky-50 border border-sky-200 rounded-lg p-4">
+        <h3 className="font-semibold text-sky-900 mb-2">🔐 Passwordless Login</h3>
+        <p className="text-sm text-sky-700">
           Login securely with your device's biometric authentication. No password needed!
         </p>
       </div>
@@ -64,7 +64,7 @@ export default function PasskeyLoginForm() {
             required
             disabled={isLoading}
             autoFocus
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
             placeholder="johndoe"
           />
         </div>
@@ -78,7 +78,7 @@ export default function PasskeyLoginForm() {
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+          className="w-full bg-sky-600 hover:bg-sky-700 disabled:bg-sky-300 text-white font-medium py-2 px-4 rounded-lg transition-colors"
         >
           {isLoading ? 'Authenticating...' : '🔐 Login with Passkey'}
         </button>

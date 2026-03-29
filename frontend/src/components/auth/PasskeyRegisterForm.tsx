@@ -47,9 +47,9 @@ export default function PasskeyRegisterForm() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="font-semibold text-blue-900 mb-2">🔐 Passwordless Registration</h3>
-        <p className="text-sm text-blue-700">
+      <div className="bg-sky-50 border border-sky-200 rounded-lg p-4">
+        <h3 className="font-semibold text-sky-900 mb-2">🔐 Passwordless Registration</h3>
+        <p className="text-sm text-sky-700">
           No email or password required! Your device's biometric authentication (Face ID, Touch ID, or fingerprint)
           will be your secure login method.
         </p>
@@ -67,7 +67,7 @@ export default function PasskeyRegisterForm() {
             onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
             required
             disabled={isLoading}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
             placeholder="johndoe"
             pattern="[a-z0-9_-]+"
             title="Lowercase letters, numbers, hyphens, and underscores only"
@@ -88,7 +88,7 @@ export default function PasskeyRegisterForm() {
             onChange={(e) => setDisplayName(e.target.value)}
             required
             disabled={isLoading}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
             placeholder="John Doe"
           />
         </div>
@@ -103,7 +103,7 @@ export default function PasskeyRegisterForm() {
             value={deviceName}
             onChange={(e) => setDeviceName(e.target.value)}
             disabled={isLoading}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
             placeholder="My iPhone"
           />
           <p className="mt-1 text-sm text-gray-500">
@@ -120,7 +120,7 @@ export default function PasskeyRegisterForm() {
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+          className="w-full bg-sky-600 hover:bg-sky-700 disabled:bg-sky-300 text-white font-medium py-2 px-4 rounded-lg transition-colors"
         >
           {isLoading ? 'Creating account...' : '🔐 Create Account with Passkey'}
         </button>

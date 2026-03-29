@@ -10,14 +10,17 @@ import ProtectedRoute from './components/ProtectedRoute'
 function Nav() {
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-      isActive ? 'bg-blue-700 text-white' : 'text-blue-100 hover:bg-blue-700 hover:text-white'
+      isActive ? 'bg-sky-700 text-white' : 'text-sky-100 hover:bg-sky-700 hover:text-white'
     }`
 
   return (
-    <nav className="bg-blue-800 shadow-sm">
+    <nav className="bg-sky-600 shadow-sm">
       <div className="container mx-auto px-4">
         <div className="flex items-center h-14 gap-1">
-          <span className="text-white font-bold mr-6 text-lg tracking-tight">HSA Tracker</span>
+          <div className="flex items-center gap-2 mr-6">
+            <img src="/favicon.svg" alt="" className="h-7 w-7" />
+            <span className="text-white font-bold text-lg tracking-tight">HSA Tracker</span>
+          </div>
           <NavLink to="/" end className={linkClass}>Dashboard</NavLink>
           <NavLink to="/bank" className={linkClass}>Bank Accounts</NavLink>
           <NavLink to="/family" className={linkClass}>Family</NavLink>

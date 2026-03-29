@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '../../test/utils'
-import userEvent from '@testing-library/user-event'
 import Transactions from '../Transactions'
 
 vi.mock('../../services/bank', () => ({
@@ -81,7 +80,7 @@ describe('Transactions page', () => {
     render(<Transactions />)
     await waitFor(() => {
       expect(bankService.listAllTransactions).toHaveBeenCalledWith(
-        expect.objectContaining({ limit: 500 })
+        expect.objectContaining({ limit: 50 })
       )
     })
   })
@@ -141,7 +140,7 @@ describe('Transactions page', () => {
       render(<Transactions />)
       await waitFor(() => {
         const allTab = screen.getByRole('button', { name: 'All Transactions' })
-        expect(allTab.className).toContain('border-blue-600')
+        expect(allTab.className).toContain('border-sky-600')
       })
     })
 
@@ -183,15 +182,15 @@ describe('Transactions page', () => {
       })
     })
 
-    it('does not show HSA total on All tab', async () => {
+    it('does not show total header on All tab', async () => {
       ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
       render(<Transactions />)
-      await waitFor(() => {
-        expect(screen.queryByText('HSA total')).not.toBeInTheDocument()
-      })
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+      expect(screen.queryByText('HSA total')).not.toBeInTheDocument()
+      expect(screen.queryByText('Reimbursed total')).not.toBeInTheDocument()
     })
 
-    it('shows Category column header only on HSA tab', async () => {
+    it('shows Category column header on HSA tab but not All tab', async () => {
       render(<Transactions />)
       await waitFor(() => screen.getByRole('button', { name: 'HSA Transactions' }))
 
@@ -201,6 +200,53 @@ describe('Transactions page', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Category')).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('Reimbursed tab', () => {
+    it('shows Reimbursed tab button', async () => {
+      render(<Transactions />)
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Reimbursed' })).toBeInTheDocument()
+      })
+    })
+
+    it('switches to Reimbursed tab and fetches with correct params', async () => {
+      render(<Transactions />)
+      await waitFor(() => screen.getByRole('button', { name: 'Reimbursed' }))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Reimbursed' }))
+
+      await waitFor(() => {
+        expect(bankService.listAllTransactions).toHaveBeenCalledWith(
+          expect.objectContaining({ is_hsa_eligible: true, reimbursement_status: 'reimbursed' })
+        )
+      })
+    })
+
+    it('shows Reimbursed total header on Reimbursed tab', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ is_hsa_eligible: true, reimbursement_status: 'reimbursed', amount: '-50.00' }),
+      ])
+      render(<Transactions />)
+      await waitFor(() => screen.getByRole('button', { name: 'Reimbursed' }))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Reimbursed' }))
+
+      await waitFor(() => {
+        expect(screen.getByText('Reimbursed total')).toBeInTheDocument()
+      })
+    })
+
+    it('shows empty state for Reimbursed tab', async () => {
+      render(<Transactions />)
+      await waitFor(() => screen.getByRole('button', { name: 'Reimbursed' }))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Reimbursed' }))
+
+      await waitFor(() => {
+        expect(screen.getByText(/no reimbursed transactions yet/i)).toBeInTheDocument()
       })
     })
   })
@@ -383,106 +429,143 @@ describe('Transactions page', () => {
     })
   })
 
-  describe('client-side filters', () => {
-    it('filters transactions by search term', async () => {
+  describe('ReimburseToggle', () => {
+    it('shows Reimburse button on HSA tab', async () => {
       ;(bankService.listAllTransactions as any).mockResolvedValue([
-        makeTxn({ id: 'txn-1', description: 'CVS Pharmacy' }),
-        makeTxn({ id: 'txn-2', description: 'Spotify' }),
+        makeTxn({ is_hsa_eligible: true, reimbursement_status: null }),
       ])
       render(<Transactions />)
-      await waitFor(() => screen.getByText('Spotify'))
+      await waitFor(() => screen.getByRole('button', { name: 'HSA Transactions' }))
+      fireEvent.click(screen.getByRole('button', { name: 'HSA Transactions' }))
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Reimburse' })).toBeInTheDocument()
+      })
+    })
+
+    it('shows Reimbursed badge when already reimbursed', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ is_hsa_eligible: true, reimbursement_status: 'reimbursed' }),
+      ])
+      render(<Transactions />)
+      await waitFor(() => screen.getByRole('button', { name: 'HSA Transactions' }))
+      fireEvent.click(screen.getByRole('button', { name: 'HSA Transactions' }))
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Reimbursed' })).toBeInTheDocument()
+      })
+    })
+
+    it('calls annotateTransaction with reimbursed when Reimburse is clicked', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ is_hsa_eligible: true, reimbursement_status: null }),
+      ])
+      ;(bankService.annotateTransaction as any).mockResolvedValue(
+        makeTxn({ is_hsa_eligible: true, reimbursement_status: 'reimbursed' })
+      )
+      render(<Transactions />)
+      await waitFor(() => screen.getByRole('button', { name: 'HSA Transactions' }))
+      fireEvent.click(screen.getByRole('button', { name: 'HSA Transactions' }))
+
+      await waitFor(() => screen.getByRole('button', { name: 'Reimburse' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Reimburse' }))
+
+      await waitFor(() => {
+        expect(bankService.annotateTransaction).toHaveBeenCalledWith('txn-1', { reimbursement_status: 'reimbursed' })
+      })
+    })
+
+    it('calls annotateTransaction with null when Reimbursed badge is clicked (undo)', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ is_hsa_eligible: true, reimbursement_status: 'reimbursed' }),
+      ])
+      ;(bankService.annotateTransaction as any).mockResolvedValue(
+        makeTxn({ is_hsa_eligible: true, reimbursement_status: null })
+      )
+      render(<Transactions />)
+      await waitFor(() => screen.getByRole('button', { name: 'HSA Transactions' }))
+      fireEvent.click(screen.getByRole('button', { name: 'HSA Transactions' }))
+
+      // Two buttons named "Reimbursed" exist: the tab + the row toggle. Click the row toggle (last one).
+      await waitFor(() => {
+        const buttons = screen.getAllByRole('button', { name: 'Reimbursed' })
+        expect(buttons.length).toBeGreaterThanOrEqual(2)
+      })
+      const allReimbursed = screen.getAllByRole('button', { name: 'Reimbursed' })
+      const rowToggle = allReimbursed[allReimbursed.length - 1]
+      fireEvent.click(rowToggle)
+
+      await waitFor(() => {
+        expect(bankService.annotateTransaction).toHaveBeenCalledWith('txn-1', { reimbursement_status: null })
+      })
+    })
+  })
+
+  describe('server-side filters', () => {
+    it('sends search term to API after debounce', async () => {
+      render(<Transactions />)
+      await waitFor(() => screen.getByPlaceholderText(/search description/i))
 
       const input = screen.getByPlaceholderText(/search description/i)
       fireEvent.change(input, { target: { value: 'cvs' } })
 
-      expect(screen.getByText('CVS Pharmacy')).toBeInTheDocument()
-      expect(screen.queryByText('Spotify')).not.toBeInTheDocument()
+      await waitFor(() => {
+        const calls = (bankService.listAllTransactions as any).mock.calls
+        expect(calls.some((c: any[]) => c[0]?.search === 'cvs')).toBe(true)
+      })
     })
 
-    it('filters transactions by family member', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([
-        makeTxn({ id: 'txn-1', description: "Jane's Visit", family_member_id: 'member-1' }),
-        makeTxn({ id: 'txn-2', description: 'Other Txn' }),
-      ])
+    it('sends family_member_id to API when member filter changes', async () => {
       ;(familyService.list as any).mockResolvedValue([mockMember])
-
       render(<Transactions />)
-      await waitFor(() => screen.getByText('Other Txn'))
+      await waitFor(() => screen.getByDisplayValue('All people'))
 
-      // The filter bar "All people" select
-      const memberFilter = screen.getAllByRole('combobox').find(
-        el => (el as HTMLSelectElement).value === ''
-          && el.querySelector
-          && el.closest('[class*="flex"]')
-      )
-      // Use the combobox that has "All people" option
-      const allPeopleSelect = screen.getByDisplayValue('All people')
-      fireEvent.change(allPeopleSelect, { target: { value: 'member-1' } })
+      fireEvent.change(screen.getByDisplayValue('All people'), { target: { value: 'member-1' } })
 
-      expect(screen.getByText("Jane's Visit")).toBeInTheDocument()
-      expect(screen.queryByText('Other Txn')).not.toBeInTheDocument()
+      await waitFor(() => {
+        expect(bankService.listAllTransactions).toHaveBeenCalledWith(
+          expect.objectContaining({ family_member_id: 'member-1' })
+        )
+      })
     })
 
-    it('filters transactions by start date', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([
-        makeTxn({ id: 'txn-1', description: 'Recent', transaction_date: '2026-03-15' }),
-        makeTxn({ id: 'txn-2', description: 'Old', transaction_date: '2026-01-01' }),
-      ])
+    it('sends start_date to API when date filter changes', async () => {
       render(<Transactions />)
-      await waitFor(() => screen.getByText('Old'))
+      await waitFor(() => screen.getAllByDisplayValue(''))
 
-      const dateInputs = screen.getAllByDisplayValue('')
-      // First date input is start date
-      const startDateInput = dateInputs.find(el => el.getAttribute('type') === 'date')!
-      fireEvent.change(startDateInput, { target: { value: '2026-03-01' } })
+      const dateInput = screen.getAllByDisplayValue('').find(
+        el => el.getAttribute('type') === 'date'
+      )!
+      fireEvent.change(dateInput, { target: { value: '2026-03-01' } })
 
-      expect(screen.getByText('Recent')).toBeInTheDocument()
-      expect(screen.queryByText('Old')).not.toBeInTheDocument()
+      await waitFor(() => {
+        expect(bankService.listAllTransactions).toHaveBeenCalledWith(
+          expect.objectContaining({ start_date: '2026-03-01' })
+        )
+      })
     })
 
     it('shows Clear button when filters are active', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
       render(<Transactions />)
-      await waitFor(() => screen.getByText('CVS Pharmacy'))
+      await waitFor(() => screen.getByPlaceholderText(/search description/i))
 
       expect(screen.queryByText('Clear')).not.toBeInTheDocument()
 
-      const input = screen.getByPlaceholderText(/search description/i)
-      fireEvent.change(input, { target: { value: 'cvs' } })
+      fireEvent.change(screen.getByPlaceholderText(/search description/i), { target: { value: 'cvs' } })
 
       expect(screen.getByText('Clear')).toBeInTheDocument()
     })
 
-    it('clears all filters when Clear is clicked', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([
-        makeTxn({ id: 'txn-1', description: 'CVS Pharmacy' }),
-        makeTxn({ id: 'txn-2', description: 'Spotify' }),
-      ])
+    it('resets filters and reloads when Clear is clicked', async () => {
       render(<Transactions />)
-      await waitFor(() => screen.getByText('Spotify'))
+      await waitFor(() => screen.getByPlaceholderText(/search description/i))
 
-      const input = screen.getByPlaceholderText(/search description/i)
-      fireEvent.change(input, { target: { value: 'cvs' } })
-      expect(screen.queryByText('Spotify')).not.toBeInTheDocument()
+      fireEvent.change(screen.getByPlaceholderText(/search description/i), { target: { value: 'cvs' } })
+      await waitFor(() => screen.getByText('Clear'))
 
       fireEvent.click(screen.getByText('Clear'))
 
-      expect(screen.getByText('CVS Pharmacy')).toBeInTheDocument()
-      expect(screen.getByText('Spotify')).toBeInTheDocument()
-    })
-
-    it('shows filtered count when filters are active', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([
-        makeTxn({ id: 'txn-1', description: 'CVS Pharmacy' }),
-        makeTxn({ id: 'txn-2', description: 'Spotify' }),
-      ])
-      render(<Transactions />)
-      await waitFor(() => screen.getByText('Spotify'))
-
-      const input = screen.getByPlaceholderText(/search description/i)
-      fireEvent.change(input, { target: { value: 'cvs' } })
-
-      expect(screen.getByText(/filtered from 2/i)).toBeInTheDocument()
+      expect((screen.getByPlaceholderText(/search description/i) as HTMLInputElement).value).toBe('')
     })
   })
 })
