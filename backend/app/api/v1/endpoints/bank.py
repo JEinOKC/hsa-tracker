@@ -291,6 +291,7 @@ async def list_all_transactions(
     is_hsa_eligible: Optional[bool] = Query(None, description="Filter by HSA eligibility (omit = all, true = HSA only, false = non-HSA only)"),
     family_member_id: Optional[UUID] = Query(None),
     status: Optional[str] = Query(None, description="posted or pending"),
+    reimbursement_status: Optional[str] = Query(None, description="Filter by reimbursement status (e.g. 'reimbursed', 'null' for unset)"),
     search: Optional[str] = Query(None, description="Case-insensitive substring match on description"),
     limit: int = Query(50, le=200),
     offset: int = Query(0, ge=0),
@@ -317,6 +318,10 @@ async def list_all_transactions(
         query = query.filter(BankTransaction.family_member_id == family_member_id)
     if status:
         query = query.filter(BankTransaction.status == status)
+    if reimbursement_status == 'null':
+        query = query.filter(BankTransaction.reimbursement_status.is_(None))
+    elif reimbursement_status:
+        query = query.filter(BankTransaction.reimbursement_status == reimbursement_status)
     if search:
         query = query.filter(BankTransaction.description.ilike(f"%{search}%"))
 

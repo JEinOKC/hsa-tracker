@@ -57,7 +57,7 @@ export default function RegisterForm() {
           onChange={(e) => setDisplayName(e.target.value)}
           required
           disabled={isLoading}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
           placeholder="John Doe"
         />
       </div>
@@ -73,7 +73,7 @@ export default function RegisterForm() {
           onChange={(e) => setEmail(e.target.value)}
           required
           disabled={isLoading}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
           placeholder="you@example.com"
         />
       </div>
@@ -90,7 +90,7 @@ export default function RegisterForm() {
           required
           disabled={isLoading}
           minLength={8}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
           placeholder="••••••••"
         />
         <p className="mt-1 text-sm text-gray-500">Must be at least 8 characters</p>
@@ -107,7 +107,7 @@ export default function RegisterForm() {
           onChange={(e) => setConfirmPassword(e.target.value)}
           required
           disabled={isLoading}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
           placeholder="••••••••"
         />
       </div>
@@ -121,7 +121,7 @@ export default function RegisterForm() {
       <button
         type="submit"
         disabled={isLoading}
-        className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+        className="w-full bg-sky-600 hover:bg-sky-700 disabled:bg-sky-300 text-white font-medium py-2 px-4 rounded-lg transition-colors"
       >
         {isLoading ? 'Creating account...' : 'Create Account'}
       </button>

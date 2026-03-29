@@ -59,6 +59,7 @@ export interface AllTransactionsParams {
   is_hsa_eligible?: boolean
   family_member_id?: string
   status?: string
+  reimbursement_status?: string
   search?: string
   limit?: number
   offset?: number

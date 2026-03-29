@@ -97,7 +97,7 @@ export default function Dashboard() {
             onClick={() => setRange(r)}
             className={`px-3 py-1 text-sm font-medium rounded transition-colors ${
               range === r
-                ? 'bg-blue-600 text-white'
+                ? 'bg-sky-600 text-white'
                 : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'
             }`}
           >
@@ -138,7 +138,7 @@ export default function Dashboard() {
             {loading ? '—' : (summary?.hsa_transaction_count ?? 0)}
           </p>
           <p className="text-sm text-gray-500 mt-2">
-            <Link to="/transactions?tab=hsa" className="text-blue-600 hover:text-blue-800">
+            <Link to="/transactions?tab=hsa" className="text-sky-600 hover:text-sky-800">
               View HSA transactions →
             </Link>
           </p>
@@ -153,7 +153,7 @@ export default function Dashboard() {
             {steps.map((step, i) => (
               <div key={i} className="flex items-start gap-4">
                 <div className={`mt-0.5 flex-shrink-0 h-6 w-6 rounded-full flex items-center justify-center text-sm font-medium ${
-                  step.done ? 'bg-green-100 text-green-600' : 'bg-blue-500 text-white'
+                  step.done ? 'bg-green-100 text-green-600' : 'bg-sky-500 text-white'
                 }`}>
                   {step.done ? '✓' : i + 1}
                 </div>
@@ -164,7 +164,7 @@ export default function Dashboard() {
                   {!step.done && (
                     <>
                       <p className="text-sm text-gray-500">{step.description}</p>
-                      <Link to={step.link} className="text-sm text-blue-600 hover:text-blue-800">
+                      <Link to={step.link} className="text-sm text-sky-600 hover:text-sky-800">
                         {step.linkLabel}
                       </Link>
                     </>

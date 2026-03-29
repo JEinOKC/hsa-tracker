@@ -1,40 +1,129 @@
-/**
- * Dashboard page tests - documents current placeholder state.
- * Update these tests when real data fetching is implemented.
- */
-
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '../../test/utils'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, waitFor } from '../../test/utils'
 import Dashboard from '../Dashboard'
 
-describe('Dashboard (placeholder)', () => {
-  it('renders page title', () => {
+vi.mock('../../services/bank', () => ({
+  bankService: {
+    getDashboardSummary: vi.fn(),
+  },
+}))
+
+import { bankService } from '../../services/bank'
+
+const fullSummary = {
+  hsa_spending: 0,
+  pending_reimbursement: 0,
+  hsa_transaction_count: 0,
+  has_family_members: false,
+  has_bank_connections: false,
+  has_synced_transactions: false,
+  has_hsa_transactions: false,
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  ;(bankService.getDashboardSummary as any).mockResolvedValue(fullSummary)
+})
+
+describe('Dashboard', () => {
+  it('renders page title', async () => {
     render(<Dashboard />)
     expect(screen.getByText('HSA Tracker')).toBeInTheDocument()
   })
 
-  it('shows three $0.00 dashboard cards', () => {
+  it('shows all time-range buttons', async () => {
     render(<Dashboard />)
-    const zeroes = screen.getAllByText('$0.00')
-    expect(zeroes).toHaveLength(3)
+    for (const label of ['1D', '1W', '1M', '3M', '6M', 'YTD', '1Y', '2Y', '5Y', '10Y', 'ALL']) {
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
+    }
   })
 
-  it('shows Current Balance card', () => {
+  it('defaults to YTD range and passes start_date to API', async () => {
     render(<Dashboard />)
-    expect(screen.getByText('Current Balance')).toBeInTheDocument()
-    expect(screen.getByText('No HSA account connected')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(bankService.getDashboardSummary).toHaveBeenCalledWith(
+        expect.objectContaining({ start_date: expect.stringMatching(/^\d{4}-01-01$/) })
+      )
+    })
   })
 
-  it('shows getting started steps', () => {
+  it('passes no start_date when ALL range is selected', async () => {
     render(<Dashboard />)
-    expect(screen.getByText('Set up your family')).toBeInTheDocument()
-    expect(screen.getByText('Configure AWS S3')).toBeInTheDocument()
-    expect(screen.getByText('Add your first transaction')).toBeInTheDocument()
+    await waitFor(() => screen.getByRole('button', { name: 'ALL' }))
+
+    screen.getByRole('button', { name: 'ALL' }).click()
+
+    await waitFor(() => {
+      const calls = (bankService.getDashboardSummary as any).mock.calls
+      const lastCall = calls[calls.length - 1][0]
+      expect(lastCall.start_date).toBeUndefined()
+    })
   })
 
-  it('has link to transactions page', () => {
+  it('shows stat card labels', async () => {
     render(<Dashboard />)
-    const link = screen.getByText(/start tracking expenses/i)
-    expect(link).toHaveAttribute('href', '/transactions')
+    await waitFor(() => {
+      expect(screen.getByText('HSA Spending')).toBeInTheDocument()
+      expect(screen.getByText('Pending Reimbursement')).toBeInTheDocument()
+      expect(screen.getByText('HSA Transactions')).toBeInTheDocument()
+    })
+  })
+
+  it('displays formatted spending from API', async () => {
+    ;(bankService.getDashboardSummary as any).mockResolvedValue({
+      ...fullSummary,
+      hsa_spending: 250.75,
+      hsa_transaction_count: 3,
+    })
+    render(<Dashboard />)
+    await waitFor(() => {
+      expect(screen.getByText('$250.75')).toBeInTheDocument()
+      expect(screen.getByText(/3 flagged transactions/i)).toBeInTheDocument()
+    })
+  })
+
+  it('shows getting started checklist when setup is incomplete', async () => {
+    render(<Dashboard />)
+    await waitFor(() => {
+      expect(screen.getByText('Getting Started')).toBeInTheDocument()
+      expect(screen.getByText('Add family members')).toBeInTheDocument()
+      expect(screen.getByText('Connect a bank account')).toBeInTheDocument()
+      expect(screen.getByText('Sync transactions')).toBeInTheDocument()
+      expect(screen.getByText('Flag HSA transactions')).toBeInTheDocument()
+    })
+  })
+
+  it('hides checklist when all setup steps are complete', async () => {
+    ;(bankService.getDashboardSummary as any).mockResolvedValue({
+      ...fullSummary,
+      has_family_members: true,
+      has_bank_connections: true,
+      has_synced_transactions: true,
+      has_hsa_transactions: true,
+    })
+    render(<Dashboard />)
+    await waitFor(() => {
+      expect(screen.queryByText('Getting Started')).not.toBeInTheDocument()
+    })
+  })
+
+  it('shows completed steps as struck-through', async () => {
+    ;(bankService.getDashboardSummary as any).mockResolvedValue({
+      ...fullSummary,
+      has_family_members: true,
+    })
+    render(<Dashboard />)
+    await waitFor(() => {
+      const step = screen.getByText('Add family members')
+      expect(step.className).toContain('line-through')
+    })
+  })
+
+  it('has link to HSA transactions tab', async () => {
+    render(<Dashboard />)
+    await waitFor(() => {
+      const link = screen.getByText(/view HSA transactions/i)
+      expect(link.closest('a')).toHaveAttribute('href', '/transactions?tab=hsa')
+    })
   })
 })

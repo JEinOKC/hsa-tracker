@@ -66,7 +66,7 @@ function AddMemberForm({ onSave, onCancel }: AddMemberFormProps) {
             type="text"
             value={form.name}
             onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
             placeholder="Full name"
           />
         </div>
@@ -76,7 +76,7 @@ function AddMemberForm({ onSave, onCancel }: AddMemberFormProps) {
           <select
             value={form.member_relationship}
             onChange={e => setForm(f => ({ ...f, member_relationship: e.target.value }))}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
           >
             {RELATIONSHIPS.map(r => (
               <option key={r} value={r} className="capitalize">{r.charAt(0).toUpperCase() + r.slice(1)}</option>
@@ -90,7 +90,7 @@ function AddMemberForm({ onSave, onCancel }: AddMemberFormProps) {
             type="date"
             value={form.date_of_birth || ''}
             onChange={e => setForm(f => ({ ...f, date_of_birth: e.target.value || null }))}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
           />
         </div>
 
@@ -100,7 +100,7 @@ function AddMemberForm({ onSave, onCancel }: AddMemberFormProps) {
             id="is_tax_dependent"
             checked={form.is_tax_dependent}
             onChange={e => setForm(f => ({ ...f, is_tax_dependent: e.target.checked }))}
-            className="h-4 w-4 text-blue-600 rounded"
+            className="h-4 w-4 text-sky-600 rounded"
           />
           <label htmlFor="is_tax_dependent" className="ml-2 text-sm text-gray-700">
             Tax dependent (IRS)
@@ -117,7 +117,7 @@ function AddMemberForm({ onSave, onCancel }: AddMemberFormProps) {
               type="date"
               value={form.eligibility_start || ''}
               onChange={e => setForm(f => ({ ...f, eligibility_start: e.target.value || null }))}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
             />
           </div>
           <div>
@@ -126,7 +126,7 @@ function AddMemberForm({ onSave, onCancel }: AddMemberFormProps) {
               type="date"
               value={form.eligibility_end || ''}
               onChange={e => setForm(f => ({ ...f, eligibility_end: e.target.value || null }))}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
             />
           </div>
         </div>
@@ -139,7 +139,7 @@ function AddMemberForm({ onSave, onCancel }: AddMemberFormProps) {
         <button
           type="submit"
           disabled={saving}
-          className="px-5 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50"
+          className="px-5 py-2 text-sm bg-sky-600 hover:bg-sky-700 text-white rounded-lg disabled:opacity-50"
         >
           {saving ? 'Saving…' : 'Add Member'}
         </button>
@@ -197,7 +197,7 @@ function EligibilityManager({ member, onUpdated }: EligibilityManagerProps) {
         <p className="text-sm font-medium text-gray-600">HSA Eligibility Periods</p>
         <button
           onClick={() => setAdding(!adding)}
-          className="text-xs text-blue-600 hover:text-blue-800"
+          className="text-xs text-sky-600 hover:text-sky-800"
         >
           + Add Period
         </button>
@@ -258,7 +258,7 @@ function EligibilityManager({ member, onUpdated }: EligibilityManagerProps) {
             <button
               type="submit"
               disabled={saving}
-              className="text-xs bg-blue-600 text-white px-3 py-1 rounded disabled:opacity-50"
+              className="text-xs bg-sky-600 text-white px-3 py-1 rounded disabled:opacity-50"
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
@@ -298,7 +298,7 @@ function MemberCard({ member, onUpdated, onDeactivated }: MemberCardProps) {
               {member.member_relationship}
             </span>
             {member.is_tax_dependent && (
-              <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Tax Dependent</span>
+              <span className="text-xs text-sky-600 bg-sky-50 px-2 py-0.5 rounded">Tax Dependent</span>
             )}
           </div>
           <div className="flex items-center gap-3 mt-1">
@@ -311,7 +311,7 @@ function MemberCard({ member, onUpdated, onDeactivated }: MemberCardProps) {
         <div className="flex gap-2">
           <button
             onClick={() => setExpanded(!expanded)}
-            className="text-sm text-blue-600 hover:text-blue-800"
+            className="text-sm text-sky-600 hover:text-sky-800"
           >
             {expanded ? 'Hide' : 'Eligibility'}
           </button>
@@ -383,7 +383,7 @@ export default function FamilyMembers() {
         {!showAddForm && (
           <button
             onClick={() => setShowAddForm(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-5 py-2 rounded-lg"
+            className="bg-sky-600 hover:bg-sky-700 text-white font-medium px-5 py-2 rounded-lg"
           >
             + Add Member
           </button>
@@ -402,7 +402,7 @@ export default function FamilyMembers() {
         </div>
       )}
 
-      <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-6 text-sm text-blue-800">
+      <div className="bg-sky-50 border border-sky-100 rounded-lg p-4 mb-6 text-sm text-sky-800">
         <strong>About eligibility periods:</strong> Each family member can have one or more date ranges when they were covered by an HDHP and HSA-eligible. When you tag a transaction to a family member, we'll automatically warn you if they weren't eligible on that date.
       </div>
 
