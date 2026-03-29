@@ -12,6 +12,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSON, UUID
@@ -26,6 +27,12 @@ class BankConnection(Base):
     __tablename__ = "bank_connections"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     provider = Column(String(50), nullable=False)           # "teller"
     provider_account_id = Column(String(255), nullable=False, index=True)
     account_name = Column(String(255), nullable=False)
@@ -76,9 +83,23 @@ class BankTransaction(Base):
     status = Column(String(20), nullable=False)             # "posted", "pending"
     details = Column(JSON, nullable=True)                   # raw provider-specific fields
 
+    # HSA annotations — set by the user on the Transactions page
+    # NULL = unreviewed, True = HSA-eligible, False = not eligible
+    is_hsa_eligible = Column(Boolean, nullable=True, index=True)
+    family_member_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("family_members.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    hsa_category = Column(String(100), nullable=True)       # "medical", "dental", etc.
+    reimbursement_status = Column(String(20), nullable=True) # "pending","reimbursed","not_needed"
+    notes = Column(Text, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     connection = relationship("BankConnection", back_populates="transactions")
+    family_member = relationship("FamilyMember", foreign_keys=[family_member_id])
 
     __table_args__ = (
         UniqueConstraint(

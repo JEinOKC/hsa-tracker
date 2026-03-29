@@ -34,6 +34,34 @@ export interface BankTransaction {
   status: string
   details: Record<string, unknown> | null
   created_at: string
+  // HSA annotations
+  is_hsa_eligible: boolean | null
+  family_member_id: string | null
+  hsa_category: string | null
+  reimbursement_status: string | null
+  notes: string | null
+  // Denormalised for display
+  account_name: string | null
+  institution_name: string | null
+}
+
+export interface BankTransactionAnnotation {
+  is_hsa_eligible?: boolean | null
+  family_member_id?: string | null
+  hsa_category?: string | null
+  reimbursement_status?: string | null
+  notes?: string | null
+}
+
+export interface AllTransactionsParams {
+  start_date?: string
+  end_date?: string
+  is_hsa_eligible?: boolean
+  family_member_id?: string
+  status?: string
+  search?: string
+  limit?: number
+  offset?: number
 }
 
 export interface SyncResult {
@@ -42,12 +70,43 @@ export interface SyncResult {
   account_id: string
 }
 
+export const HSA_CATEGORIES = [
+  { value: 'medical', label: 'Medical Care' },
+  { value: 'dental', label: 'Dental Care' },
+  { value: 'vision', label: 'Vision Care' },
+  { value: 'prescription', label: 'Prescription' },
+  { value: 'otc', label: 'Over-the-Counter' },
+  { value: 'mental_health', label: 'Mental Health' },
+  { value: 'medical_equipment', label: 'Medical Equipment' },
+  { value: 'preventive', label: 'Preventive Care' },
+  { value: 'other', label: 'Other HSA' },
+]
+
+export interface DashboardSummary {
+  hsa_spending: number
+  pending_reimbursement: number
+  hsa_transaction_count: number
+  has_family_members: boolean
+  has_bank_connections: boolean
+  has_synced_transactions: boolean
+  has_hsa_transactions: boolean
+}
+
 export const bankService = {
   getStatus: () =>
     api.get<BankStatus>('/bank/status').then(r => r.data),
 
+  getDashboardSummary: (params?: { start_date?: string; end_date?: string }) =>
+    api.get<DashboardSummary>('/bank/summary', { params }).then(r => r.data),
+
   connect: (accessToken: string) =>
     api.post<BankAccount[]>('/bank/connect', { access_token: accessToken }).then(r => r.data),
+
+  listAllTransactions: (params?: AllTransactionsParams) =>
+    api.get<BankTransaction[]>('/bank/transactions', { params }).then(r => r.data),
+
+  annotateTransaction: (id: string, annotation: BankTransactionAnnotation) =>
+    api.patch<BankTransaction>(`/bank/transactions/${id}`, annotation).then(r => r.data),
 
   listAccounts: () =>
     api.get<BankAccount[]>('/bank/accounts').then(r => r.data),
