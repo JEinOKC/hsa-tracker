@@ -39,10 +39,12 @@ export interface BankTransaction {
   family_member_id: string | null
   hsa_category: string | null
   reimbursement_status: string | null
+  reimbursed_at: string | null
   notes: string | null
   // Denormalised for display
   account_name: string | null
   institution_name: string | null
+  document_count: number
 }
 
 export interface BankTransactionAnnotation {
@@ -50,6 +52,7 @@ export interface BankTransactionAnnotation {
   family_member_id?: string | null
   hsa_category?: string | null
   reimbursement_status?: string | null
+  reimbursed_at?: string | null
   notes?: string | null
 }
 
@@ -60,6 +63,7 @@ export interface AllTransactionsParams {
   family_member_id?: string
   status?: string
   reimbursement_status?: string
+  has_documents?: boolean
   search?: string
   limit?: number
   offset?: number
@@ -87,6 +91,7 @@ export interface DashboardSummary {
   hsa_spending: number
   pending_reimbursement: number
   hsa_transaction_count: number
+  undocumented_hsa_count: number
   has_family_members: boolean
   has_bank_connections: boolean
   has_synced_transactions: boolean

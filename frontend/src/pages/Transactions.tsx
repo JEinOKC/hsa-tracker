@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { bankService, BankTransaction, HSA_CATEGORIES } from '../services/bank'
 import { familyService, FamilyMember } from '../services/family'
+import DocumentUpload from '../components/DocumentUpload'
 
 function formatAmount(amount: string): string {
   const n = parseFloat(amount)
@@ -143,12 +144,32 @@ interface ReimburseToggleProps {
 
 function ReimburseToggle({ txn, onChange }: ReimburseToggleProps) {
   const [saving, setSaving] = useState(false)
+  const [pickingDate, setPickingDate] = useState(false)
+  const [reimburseDate, setReimburseDate] = useState(
+    () => new Date().toISOString().slice(0, 10)
+  )
 
-  const toggle = async () => {
-    const next = txn.reimbursement_status === 'reimbursed' ? null : 'reimbursed'
+  const confirm = async () => {
+    setSaving(true)
+    setPickingDate(false)
+    try {
+      const updated = await bankService.annotateTransaction(txn.id, {
+        reimbursement_status: 'reimbursed',
+        reimbursed_at: reimburseDate ? new Date(reimburseDate).toISOString() : undefined,
+      })
+      onChange(updated)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const unmark = async () => {
     setSaving(true)
     try {
-      const updated = await bankService.annotateTransaction(txn.id, { reimbursement_status: next })
+      const updated = await bankService.annotateTransaction(txn.id, {
+        reimbursement_status: null,
+        reimbursed_at: null,
+      })
       onChange(updated)
     } finally {
       setSaving(false)
@@ -159,12 +180,31 @@ function ReimburseToggle({ txn, onChange }: ReimburseToggleProps) {
 
   if (txn.reimbursement_status === 'reimbursed')
     return (
-      <button onClick={toggle} className="text-xs font-medium px-2 py-0.5 rounded bg-purple-100 text-purple-700 hover:bg-purple-200 w-24">
+      <button onClick={unmark} className="text-xs font-medium px-2 py-0.5 rounded bg-purple-100 text-purple-700 hover:bg-purple-200 w-24">
         Reimbursed
       </button>
     )
+
+  if (pickingDate)
+    return (
+      <span className="flex items-center gap-1">
+        <input
+          type="date"
+          value={reimburseDate}
+          onChange={e => setReimburseDate(e.target.value)}
+          className="text-xs border border-gray-300 rounded px-1 py-0.5"
+        />
+        <button onClick={confirm} className="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-600 text-white hover:bg-purple-700">
+          Save
+        </button>
+        <button onClick={() => setPickingDate(false)} className="text-xs text-gray-400 hover:text-gray-600">
+          ✕
+        </button>
+      </span>
+    )
+
   return (
-    <button onClick={toggle} className="text-xs font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-400 hover:bg-gray-200 w-24">
+    <button onClick={() => setPickingDate(true)} className="text-xs font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-400 hover:bg-gray-200 w-24">
       Reimburse
     </button>
   )
@@ -181,48 +221,95 @@ interface TxnRowProps {
 
 function TxnRow({ txn, members, tab, onChange }: TxnRowProps) {
   const amount = parseFloat(txn.amount)
+  const [expanded, setExpanded] = useState(false)
+  const [docCount, setDocCount] = useState(txn.document_count ?? 0)
+
+  const handleDocCountChange = (count: number) => {
+    setDocCount(count)
+    onChange({ ...txn, document_count: count })
+  }
+
+  const showNoReceiptBadge = txn.is_hsa_eligible && docCount === 0
+
   return (
-    <div className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 border-b border-gray-50 last:border-0">
-      {/* Date */}
-      <span className="text-xs text-gray-400 w-24 shrink-0">{formatDate(txn.transaction_date)}</span>
+    <div className="border-b border-gray-50 last:border-0">
+      <div className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50">
+        {/* Date */}
+        <span className="text-xs text-gray-400 w-24 shrink-0">{formatDate(txn.transaction_date)}</span>
 
-      {/* Description + account */}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm text-gray-900 truncate">{txn.description || '(no description)'}</p>
-        <p className="text-xs text-gray-400 truncate">
-          {txn.institution_name || txn.account_name || ''}
-          {txn.account_name && txn.institution_name ? ` · ${txn.account_name}` : ''}
-        </p>
+        {/* Description + account */}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-gray-900 truncate">{txn.description || '(no description)'}</p>
+          <p className="text-xs text-gray-400 truncate">
+            {txn.institution_name || txn.account_name || ''}
+            {txn.account_name && txn.institution_name ? ` · ${txn.account_name}` : ''}
+          </p>
+        </div>
+
+        {/* Amount */}
+        <span className={`text-sm font-semibold w-20 text-right shrink-0 ${amount < 0 ? 'text-gray-900' : 'text-green-600'}`}>
+          {formatAmount(txn.amount)}
+        </span>
+
+        {/* No-receipt warning badge */}
+        {showNoReceiptBadge && (
+          <span
+            title="No receipt attached"
+            className="text-xs font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-600 shrink-0"
+          >
+            !
+          </span>
+        )}
+
+        {/* HSA toggle (not shown on reimbursed tab) */}
+        {tab !== 'reimbursed' && (
+          <div className="shrink-0">
+            <HsaToggle txn={txn} onChange={onChange} />
+          </div>
+        )}
+
+        {/* Person picker */}
+        <div className="shrink-0">
+          <MemberPicker txn={txn} members={members} onChange={onChange} />
+        </div>
+
+        {/* Category (HSA + reimbursed tabs) */}
+        {(tab === 'hsa' || tab === 'reimbursed') && (
+          <div className="shrink-0">
+            <CategoryPicker txn={txn} onChange={onChange} />
+          </div>
+        )}
+
+        {/* Reimburse toggle (HSA + reimbursed tabs) */}
+        {(tab === 'hsa' || tab === 'reimbursed') && (
+          <div className="shrink-0">
+            <ReimburseToggle txn={txn} onChange={onChange} />
+          </div>
+        )}
+
+        {/* Attachment toggle */}
+        <button
+          onClick={() => setExpanded(e => !e)}
+          title={expanded ? 'Hide receipts' : 'Attach receipts'}
+          className={`shrink-0 text-sm px-1.5 py-0.5 rounded transition-colors ${
+            expanded
+              ? 'text-blue-600 bg-blue-50'
+              : docCount > 0
+                ? 'text-blue-500 hover:bg-blue-50'
+                : 'text-gray-300 hover:text-gray-500'
+          }`}
+        >
+          📎{docCount > 0 ? ` ${docCount}` : ''}
+        </button>
       </div>
 
-      {/* Amount */}
-      <span className={`text-sm font-semibold w-20 text-right shrink-0 ${amount < 0 ? 'text-gray-900' : 'text-green-600'}`}>
-        {formatAmount(txn.amount)}
-      </span>
-
-      {/* HSA toggle (not shown on reimbursed tab) */}
-      {tab !== 'reimbursed' && (
-        <div className="shrink-0">
-          <HsaToggle txn={txn} onChange={onChange} />
-        </div>
-      )}
-
-      {/* Person picker */}
-      <div className="shrink-0">
-        <MemberPicker txn={txn} members={members} onChange={onChange} />
-      </div>
-
-      {/* Category (HSA + reimbursed tabs) */}
-      {(tab === 'hsa' || tab === 'reimbursed') && (
-        <div className="shrink-0">
-          <CategoryPicker txn={txn} onChange={onChange} />
-        </div>
-      )}
-
-      {/* Reimburse toggle (HSA + reimbursed tabs) */}
-      {(tab === 'hsa' || tab === 'reimbursed') && (
-        <div className="shrink-0">
-          <ReimburseToggle txn={txn} onChange={onChange} />
+      {/* Expandable document panel */}
+      {expanded && (
+        <div className="px-4 pb-3">
+          <DocumentUpload
+            transactionId={txn.id}
+            onCountChange={handleDocCountChange}
+          />
         </div>
       )}
     </div>
@@ -238,6 +325,8 @@ export default function Transactions() {
   const [searchParams, setSearchParams] = useSearchParams()
   const rawTab = searchParams.get('tab')
   const tab: Tab = rawTab === 'hsa' ? 'hsa' : rawTab === 'reimbursed' ? 'reimbursed' : 'all'
+  const rawDocs = searchParams.get('docs')
+  const filterDocs = rawDocs === 'missing' ? 'missing' : rawDocs === 'attached' ? 'attached' : ''
 
   const [transactions, setTransactions] = useState<BankTransaction[]>([])
   const [members, setMembers] = useState<FamilyMember[]>([])
@@ -273,13 +362,14 @@ export default function Transactions() {
   const buildParams = useCallback((offset: number) => ({
     is_hsa_eligible: (tab === 'hsa' || tab === 'reimbursed') ? true : undefined,
     reimbursement_status: tab === 'reimbursed' ? 'reimbursed' : tab === 'hsa' ? 'null' : undefined,
+    has_documents: filterDocs === 'missing' ? false : filterDocs === 'attached' ? true : undefined,
     search: debouncedSearch || undefined,
     family_member_id: filterMember || undefined,
     start_date: startDate || undefined,
     end_date: endDate || undefined,
     limit: PAGE_SIZE,
     offset,
-  }), [tab, debouncedSearch, filterMember, startDate, endDate])
+  }), [tab, filterDocs, debouncedSearch, filterMember, startDate, endDate])
 
   // Initial / filter-change load — resets the list
   const load = useCallback(async () => {
@@ -343,19 +433,27 @@ export default function Transactions() {
     setEndDate('')
   }
 
+  const setDocsFilter = (val: string) => {
+    const params: Record<string, string> = {}
+    if (tab !== 'all') params.tab = tab
+    if (val) params.docs = val
+    setSearchParams(params)
+  }
+
   const clearFilters = () => {
     setSearch('')
     setDebouncedSearch('')
     setFilterMember('')
     setStartDate('')
     setEndDate('')
+    setSearchParams(tab !== 'all' ? { tab } : {})
   }
 
   const tabTotal = (tab === 'hsa' || tab === 'reimbursed')
     ? transactions.reduce((sum, t) => sum + parseFloat(t.amount), 0)
     : null
 
-  const hasFilters = !!(search || filterMember || startDate || endDate)
+  const hasFilters = !!(search || filterMember || startDate || endDate || filterDocs)
 
   return (
     <>
@@ -426,6 +524,15 @@ export default function Transactions() {
           onChange={e => setEndDate(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
         />
+        <select
+          value={filterDocs}
+          onChange={e => setDocsFilter(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+        >
+          <option value="">Any docs</option>
+          <option value="missing">Missing receipts</option>
+          <option value="attached">Has receipts</option>
+        </select>
         {hasFilters && (
           <button
             onClick={clearFilters}
@@ -445,6 +552,7 @@ export default function Transactions() {
         <span className="w-[110px] shrink-0">Person</span>
         {(tab === 'hsa' || tab === 'reimbursed') && <span className="w-[130px] shrink-0">Category</span>}
         {(tab === 'hsa' || tab === 'reimbursed') && <span className="w-24 shrink-0">Reimbursed?</span>}
+        <span className="shrink-0">📎</span>
       </div>
 
       {/* Body */}

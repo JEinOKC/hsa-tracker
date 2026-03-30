@@ -20,8 +20,15 @@ vi.mock('../../services/family', () => ({
   },
 }))
 
+vi.mock('../../services/documents', () => ({
+  documentService: {
+    list: vi.fn(),
+  },
+}))
+
 import { bankService } from '../../services/bank'
 import { familyService } from '../../services/family'
+import { documentService } from '../../services/documents'
 
 const makeTxn = (overrides = {}) => ({
   id: 'txn-1',
@@ -39,9 +46,11 @@ const makeTxn = (overrides = {}) => ({
   family_member_id: null,
   hsa_category: null,
   reimbursement_status: null,
+  reimbursed_at: null,
   notes: null,
   account_name: 'HSA Checking',
   institution_name: 'First Bank',
+  document_count: 0,
   ...overrides,
 })
 
@@ -57,6 +66,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   ;(bankService.listAllTransactions as any).mockResolvedValue([])
   ;(familyService.list as any).mockResolvedValue([])
+  ;(documentService.list as any).mockResolvedValue([])
 })
 
 describe('Transactions page', () => {
@@ -456,7 +466,7 @@ describe('Transactions page', () => {
       })
     })
 
-    it('calls annotateTransaction with reimbursed when Reimburse is clicked', async () => {
+    it('calls annotateTransaction with reimbursed when Reimburse is clicked and date saved', async () => {
       ;(bankService.listAllTransactions as any).mockResolvedValue([
         makeTxn({ is_hsa_eligible: true, reimbursement_status: null }),
       ])
@@ -470,12 +480,19 @@ describe('Transactions page', () => {
       await waitFor(() => screen.getByRole('button', { name: 'Reimburse' }))
       fireEvent.click(screen.getByRole('button', { name: 'Reimburse' }))
 
+      // Date picker appears — click Save to confirm
+      await waitFor(() => screen.getByRole('button', { name: 'Save' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
       await waitFor(() => {
-        expect(bankService.annotateTransaction).toHaveBeenCalledWith('txn-1', { reimbursement_status: 'reimbursed' })
+        expect(bankService.annotateTransaction).toHaveBeenCalledWith('txn-1', {
+          reimbursement_status: 'reimbursed',
+          reimbursed_at: expect.any(String),
+        })
       })
     })
 
-    it('calls annotateTransaction with null when Reimbursed badge is clicked (undo)', async () => {
+    it('calls annotateTransaction with null reimbursement when Reimbursed badge is clicked (undo)', async () => {
       ;(bankService.listAllTransactions as any).mockResolvedValue([
         makeTxn({ is_hsa_eligible: true, reimbursement_status: 'reimbursed' }),
       ])
@@ -496,7 +513,203 @@ describe('Transactions page', () => {
       fireEvent.click(rowToggle)
 
       await waitFor(() => {
-        expect(bankService.annotateTransaction).toHaveBeenCalledWith('txn-1', { reimbursement_status: null })
+        expect(bankService.annotateTransaction).toHaveBeenCalledWith('txn-1', {
+          reimbursement_status: null,
+          reimbursed_at: null,
+        })
+      })
+    })
+  })
+
+  describe('ReimburseToggle date picker', () => {
+    it('shows date input after clicking Reimburse', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ is_hsa_eligible: true, reimbursement_status: null }),
+      ])
+      render(<Transactions />)
+      await waitFor(() => screen.getByRole('button', { name: 'HSA Transactions' }))
+      fireEvent.click(screen.getByRole('button', { name: 'HSA Transactions' }))
+
+      await waitFor(() => screen.getByRole('button', { name: 'Reimburse' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Reimburse' }))
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+      })
+    })
+
+    it('cancels date picker when ✕ is clicked', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ is_hsa_eligible: true, reimbursement_status: null }),
+      ])
+      render(<Transactions />)
+      await waitFor(() => screen.getByRole('button', { name: 'HSA Transactions' }))
+      fireEvent.click(screen.getByRole('button', { name: 'HSA Transactions' }))
+
+      await waitFor(() => screen.getByRole('button', { name: 'Reimburse' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Reimburse' }))
+
+      await waitFor(() => screen.getByRole('button', { name: 'Save' }))
+      fireEvent.click(screen.getByRole('button', { name: '✕' }))
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Reimburse' })).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('receipt attachment badge', () => {
+    it('shows amber badge for HSA transaction with no documents', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ is_hsa_eligible: true, document_count: 0 }),
+      ])
+      render(<Transactions />)
+      await waitFor(() => {
+        expect(screen.getByTitle('No receipt attached')).toBeInTheDocument()
+      })
+    })
+
+    it('does not show amber badge for non-HSA transaction', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ is_hsa_eligible: false, document_count: 0 }),
+      ])
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+      expect(screen.queryByTitle('No receipt attached')).not.toBeInTheDocument()
+    })
+
+    it('does not show amber badge for HSA transaction that has documents', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ is_hsa_eligible: true, document_count: 1 }),
+      ])
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+      expect(screen.queryByTitle('No receipt attached')).not.toBeInTheDocument()
+    })
+
+    it('shows paperclip toggle button per row', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      render(<Transactions />)
+      await waitFor(() => {
+        expect(screen.getByTitle('Attach receipts')).toBeInTheDocument()
+      })
+    })
+
+    it('shows document count on paperclip when documents exist', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ document_count: 3 }),
+      ])
+      render(<Transactions />)
+      await waitFor(() => {
+        expect(screen.getByTitle('Attach receipts')).toHaveTextContent('3')
+      })
+    })
+
+    it('expands DocumentUpload panel when paperclip is clicked', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      render(<Transactions />)
+      await waitFor(() => screen.getByTitle('Attach receipts'))
+
+      fireEvent.click(screen.getByTitle('Attach receipts'))
+
+      await waitFor(() => {
+        expect(screen.getByText(/no receipts attached yet/i)).toBeInTheDocument()
+      })
+    })
+
+    it('collapses DocumentUpload panel when paperclip is clicked again', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      render(<Transactions />)
+      await waitFor(() => screen.getByTitle('Attach receipts'))
+
+      fireEvent.click(screen.getByTitle('Attach receipts'))
+      await waitFor(() => screen.getByText(/no receipts attached yet/i))
+
+      fireEvent.click(screen.getByTitle('Hide receipts'))
+
+      await waitFor(() => {
+        expect(screen.queryByText(/no receipts attached yet/i)).not.toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('docs filter', () => {
+    it('renders the docs filter dropdown', async () => {
+      render(<Transactions />)
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Any docs')).toBeInTheDocument()
+      })
+    })
+
+    it('sends has_documents=false when Missing receipts is selected', async () => {
+      render(<Transactions />)
+      await waitFor(() => screen.getByDisplayValue('Any docs'))
+
+      fireEvent.change(screen.getByDisplayValue('Any docs'), { target: { value: 'missing' } })
+
+      await waitFor(() => {
+        expect(bankService.listAllTransactions).toHaveBeenCalledWith(
+          expect.objectContaining({ has_documents: false })
+        )
+      })
+    })
+
+    it('sends has_documents=true when Has receipts is selected', async () => {
+      render(<Transactions />)
+      await waitFor(() => screen.getByDisplayValue('Any docs'))
+
+      fireEvent.change(screen.getByDisplayValue('Any docs'), { target: { value: 'attached' } })
+
+      await waitFor(() => {
+        expect(bankService.listAllTransactions).toHaveBeenCalledWith(
+          expect.objectContaining({ has_documents: true })
+        )
+      })
+    })
+
+    it('sends no has_documents param when Any docs is selected', async () => {
+      render(<Transactions />)
+      await waitFor(() => screen.getByDisplayValue('Any docs'))
+
+      fireEvent.change(screen.getByDisplayValue('Any docs'), { target: { value: 'missing' } })
+      await waitFor(() => screen.getByDisplayValue('Missing receipts'))
+
+      fireEvent.change(screen.getByDisplayValue('Missing receipts'), { target: { value: '' } })
+
+      await waitFor(() => {
+        const calls = (bankService.listAllTransactions as any).mock.calls
+        const lastCall = calls[calls.length - 1][0]
+        expect(lastCall.has_documents).toBeUndefined()
+      })
+    })
+
+    it('treats docs=missing URL param as an active filter', async () => {
+      render(<Transactions />, { initialEntries: ['/?tab=hsa&docs=missing'] })
+      await waitFor(() => {
+        expect(bankService.listAllTransactions).toHaveBeenCalledWith(
+          expect.objectContaining({ has_documents: false })
+        )
+      })
+    })
+
+    it('shows Clear button when docs filter is active', async () => {
+      render(<Transactions />, { initialEntries: ['/?docs=missing'] })
+      await waitFor(() => {
+        expect(screen.getByText('Clear')).toBeInTheDocument()
+      })
+    })
+
+    it('clears docs filter from URL when Clear is clicked', async () => {
+      render(<Transactions />, { initialEntries: ['/?tab=hsa&docs=missing'] })
+      await waitFor(() => screen.getByText('Clear'))
+
+      fireEvent.click(screen.getByText('Clear'))
+
+      await waitFor(() => {
+        expect(bankService.listAllTransactions).toHaveBeenCalledWith(
+          expect.objectContaining({ has_documents: undefined })
+        )
       })
     })
   })

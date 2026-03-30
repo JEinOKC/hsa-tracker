@@ -94,12 +94,19 @@ class BankTransaction(Base):
     )
     hsa_category = Column(String(100), nullable=True)       # "medical", "dental", etc.
     reimbursement_status = Column(String(20), nullable=True) # "pending","reimbursed","not_needed"
+    reimbursed_at = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     connection = relationship("BankConnection", back_populates="transactions")
     family_member = relationship("FamilyMember", foreign_keys=[family_member_id])
+    documents = relationship(
+        "TransactionDocument",
+        back_populates="transaction",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
 
     __table_args__ = (
         UniqueConstraint(
@@ -111,3 +118,34 @@ class BankTransaction(Base):
 
     def __repr__(self):
         return f"<BankTransaction({self.provider_transaction_id} {self.transaction_date} {self.amount})>"
+
+
+class TransactionDocument(Base):
+    """A receipt or supporting document attached to a bank transaction, stored in S3."""
+
+    __tablename__ = "transaction_documents"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    transaction_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("bank_transactions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    s3_key = Column(String(1024), nullable=False)
+    original_filename = Column(String(500), nullable=False)
+    content_type = Column(String(100), nullable=False)
+    file_size_bytes = Column(Integer, nullable=False)
+    status = Column(String(20), nullable=False, default="pending")  # "pending" | "confirmed"
+    uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    transaction = relationship("BankTransaction", back_populates="documents")
+
+    def __repr__(self):
+        return f"<TransactionDocument({self.original_filename} → {self.s3_key})>"
