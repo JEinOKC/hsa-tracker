@@ -182,11 +182,11 @@ tf-init: ## Initialize Terraform
 
 tf-plan: ## Plan Terraform changes
 	@echo "$(BLUE)Planning Terraform changes...$(NC)"
-	cd terraform && terraform plan
+	cd terraform && TF_VAR_allowed_cors_origins="$$(doppler secrets get TF_VAR_ALLOWED_CORS_ORIGINS --plain 2>/dev/null)" terraform plan
 
 tf-apply: ## Apply Terraform changes (create AWS infrastructure)
 	@echo "$(BLUE)Applying Terraform changes...$(NC)"
-	cd terraform && terraform apply
+	cd terraform && TF_VAR_allowed_cors_origins="$$(doppler secrets get TF_VAR_ALLOWED_CORS_ORIGINS --plain 2>/dev/null)" terraform apply
 	@echo "$(GREEN)✓ AWS infrastructure created$(NC)"
 	@echo "$(YELLOW)Remember to update your secrets with the output values!$(NC)"
 
