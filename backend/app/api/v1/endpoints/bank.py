@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models.bank import BankConnection, BankTransaction
+from app.models.bank import BankConnection, BankTransaction, TransactionDocument
 from app.models.family import FamilyMember
 from app.models.user import User
 from app.providers import get_teller_provider, is_teller_configured
@@ -91,6 +91,10 @@ class BankTransactionResponse(BaseModel):
     # Denormalised for display
     account_name: Optional[str] = None
     institution_name: Optional[str] = None
+    # Document attachment count (confirmed uploads only)
+    document_count: int = 0
+    # Reimbursement timestamp
+    reimbursed_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -102,6 +106,7 @@ class BankTransactionAnnotation(BaseModel):
     family_member_id: Optional[UUID] = None
     hsa_category: Optional[str] = None
     reimbursement_status: Optional[str] = None
+    reimbursed_at: Optional[datetime] = None
     notes: Optional[str] = None
 
 
@@ -126,13 +131,30 @@ def _get_connection_or_404(account_id: UUID, user_id, db: Session) -> BankConnec
     return connection
 
 
-def _txn_to_response(txn: BankTransaction) -> BankTransactionResponse:
+def _txn_to_response(txn: BankTransaction, document_count: int = 0) -> BankTransactionResponse:
     """Map a BankTransaction ORM object to its response schema, adding denormalised fields."""
     data = BankTransactionResponse.model_validate(txn)
     if txn.connection:
         data.account_name = txn.connection.account_name
         data.institution_name = txn.connection.institution_name
+    data.document_count = document_count
     return data
+
+
+def _batch_document_counts(txn_ids: list, db: Session) -> dict:
+    """Return a {transaction_id: count} dict for the given transaction IDs (confirmed only)."""
+    if not txn_ids:
+        return {}
+    rows = (
+        db.query(TransactionDocument.transaction_id, func.count(TransactionDocument.id))
+        .filter(
+            TransactionDocument.transaction_id.in_(txn_ids),
+            TransactionDocument.status == "confirmed",
+        )
+        .group_by(TransactionDocument.transaction_id)
+        .all()
+    )
+    return {row[0]: row[1] for row in rows}
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +238,7 @@ class DashboardSummaryResponse(BaseModel):
     hsa_spending: float
     pending_reimbursement: float
     hsa_transaction_count: int
+    undocumented_hsa_count: int
     has_family_members: bool
     has_bank_connections: bool
     has_synced_transactions: bool
@@ -265,6 +288,17 @@ async def get_dashboard_summary(
         .scalar() or 0
     )
 
+    confirmed_doc_txn_ids = (
+        db.query(TransactionDocument.transaction_id)
+        .filter(TransactionDocument.status == "confirmed")
+        .subquery()
+    )
+    undocumented_count = (
+        db.query(func.count(BankTransaction.id))
+        .filter(*date_filters(), ~BankTransaction.id.in_(confirmed_doc_txn_ids))
+        .scalar() or 0
+    )
+
     has_family = db.query(FamilyMember).filter(FamilyMember.user_id == current_user.id).first() is not None
     has_connections = db.query(BankConnection).filter(
         BankConnection.user_id == current_user.id, BankConnection.is_active == True
@@ -277,6 +311,7 @@ async def get_dashboard_summary(
         hsa_spending=float(hsa_spending),
         pending_reimbursement=float(pending),
         hsa_transaction_count=int(hsa_count),
+        undocumented_hsa_count=int(undocumented_count),
         has_family_members=has_family,
         has_bank_connections=has_connections,
         has_synced_transactions=has_transactions,
@@ -292,6 +327,7 @@ async def list_all_transactions(
     family_member_id: Optional[UUID] = Query(None),
     status: Optional[str] = Query(None, description="posted or pending"),
     reimbursement_status: Optional[str] = Query(None, description="Filter by reimbursement status (e.g. 'reimbursed', 'null' for unset)"),
+    has_documents: Optional[bool] = Query(None, description="Filter by documentation status (true = has receipts, false = missing receipts)"),
     search: Optional[str] = Query(None, description="Case-insensitive substring match on description"),
     limit: int = Query(50, le=200),
     offset: int = Query(0, ge=0),
@@ -322,6 +358,16 @@ async def list_all_transactions(
         query = query.filter(BankTransaction.reimbursement_status.is_(None))
     elif reimbursement_status:
         query = query.filter(BankTransaction.reimbursement_status == reimbursement_status)
+    if has_documents is not None:
+        confirmed_doc_subq = (
+            db.query(TransactionDocument.transaction_id)
+            .filter(TransactionDocument.status == "confirmed")
+            .subquery()
+        )
+        if has_documents:
+            query = query.filter(BankTransaction.id.in_(confirmed_doc_subq))
+        else:
+            query = query.filter(~BankTransaction.id.in_(confirmed_doc_subq))
     if search:
         query = query.filter(BankTransaction.description.ilike(f"%{search}%"))
 
@@ -332,7 +378,8 @@ async def list_all_transactions(
         .limit(limit)
         .all()
     )
-    return [_txn_to_response(t) for t in txns]
+    counts = _batch_document_counts([t.id for t in txns], db)
+    return [_txn_to_response(t, counts.get(t.id, 0)) for t in txns]
 
 
 @router.patch("/transactions/{transaction_id}", response_model=BankTransactionResponse)
@@ -359,12 +406,29 @@ async def annotate_transaction(
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found.")
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+
+    # Auto-set reimbursed_at when marking as reimbursed (unless caller provides one explicitly)
+    if updates.get("reimbursement_status") == "reimbursed" and "reimbursed_at" not in updates:
+        updates["reimbursed_at"] = datetime.utcnow()
+    # Clear reimbursed_at when status is removed
+    elif "reimbursement_status" in updates and updates["reimbursement_status"] != "reimbursed":
+        updates.setdefault("reimbursed_at", None)
+
+    for field, value in updates.items():
         setattr(txn, field, value)
 
     db.commit()
     db.refresh(txn)
-    return _txn_to_response(txn)
+    doc_count = (
+        db.query(func.count(TransactionDocument.id))
+        .filter(
+            TransactionDocument.transaction_id == txn.id,
+            TransactionDocument.status == "confirmed",
+        )
+        .scalar() or 0
+    )
+    return _txn_to_response(txn, doc_count)
 
 
 @router.get("/accounts", response_model=list[BankAccountResponse])
@@ -485,13 +549,15 @@ async def list_account_transactions(
     if status:
         query = query.filter(BankTransaction.status == status)
 
-    return (
+    txns = (
         query
         .order_by(BankTransaction.transaction_date.desc(), BankTransaction.id.desc())
         .offset(offset)
         .limit(limit)
         .all()
     )
+    counts = _batch_document_counts([t.id for t in txns], db)
+    return [_txn_to_response(t, counts.get(t.id, 0)) for t in txns]
 
 
 @router.delete("/accounts/{account_id}", status_code=204)

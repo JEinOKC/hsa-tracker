@@ -39,3 +39,9 @@ variable "enable_kms_encryption" {
   type        = bool
   default     = false
 }
+
+variable "allowed_cors_origins" {
+  description = "Origins allowed to make direct browser uploads to S3 (presigned PUT URLs)"
+  type        = list(string)
+  default     = ["http://localhost:3001", "http://localhost:3000"]
+}

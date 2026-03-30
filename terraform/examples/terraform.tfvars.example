@@ -19,3 +19,7 @@ lifecycle_expiration_days = 90
 # Set to true for enhanced encryption with KMS (additional cost)
 # Set to false for standard AES256 encryption (free)
 enable_kms_encryption = false
+
+# CORS origins for direct browser-to-S3 uploads (presigned PUT URLs)
+# Add your production/staging domain here
+allowed_cors_origins = ["https://yourdomain.com", "http://localhost:3001"]

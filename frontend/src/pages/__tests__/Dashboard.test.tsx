@@ -14,6 +14,7 @@ const fullSummary = {
   hsa_spending: 0,
   pending_reimbursement: 0,
   hsa_transaction_count: 0,
+  undocumented_hsa_count: 0,
   has_family_members: false,
   has_bank_connections: false,
   has_synced_transactions: false,
@@ -66,6 +67,7 @@ describe('Dashboard', () => {
       expect(screen.getByText('HSA Spending')).toBeInTheDocument()
       expect(screen.getByText('Pending Reimbursement')).toBeInTheDocument()
       expect(screen.getByText('HSA Transactions')).toBeInTheDocument()
+      expect(screen.getByText('Needs Documentation')).toBeInTheDocument()
     })
   })
 
@@ -124,6 +126,39 @@ describe('Dashboard', () => {
     await waitFor(() => {
       const link = screen.getByText(/view HSA transactions/i)
       expect(link.closest('a')).toHaveAttribute('href', '/transactions?tab=hsa')
+    })
+  })
+
+  describe('Needs Documentation card', () => {
+    it('shows 0 and all-documented message when count is 0', async () => {
+      render(<Dashboard />)
+      await waitFor(() => {
+        expect(screen.getByText('All HSA expenses documented')).toBeInTheDocument()
+      })
+    })
+
+    it('shows attach link pointing to HSA tab with missing-docs filter', async () => {
+      ;(bankService.getDashboardSummary as any).mockResolvedValue({
+        ...fullSummary,
+        undocumented_hsa_count: 7,
+      })
+      render(<Dashboard />)
+      await waitFor(() => {
+        const link = screen.getByText(/attach receipts/i)
+        expect(link.closest('a')).toHaveAttribute('href', '/transactions?tab=hsa&docs=missing')
+      })
+    })
+
+    it('uses amber styling when undocumented count is greater than 0', async () => {
+      ;(bankService.getDashboardSummary as any).mockResolvedValue({
+        ...fullSummary,
+        undocumented_hsa_count: 7,
+      })
+      render(<Dashboard />)
+      await waitFor(() => {
+        const count = screen.getByText('7')
+        expect(count.className).toContain('text-amber-600')
+      })
     })
   })
 })

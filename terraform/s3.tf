@@ -71,10 +71,33 @@ resource "aws_s3_bucket_cors_configuration" "receipts" {
   cors_rule {
     allowed_headers = ["*"]
     allowed_methods = ["GET", "PUT", "POST", "DELETE"]
-    allowed_origins = ["http://localhost:3000", "http://localhost:80"] # Update with your domain
+    allowed_origins = var.allowed_cors_origins
     expose_headers  = ["ETag"]
     max_age_seconds = 3000
   }
+}
+
+# Enforce HTTPS-only access — deny any non-SSL request to the bucket
+resource "aws_s3_bucket_policy" "receipts_ssl_only" {
+  bucket     = aws_s3_bucket.receipts.id
+  depends_on = [aws_s3_bucket_public_access_block.receipts]
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "DenyNonSSL"
+      Effect    = "Deny"
+      Principal = "*"
+      Action    = "s3:*"
+      Resource = [
+        aws_s3_bucket.receipts.arn,
+        "${aws_s3_bucket.receipts.arn}/*"
+      ]
+      Condition = {
+        Bool = { "aws:SecureTransport" = "false" }
+      }
+    }]
+  })
 }
 
 # Lifecycle policy for cost optimization

@@ -12,20 +12,23 @@ function createTestQueryClient() {
   })
 }
 
-function AllProviders({ children }: { children: React.ReactNode }) {
+function AllProviders({ children, initialEntries }: { children: React.ReactNode; initialEntries?: string[] }) {
   const queryClient = createTestQueryClient()
   return (
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>{children}</MemoryRouter>
+      <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>
     </QueryClientProvider>
   )
 }
 
 function renderWithProviders(
   ui: ReactElement,
-  options?: Omit<RenderOptions, 'wrapper'>
+  { initialEntries, ...options }: Omit<RenderOptions, 'wrapper'> & { initialEntries?: string[] } = {}
 ) {
-  return render(ui, { wrapper: AllProviders, ...options })
+  return render(ui, {
+    wrapper: ({ children }) => <AllProviders initialEntries={initialEntries}>{children}</AllProviders>,
+    ...options,
+  })
 }
 
 export * from '@testing-library/react'

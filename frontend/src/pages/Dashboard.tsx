@@ -107,7 +107,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-sm font-medium text-gray-500 mb-2">HSA Spending</h3>
           <p className={`text-3xl font-bold ${loading ? 'text-gray-200' : 'text-gray-900'}`}>
@@ -141,6 +141,30 @@ export default function Dashboard() {
             <Link to="/transactions?tab=hsa" className="text-sky-600 hover:text-sky-800">
               View HSA transactions →
             </Link>
+          </p>
+        </div>
+
+        <div className={`rounded-lg shadow p-6 ${
+          !loading && (summary?.undocumented_hsa_count ?? 0) > 0
+            ? 'bg-amber-50 border border-amber-200'
+            : 'bg-white'
+        }`}>
+          <h3 className="text-sm font-medium text-gray-500 mb-2">Needs Documentation</h3>
+          <p className={`text-3xl font-bold ${
+            loading ? 'text-gray-200'
+            : (summary?.undocumented_hsa_count ?? 0) > 0 ? 'text-amber-600'
+            : 'text-gray-900'
+          }`}>
+            {loading ? '—' : (summary?.undocumented_hsa_count ?? 0)}
+          </p>
+          <p className="text-sm text-gray-500 mt-2">
+            {!loading && (
+              (summary?.undocumented_hsa_count ?? 0) > 0 ? (
+                <Link to="/transactions?tab=hsa&docs=missing" className="text-amber-600 hover:text-amber-800 font-medium">
+                  Attach receipts →
+                </Link>
+              ) : 'All HSA expenses documented'
+            )}
           </p>
         </div>
       </div>
