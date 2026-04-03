@@ -27,8 +27,10 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.bank import BankConnection, BankTransaction, TransactionDocument
 from app.models.family import FamilyMember
+from app.models.household import HouseholdMembership
 from app.models.user import User
 from app.providers import get_teller_provider, is_teller_configured
+from app.utils.access import get_readable_owner_ids, check_permission
 
 router = APIRouter()
 
@@ -60,6 +62,7 @@ class BankAccountResponse(BaseModel):
     is_active: bool
     last_synced_at: Optional[datetime]
     created_at: datetime
+    owner_display_name: Optional[str] = None  # Set for shared accounts
 
     class Config:
         from_attributes = True
@@ -95,6 +98,8 @@ class BankTransactionResponse(BaseModel):
     document_count: int = 0
     # Reimbursement timestamp
     reimbursed_at: Optional[datetime] = None
+    # Set for transactions from shared accounts
+    owner_display_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -120,24 +125,23 @@ class SyncResult(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _get_connection_or_404(account_id: UUID, user_id, db: Session) -> BankConnection:
-    connection = (
-        db.query(BankConnection)
-        .filter(BankConnection.id == account_id, BankConnection.user_id == user_id)
-        .first()
-    )
+def _get_connection_or_404(account_id: UUID, user, db: Session, operation: str = "read") -> BankConnection:
+    connection = db.query(BankConnection).filter(BankConnection.id == account_id).first()
     if not connection:
         raise HTTPException(status_code=404, detail="Bank account not found.")
+    if not check_permission(user, connection.user_id, "bank_accounts", operation, db):
+        raise HTTPException(status_code=403, detail="Access denied.")
     return connection
 
 
-def _txn_to_response(txn: BankTransaction, document_count: int = 0) -> BankTransactionResponse:
+def _txn_to_response(txn: BankTransaction, document_count: int = 0, owner_display_name: Optional[str] = None) -> BankTransactionResponse:
     """Map a BankTransaction ORM object to its response schema, adding denormalised fields."""
     data = BankTransactionResponse.model_validate(txn)
     if txn.connection:
         data.account_name = txn.connection.account_name
         data.institution_name = txn.connection.institution_name
     data.document_count = document_count
+    data.owner_display_name = owner_display_name
     return data
 
 
@@ -253,9 +257,10 @@ async def get_dashboard_summary(
     current_user: User = Depends(get_current_user),
 ):
     """Aggregate stats for the dashboard, scoped to the given date range."""
+    readable_owner_ids = get_readable_owner_ids(current_user, db, resource="transactions")
     user_connection_ids = (
         db.query(BankConnection.id)
-        .filter(BankConnection.user_id == current_user.id, BankConnection.is_active == True)
+        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active == True)
         .subquery()
     )
 
@@ -299,9 +304,13 @@ async def get_dashboard_summary(
         .scalar() or 0
     )
 
-    has_family = db.query(FamilyMember).filter(FamilyMember.user_id == current_user.id).first() is not None
+    membership = db.query(HouseholdMembership).filter(HouseholdMembership.user_id == current_user.id).first()
+    has_family = membership is not None and db.query(FamilyMember).filter(
+        FamilyMember.household_id == membership.household_id
+    ).first() is not None
+    readable_bank_ids = get_readable_owner_ids(current_user, db, resource="bank_accounts")
     has_connections = db.query(BankConnection).filter(
-        BankConnection.user_id == current_user.id, BankConnection.is_active == True
+        BankConnection.user_id.in_(readable_bank_ids), BankConnection.is_active == True
     ).first() is not None
     has_transactions = db.query(BankTransaction).filter(
         BankTransaction.connection_id.in_(user_connection_ids)
@@ -334,10 +343,11 @@ async def list_all_transactions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all transactions across every connected account for the current user."""
+    """List all transactions across every connected account for the current user and shared accounts."""
+    readable_owner_ids = get_readable_owner_ids(current_user, db, resource="transactions")
     user_connection_ids = (
         db.query(BankConnection.id)
-        .filter(BankConnection.user_id == current_user.id, BankConnection.is_active == True)
+        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active == True)
         .subquery()
     )
     query = (
@@ -379,7 +389,23 @@ async def list_all_transactions(
         .all()
     )
     counts = _batch_document_counts([t.id for t in txns], db)
-    return [_txn_to_response(t, counts.get(t.id, 0)) for t in txns]
+
+    # Build owner lookup for attribution
+    owner_map: dict = {}
+    from app.models.user import User as UserModel
+    for txn in txns:
+        owner_id = txn.connection.user_id if txn.connection else None
+        if owner_id and owner_id != current_user.id and owner_id not in owner_map:
+            owner = db.query(UserModel).filter(UserModel.id == owner_id).first()
+            owner_map[owner_id] = owner.display_name if owner else None
+
+    def _owner_name(txn):
+        owner_id = txn.connection.user_id if txn.connection else None
+        if owner_id and owner_id != current_user.id:
+            return owner_map.get(owner_id)
+        return None
+
+    return [_txn_to_response(t, counts.get(t.id, 0), _owner_name(t)) for t in txns]
 
 
 @router.patch("/transactions/{transaction_id}", response_model=BankTransactionResponse)
@@ -390,9 +416,10 @@ async def annotate_transaction(
     current_user: User = Depends(get_current_user),
 ):
     """Update HSA annotations on a transaction (is_hsa_eligible, family member, category, etc.)."""
+    readable_owner_ids = get_readable_owner_ids(current_user, db, resource="transactions")
     user_connection_ids = (
         db.query(BankConnection.id)
-        .filter(BankConnection.user_id == current_user.id)
+        .filter(BankConnection.user_id.in_(readable_owner_ids))
         .subquery()
     )
     txn = (
@@ -405,6 +432,11 @@ async def annotate_transaction(
     )
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found.")
+
+    # Check write permission on the transaction's owner
+    connection = db.query(BankConnection).filter(BankConnection.id == txn.connection_id).first()
+    if connection and not check_permission(current_user, connection.user_id, "transactions", "write", db):
+        raise HTTPException(status_code=403, detail="Write access denied.")
 
     updates = payload.model_dump(exclude_unset=True)
 
@@ -436,12 +468,26 @@ async def list_bank_accounts(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all connected bank accounts stored in the database."""
-    return (
+    """List all connected bank accounts for current user and shared accounts."""
+    readable_owner_ids = get_readable_owner_ids(current_user, db, resource="bank_accounts")
+    connections = (
         db.query(BankConnection)
-        .filter(BankConnection.user_id == current_user.id, BankConnection.is_active == True)
+        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active == True)
         .all()
     )
+    # Build owner lookup for attribution
+    owner_cache: dict = {}
+    from app.models.user import User as UserModel
+    result = []
+    for conn in connections:
+        resp = BankAccountResponse.model_validate(conn)
+        if conn.user_id != current_user.id:
+            if conn.user_id not in owner_cache:
+                owner = db.query(UserModel).filter(UserModel.id == conn.user_id).first()
+                owner_cache[conn.user_id] = owner.display_name if owner else None
+            resp.owner_display_name = owner_cache[conn.user_id]
+        result.append(resp)
+    return result
 
 
 @router.get("/accounts/{account_id}", response_model=BankAccountDetailResponse)
@@ -451,8 +497,12 @@ async def get_bank_account(
     current_user: User = Depends(get_current_user),
 ):
     """Get a connected account's details plus its live balance from the provider."""
-    connection = _get_connection_or_404(account_id, current_user.id, db)
+    connection = _get_connection_or_404(account_id, current_user, db)
     response = BankAccountDetailResponse.model_validate(connection)
+    if connection.user_id != current_user.id:
+        from app.models.user import User as UserModel
+        owner = db.query(UserModel).filter(UserModel.id == connection.user_id).first()
+        response.owner_display_name = owner.display_name if owner else None
 
     if is_teller_configured() and connection.enrollment_token:
         try:
@@ -478,7 +528,7 @@ async def sync_account_transactions(
 
     Existing transactions (matched by provider_transaction_id) are skipped.
     """
-    connection = _get_connection_or_404(account_id, current_user.id, db)
+    connection = _get_connection_or_404(account_id, current_user, db, operation="write")
 
     if not is_teller_configured():
         raise HTTPException(status_code=503, detail="Bank provider not configured.")
@@ -538,7 +588,7 @@ async def list_account_transactions(
     current_user: User = Depends(get_current_user),
 ):
     """List transactions stored in the database for a connected account."""
-    connection = _get_connection_or_404(account_id, current_user.id, db)
+    connection = _get_connection_or_404(account_id, current_user, db)
 
     query = db.query(BankTransaction).filter(BankTransaction.connection_id == account_id)
 
@@ -567,7 +617,7 @@ async def disconnect_account(
     current_user: User = Depends(get_current_user),
 ):
     """Deactivate a bank connection (keeps historical transactions)."""
-    connection = _get_connection_or_404(account_id, current_user.id, db)
+    connection = _get_connection_or_404(account_id, current_user, db, operation="delete")
     connection.is_active = False
     connection.updated_at = datetime.utcnow()
     db.commit()

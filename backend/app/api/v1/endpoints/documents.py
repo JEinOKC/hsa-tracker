@@ -21,6 +21,7 @@ from app.dependencies import get_current_user
 from app.models.bank import BankConnection, BankTransaction, TransactionDocument
 from app.models.user import User
 from app.services.s3 import build_s3_key, s3_service
+from app.utils.access import get_readable_owner_ids, check_permission
 
 router = APIRouter()
 
@@ -58,11 +59,12 @@ class DocumentResponse(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _get_transaction_or_404(transaction_id: UUID, user: User, db: Session) -> BankTransaction:
-    """Return the transaction if it belongs to the current user, else 404."""
+def _get_transaction_or_404(transaction_id: UUID, user: User, db: Session, operation: str = "read") -> BankTransaction:
+    """Return the transaction if the user has access, else 404/403."""
+    readable_owner_ids = get_readable_owner_ids(user, db)
     user_connection_ids = (
         db.query(BankConnection.id)
-        .filter(BankConnection.user_id == user.id)
+        .filter(BankConnection.user_id.in_(readable_owner_ids))
         .subquery()
     )
     txn = (
@@ -75,6 +77,10 @@ def _get_transaction_or_404(transaction_id: UUID, user: User, db: Session) -> Ba
     )
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found.")
+    # Check resource-level permission
+    connection = db.query(BankConnection).filter(BankConnection.id == txn.connection_id).first()
+    if connection and not check_permission(user, connection.user_id, "documents", operation, db):
+        raise HTTPException(status_code=403, detail="Access denied.")
     return txn
 
 
@@ -84,12 +90,17 @@ def _get_document_or_404(doc_id: UUID, transaction_id: UUID, user: User, db: Ses
         .filter(
             TransactionDocument.id == doc_id,
             TransactionDocument.transaction_id == transaction_id,
-            TransactionDocument.user_id == user.id,
         )
         .first()
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
+    # Verify access: doc owner OR someone with document access to the transaction's owner
+    if doc.user_id != user.id:
+        txn = db.query(BankTransaction).filter(BankTransaction.id == transaction_id).first()
+        connection = db.query(BankConnection).filter(BankConnection.id == txn.connection_id).first() if txn else None
+        if not connection or not check_permission(user, connection.user_id, "documents", "read", db):
+            raise HTTPException(status_code=404, detail="Document not found.")
     return doc
 
 
@@ -125,7 +136,7 @@ async def presign_document_upload(
     Creates a pending TransactionDocument row. The client must call /confirm
     after the S3 PUT succeeds.
     """
-    _get_transaction_or_404(transaction_id, current_user, db)
+    txn = _get_transaction_or_404(transaction_id, current_user, db, operation="write")
 
     allowed_types = [t.strip() for t in settings.allowed_mime_types.split(",")]
     if payload.content_type not in allowed_types:
@@ -141,9 +152,13 @@ async def presign_document_upload(
             detail=f"File too large. Maximum size is {settings.max_upload_size_mb} MB.",
         )
 
+    # Documents are owned by the transaction's owner, not the sub-user
+    connection = db.query(BankConnection).filter(BankConnection.id == txn.connection_id).first()
+    doc_owner_id = connection.user_id if connection else current_user.id
+
     s3_key = build_s3_key(
         settings.app_env,
-        str(current_user.id),
+        str(doc_owner_id),
         str(transaction_id),
         payload.filename,
     )
@@ -151,7 +166,7 @@ async def presign_document_upload(
 
     doc = TransactionDocument(
         transaction_id=transaction_id,
-        user_id=current_user.id,
+        user_id=doc_owner_id,
         s3_key=s3_key,
         original_filename=payload.filename,
         content_type=payload.content_type,
@@ -209,13 +224,12 @@ async def list_documents(
     current_user: User = Depends(get_current_user),
 ):
     """List all confirmed documents for a transaction, each with a fresh presigned GET URL."""
-    _get_transaction_or_404(transaction_id, current_user, db)
+    _get_transaction_or_404(transaction_id, current_user, db, operation="read")
 
     docs = (
         db.query(TransactionDocument)
         .filter(
             TransactionDocument.transaction_id == transaction_id,
-            TransactionDocument.user_id == current_user.id,
             TransactionDocument.status == "confirmed",
         )
         .order_by(TransactionDocument.uploaded_at.asc())
@@ -235,7 +249,7 @@ async def delete_document(
     current_user: User = Depends(get_current_user),
 ):
     """Delete a document from S3 and remove its database record."""
-    _get_transaction_or_404(transaction_id, current_user, db)
+    _get_transaction_or_404(transaction_id, current_user, db, operation="delete")
     doc = _get_document_or_404(document_id, transaction_id, current_user, db)
 
     s3_service.delete(doc.s3_key)

@@ -3,6 +3,8 @@
 from typing import List
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, status
+from pydantic import BaseModel
+from coolname import generate_slug
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -370,6 +372,35 @@ async def backup_code_verify(
         refresh_token=refresh_token,
         token_type="bearer"
     )
+
+
+class FamilyPinResponse(BaseModel):
+    pin: str
+
+
+@router.get("/family-pin", response_model=FamilyPinResponse)
+async def get_family_pin(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the current user's family PIN (plaintext, shareable household code).
+    Auto-generates one on first access for accounts created before this feature."""
+    if not current_user.family_pin:
+        current_user.family_pin = generate_slug(2)
+        db.commit()
+    return FamilyPinResponse(pin=current_user.family_pin)
+
+
+@router.post("/family-pin/reset", response_model=FamilyPinResponse)
+async def reset_family_pin(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Generate a new 2-word family PIN and save it. Returns the new PIN."""
+    new_pin = generate_slug(2)
+    current_user.family_pin = new_pin
+    db.commit()
+    return FamilyPinResponse(pin=new_pin)
 
 
 @router.get("/security-info", response_model=AccountSecurityInfo)

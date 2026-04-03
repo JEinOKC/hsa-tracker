@@ -63,7 +63,9 @@ PG_UUID.result_processor = _patched_result_processor
 
 from app.database import Base, get_db
 from app.main import app
-from app.models.user import User, UserPasskey
+from app.models.user import User, UserPasskey, RegistrationToken, FamilyInvite  # noqa: F401
+from app.models.access import AccountRole, AccountAccess  # noqa: F401
+from app.models.household import Household, HouseholdRole, HouseholdMembership  # noqa: F401
 from app.utils.security import create_access_token
 
 

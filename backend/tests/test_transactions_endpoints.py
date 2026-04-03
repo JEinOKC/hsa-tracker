@@ -9,6 +9,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.models.bank import BankConnection, BankTransaction
+from app.models.user import User
 
 
 def _make_connection(db, user_id):
@@ -58,10 +59,12 @@ class TestListAllTransactions:
         assert "Walgreens" in descriptions
 
     def test_does_not_return_other_users_transactions(self, client, db_session, test_user, auth_headers):
-        other_user_id = uuid.uuid4()
+        other_user = User(id=uuid.uuid4(), username="other_txn_user", display_name="Other", is_active=True, is_superuser=False)
+        db_session.add(other_user)
+        db_session.flush()
         other_conn = BankConnection(
             id=uuid.uuid4(),
-            user_id=other_user_id,
+            user_id=other_user.id,
             provider="teller",
             provider_account_id="other_acct",
             account_name="Other Bank",
@@ -190,9 +193,12 @@ class TestAnnotateTransaction:
         assert data["hsa_category"] == "vision"
 
     def test_cannot_annotate_other_users_transaction(self, client, db_session, test_user, auth_headers):
+        other_user = User(id=uuid.uuid4(), username="other_annotate_user", display_name="Other2", is_active=True, is_superuser=False)
+        db_session.add(other_user)
+        db_session.flush()
         other_conn = BankConnection(
             id=uuid.uuid4(),
-            user_id=uuid.uuid4(),
+            user_id=other_user.id,
             provider="teller",
             provider_account_id="other",
             account_name="Other",

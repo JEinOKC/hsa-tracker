@@ -4,9 +4,14 @@
 
 import api from './api'
 
+export interface AppConfig {
+  require_invite: boolean
+}
+
 export interface PasskeyRegisterStartRequest {
   username: string
   display_name: string
+  invite_token?: string
 }
 
 export interface PasskeyRegisterCompleteRequest {
@@ -50,12 +55,22 @@ class PasskeyService {
   }
 
   /**
+   * Fetch public app configuration (e.g. whether invite tokens are required)
+   */
+  async getAppConfig(): Promise<AppConfig> {
+    const response = await api.get<AppConfig>('/config')
+    return response.data
+  }
+
+  /**
    * Start passkey registration - Step 1
    */
-  async registerStart(username: string, displayName: string): Promise<any> {
+  async registerStart(username: string, displayName: string, inviteToken?: string, familyPin?: string): Promise<any> {
     const response = await api.post('/passkey/register/start', {
       username,
       display_name: displayName,
+      invite_token: inviteToken,
+      family_pin: familyPin,
     })
     return response.data
   }
@@ -82,10 +97,12 @@ class PasskeyService {
   async register(
     username: string,
     displayName: string,
-    deviceName?: string
+    deviceName?: string,
+    inviteToken?: string,
+    familyPin?: string
   ): Promise<User> {
     // Step 1: Get registration options from server
-    const { options } = await this.registerStart(username, displayName)
+    const { options } = await this.registerStart(username, displayName, inviteToken, familyPin)
 
     // Step 2: Create passkey with browser
     const credential = await this.createPasskey(options)

@@ -4,10 +4,13 @@ import uuid
 import json
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, status
+from coolname import generate_slug
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.user import User, UserPasskey
+from app.models.family import FamilyMember
+from app.models.household import Household, HouseholdMembership, HouseholdRole
+from app.models.user import User, UserPasskey, RegistrationToken, FamilyInvite
 from app.schemas.auth import (
     PasskeyRegisterStartRequest,
     PasskeyRegisterCompleteRequest,
@@ -36,6 +39,64 @@ router = APIRouter()
 _challenges = {}
 
 
+def _resolve_invite_token(invite_token: str | None, family_pin: str | None, db: Session, strict: bool = True):
+    """
+    Resolve an invite_token string to whichever table it belongs to and validate it.
+    Returns (invite_type, record) where invite_type is "registration_token" or "family_invite".
+    Raises HTTPException on any validation failure.
+
+    When strict=False (open registration mode), an unrecognised token is silently ignored
+    rather than rejected, so that spurious tokens don't block open sign-up.
+    """
+    if not invite_token:
+        return None, None
+
+    # 1. Check RegistrationToken (CLI-generated, no expiry, no PIN)
+    reg_token = db.query(RegistrationToken).filter(RegistrationToken.token == invite_token).first()
+    if reg_token:
+        if reg_token.is_used:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invite token has already been used"
+            )
+        return "registration_token", reg_token
+
+    # 2. Check FamilyInvite (in-app, TTL + optional PIN)
+    family_invite = db.query(FamilyInvite).filter(FamilyInvite.token == invite_token).first()
+    if family_invite:
+        if family_invite.is_used:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invite token has already been used"
+            )
+        if family_invite.is_expired:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invite link has expired"
+            )
+        if family_invite.require_pin:
+            if not family_pin:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="A family PIN is required to use this invite link"
+                )
+            creator = db.query(User).filter(User.id == family_invite.created_by_user_id).first()
+            if not creator or creator.family_pin != family_pin:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Incorrect family PIN"
+                )
+        return "family_invite", family_invite
+
+    # Token not found in either table
+    if strict:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid invite token"
+        )
+    return None, None
+
+
 @router.post("/register/start", status_code=200)
 async def passkey_register_start(
     request: PasskeyRegisterStartRequest,
@@ -46,11 +107,25 @@ async def passkey_register_start(
 
     This endpoint:
     1. Checks if username is available
-    2. Generates WebAuthn registration options
-    3. Returns challenge and options for browser to create passkey
+    2. Validates invite token (if REQUIRE_INVITE=true or a family invite is supplied)
+    3. Generates WebAuthn registration options
+    4. Returns challenge and options for browser to create passkey
 
     No email or password required!
     """
+    # Gate: require some token when REQUIRE_INVITE is set
+    if settings.require_invite and not request.invite_token:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="An invite token is required to register"
+        )
+
+    # Resolve + validate the token (works for both RegistrationToken and FamilyInvite)
+    # strict=True means an unrecognised token is rejected; in open mode, unknown tokens are ignored
+    invite_type, _ = _resolve_invite_token(
+        request.invite_token, request.family_pin, db, strict=settings.require_invite
+    )
+
     # Check if username already exists
     existing_user = db.query(User).filter(User.username == request.username).first()
     if existing_user:
@@ -76,6 +151,8 @@ async def passkey_register_start(
         "type": "registration",
         "temp_user_id": temp_user_id,
         "display_name": request.display_name,
+        "invite_token": request.invite_token,
+        "invite_type": invite_type,  # "registration_token", "family_invite", or None
         "created_at": datetime.utcnow()
     }
 
@@ -100,7 +177,9 @@ async def passkey_register_complete(
     1. Verifies the passkey credential from the browser
     2. Creates the user account (NO password stored!)
     3. Stores the passkey credential
-    4. Returns the created user
+    4. Burns the invite token (if any)
+    5. Auto-generates a family PIN for the new user
+    6. Returns the created user
 
     After this, user can login with just their passkey!
     """
@@ -125,12 +204,13 @@ async def passkey_register_complete(
             detail=f"Passkey verification failed: {str(e)}"
         )
 
-    # Create user account (NO PASSWORD!)
+    # Create user account (NO PASSWORD!) with auto-generated family PIN
     user = User(
         username=request.username,
         display_name=challenge_data["display_name"],
-        email=None,  # No email required for passkey-only
-        hashed_password=None,  # No password!
+        email=None,
+        hashed_password=None,
+        family_pin=generate_slug(2),  # e.g. "silent-falcon"
         is_active=True,
         is_superuser=False,
     )
@@ -148,8 +228,99 @@ async def passkey_register_complete(
         device_name=request.device_name or "Primary Device",
         created_at=datetime.utcnow(),
     )
-
     db.add(passkey)
+
+    # ── Household placement ──────────────────────────────────────────────────
+    # Family invite → join the existing household; the FamilyMember record
+    # was already created by the admin, so just link it to this user account.
+    # Any other invite (system token) or open registration → create a new
+    # household for this user.
+
+    invite_token = challenge_data.get("invite_token")
+    invite_type = challenge_data.get("invite_type")
+    household_id = None
+    linked_existing_member = False  # True when we linked an existing FamilyMember
+
+    if invite_token and invite_type:
+        if invite_type == "registration_token":
+            record = db.query(RegistrationToken).filter(RegistrationToken.token == invite_token).first()
+        else:
+            record = db.query(FamilyInvite).filter(FamilyInvite.token == invite_token).first()
+        if record:
+            record.used_at = datetime.utcnow()
+            record.used_by_username = request.username
+
+            if invite_type == "family_invite" and record.household_id and record.household_role_id:
+                # Join the existing household — no new household created
+                household_id = record.household_id
+                db.add(HouseholdMembership(
+                    household_id=household_id,
+                    user_id=user.id,
+                    role_id=record.household_role_id,
+                    is_admin=False,
+                    joined_at=datetime.utcnow(),
+                ))
+                db.flush()
+
+                if record.family_member_id:
+                    # The admin pre-created a FamilyMember for this person.
+                    # Just set their user account link — no new record needed.
+                    pre_existing = db.query(FamilyMember).filter(
+                        FamilyMember.id == record.family_member_id,
+                    ).first()
+                    if pre_existing:
+                        pre_existing.linked_user_id = user.id
+                        linked_existing_member = True
+
+    if household_id is None:
+        # System invite or open registration — create a fresh household
+        household = Household(
+            name=f"{challenge_data['display_name']}'s Family",
+            created_by_id=user.id,
+            created_at=datetime.utcnow(),
+        )
+        db.add(household)
+        db.flush()
+
+        admin_role = HouseholdRole(
+            household_id=household.id,
+            name="Member",
+            can_read_transactions=True,
+            can_write_transactions=True,
+            can_delete_transactions=True,
+            can_read_bank_accounts=True,
+            can_write_bank_accounts=True,
+            can_delete_bank_accounts=True,
+            can_read_documents=True,
+            can_write_documents=True,
+            can_delete_documents=True,
+            can_read_family_members=True,
+            can_write_family_members=True,
+            can_delete_family_members=True,
+            created_at=datetime.utcnow(),
+        )
+        db.add(admin_role)
+        db.flush()
+
+        db.add(HouseholdMembership(
+            household_id=household.id,
+            user_id=user.id,
+            role_id=admin_role.id,
+            is_admin=True,
+            joined_at=datetime.utcnow(),
+        ))
+        household_id = household.id
+
+    if not linked_existing_member:
+        # Create a self-member in the household for this user
+        db.add(FamilyMember(
+            household_id=household_id,
+            name=challenge_data["display_name"],
+            member_relationship="self",
+            linked_user_id=user.id,
+            is_active=True,
+        ))
+
     db.commit()
     db.refresh(user)
 

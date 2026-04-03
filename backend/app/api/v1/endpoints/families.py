@@ -26,11 +26,12 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.family import FamilyMember, HsaEligibilityPeriod
+from app.models.household import HouseholdMembership
 from app.models.user import User
 
 router = APIRouter()
 
-VALID_RELATIONSHIPS = {"self", "spouse", "child", "other"}
+VALID_RELATIONSHIPS = {"spouse", "child", "other"}
 
 
 # ---------------------------------------------------------------------------
@@ -81,9 +82,10 @@ class FamilyMemberUpdate(BaseModel):
 
 class FamilyMemberResponse(BaseModel):
     id: UUID
-    user_id: UUID
+    household_id: UUID
     name: str
     member_relationship: str
+    linked_user_id: Optional[UUID] = None
     date_of_birth: Optional[date]
     is_tax_dependent: bool
     is_active: bool
@@ -106,14 +108,28 @@ class EligibilityCheckResponse(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _get_member_or_404(member_id: UUID, user_id: UUID, db: Session) -> FamilyMember:
-    member = (
-        db.query(FamilyMember)
-        .filter(FamilyMember.id == member_id, FamilyMember.user_id == user_id)
-        .first()
-    )
+def _get_user_household(user_id, db: Session) -> HouseholdMembership | None:
+    return db.query(HouseholdMembership).filter(HouseholdMembership.user_id == user_id).first()
+
+
+def _get_member_or_404(member_id: UUID, user, db: Session, operation: str = "read") -> FamilyMember:
+    """Return the member if user is in the same household, else 404/403."""
+    member = db.query(FamilyMember).filter(FamilyMember.id == member_id).first()
     if not member:
         raise HTTPException(status_code=404, detail="Family member not found.")
+    membership = db.query(HouseholdMembership).filter(
+        HouseholdMembership.user_id == user.id,
+        HouseholdMembership.household_id == member.household_id,
+    ).first()
+    if not membership:
+        raise HTTPException(status_code=404, detail="Family member not found.")
+    if operation in ("write", "delete"):
+        role = membership.role
+        can = role.can_write_family_members if operation == "write" else role.can_delete_family_members
+        # Always allow users to update/remove their own linked member
+        own = member.linked_user_id == user.id
+        if not can and not own and not membership.is_admin:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
     return member
 
 
@@ -150,8 +166,11 @@ async def list_family_members(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all family members belonging to the current user."""
-    query = db.query(FamilyMember).filter(FamilyMember.user_id == current_user.id)
+    """List all family members in the current user's household."""
+    membership = _get_user_household(current_user.id, db)
+    if not membership:
+        return []
+    query = db.query(FamilyMember).filter(FamilyMember.household_id == membership.household_id)
     if not include_inactive:
         query = query.filter(FamilyMember.is_active == True)
     return query.order_by(FamilyMember.created_at).all()
@@ -163,15 +182,18 @@ async def create_family_member(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Create a family member, optionally seeding their first eligibility period."""
+    """Create a family member in the current user's household."""
     if payload.member_relationship not in VALID_RELATIONSHIPS:
         raise HTTPException(
             status_code=422,
             detail=f"member_relationship must be one of: {', '.join(sorted(VALID_RELATIONSHIPS))}",
         )
+    membership = _get_user_household(current_user.id, db)
+    if not membership:
+        raise HTTPException(status_code=404, detail="You are not a member of any household")
 
     member = FamilyMember(
-        user_id=current_user.id,
+        household_id=membership.household_id,
         name=payload.name,
         member_relationship=payload.member_relationship,
         date_of_birth=payload.date_of_birth,
@@ -199,7 +221,7 @@ async def get_family_member(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return _get_member_or_404(member_id, current_user.id, db)
+    return _get_member_or_404(member_id, current_user, db)
 
 
 @router.put("/{member_id}", response_model=FamilyMemberResponse)
@@ -209,7 +231,7 @@ async def update_family_member(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = _get_member_or_404(member_id, current_user.id, db)
+    member = _get_member_or_404(member_id, current_user, db, operation="write")
 
     if payload.member_relationship is not None and payload.member_relationship not in VALID_RELATIONSHIPS:
         raise HTTPException(
@@ -232,7 +254,7 @@ async def deactivate_family_member(
     current_user: User = Depends(get_current_user),
 ):
     """Soft-delete: marks the member inactive rather than deleting records."""
-    member = _get_member_or_404(member_id, current_user.id, db)
+    member = _get_member_or_404(member_id, current_user, db, operation="delete")
     member.is_active = False
     db.commit()
 
@@ -247,7 +269,7 @@ async def list_eligibility_periods(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = _get_member_or_404(member_id, current_user.id, db)
+    member = _get_member_or_404(member_id, current_user, db)
     return member.eligibility_periods
 
 
@@ -258,7 +280,7 @@ async def add_eligibility_period(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = _get_member_or_404(member_id, current_user.id, db)
+    member = _get_member_or_404(member_id, current_user, db, operation="write")
 
     if payload.end_date and payload.end_date < payload.start_date:
         raise HTTPException(status_code=422, detail="end_date must be on or after start_date.")
@@ -283,7 +305,7 @@ async def update_eligibility_period(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _get_member_or_404(member_id, current_user.id, db)
+    _get_member_or_404(member_id, current_user, db, operation="write")
     period = _get_period_or_404(period_id, member_id, db)
 
     for field, value in payload.model_dump(exclude_unset=True).items():
@@ -304,7 +326,7 @@ async def delete_eligibility_period(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _get_member_or_404(member_id, current_user.id, db)
+    _get_member_or_404(member_id, current_user, db, operation="delete")
     period = _get_period_or_404(period_id, member_id, db)
     db.delete(period)
     db.commit()
@@ -322,7 +344,7 @@ async def check_eligibility(
     current_user: User = Depends(get_current_user),
 ):
     """Return whether a family member was HSA-eligible on a given expense date."""
-    member = _get_member_or_404(member_id, current_user.id, db)
+    member = _get_member_or_404(member_id, current_user, db)
     matched = _check_eligible_on(member, expense_date)
     return EligibilityCheckResponse(
         member_id=member_id,

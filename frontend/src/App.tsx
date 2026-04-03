@@ -5,6 +5,7 @@ import BankAccounts from './pages/BankAccounts'
 import FamilyMembers from './pages/FamilyMembers'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import InvitePage from './pages/InvitePage'
 import ProtectedRoute from './components/ProtectedRoute'
 
 function Nav() {
@@ -48,6 +49,7 @@ function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/invite/:token" element={<InvitePage />} />
 
         <Route path="/" element={<ProtectedLayout><Dashboard /></ProtectedLayout>} />
         <Route path="/bank" element={<ProtectedLayout><BankAccounts /></ProtectedLayout>} />

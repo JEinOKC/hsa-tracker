@@ -10,6 +10,8 @@ class PasskeyRegisterStartRequest(BaseModel):
 
     username: str  # Unique username identifier
     display_name: str  # Full name for display
+    invite_token: Optional[str] = None  # Required when REQUIRE_INVITE=true or using a family invite link
+    family_pin: Optional[str] = None  # Required when invite is a FamilyInvite with require_pin=True
 
 
 class PasskeyRegisterCompleteRequest(BaseModel):
