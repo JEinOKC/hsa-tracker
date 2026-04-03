@@ -1,4 +1,4 @@
-.PHONY: help setup-wizard dev-build dev-up dev-rebuild dev-down dev-logs prod-up prod-down prod-logs tf-init tf-plan tf-apply tf-destroy db-init db-migrate db-upgrade db-downgrade db-reset test-backend test-frontend test-all clean format lint
+.PHONY: help setup-wizard dev-build dev-up dev-rebuild dev-down dev-logs prod-up prod-down prod-logs tf-init tf-plan tf-apply tf-destroy db-init db-migrate db-upgrade db-downgrade db-reset test-backend test-frontend test-all clean format lint push-test generate-vapid
 
 # Default target
 .DEFAULT_GOAL := help
@@ -91,6 +91,13 @@ dev-up: ## Start development environment
 	@echo "Frontend: http://localhost:3001 (configurable via FRONTEND_PORT)"
 	@echo "Backend API: http://localhost:8001 (configurable via BACKEND_PORT)"
 	@echo "API Docs: http://localhost:8001/docs"
+
+dev-rebuild-frontend: ## Rebuild frontend container (use after adding npm packages)
+	@echo "$(BLUE)Rebuilding frontend container...$(NC)"
+	$(DOCKER_COMPOSE_CMD) -f docker-compose.dev.yml rm -sf frontend
+	docker volume rm hsa-tracker_frontend_node_modules 2>/dev/null || true
+	$(DOCKER_COMPOSE_CMD) -f docker-compose.dev.yml up -d --build frontend
+	@echo "$(GREEN)✓ Frontend rebuilt$(NC)"
 
 dev-rebuild: ## Rebuild and restart development environment
 	@echo "$(BLUE)Rebuilding and restarting development environment...$(NC)"
@@ -246,6 +253,18 @@ lint: ## Lint code (backend: flake8, frontend: eslint)
 # ==========================================
 # Doppler Commands
 # ==========================================
+
+# ==========================================
+# Push Notification Commands
+# ==========================================
+
+generate-vapid: ## Generate VAPID keys for Web Push (run once, add output to .env/Doppler)
+	@echo "$(BLUE)Generating VAPID keys...$(NC)"
+	$(RUN_CMD) docker-compose -f docker-compose.dev.yml exec backend python scripts/generate_vapid_keys.py
+
+push-test: ## Send a test push notification to all subscribed users
+	@echo "$(BLUE)Sending test push notification...$(NC)"
+	$(RUN_CMD) docker-compose -f docker-compose.dev.yml exec backend python scripts/send_test_push.py
 
 doppler-login: ## Login to Doppler
 	@doppler login
