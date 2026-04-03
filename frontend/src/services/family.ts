@@ -11,9 +11,10 @@ export interface EligibilityPeriod {
 
 export interface FamilyMember {
   id: string
-  user_id: string
+  household_id: string
   name: string
   member_relationship: 'self' | 'spouse' | 'child' | 'other'
+  linked_user_id: string | null
   date_of_birth: string | null
   is_tax_dependent: boolean
   is_active: boolean

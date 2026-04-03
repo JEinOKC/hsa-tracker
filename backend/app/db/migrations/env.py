@@ -12,6 +12,11 @@ from app.database import Base
 from app.config import settings
 # Import all models so Alembic can detect them
 from app.models import User, UserPasskey, UserTOTP, UserBackupCode  # noqa: F401
+from app.models.user import RegistrationToken, FamilyInvite  # noqa: F401
+from app.models.bank import BankConnection, BankTransaction, TransactionDocument  # noqa: F401
+from app.models.family import FamilyMember, HsaEligibilityPeriod  # noqa: F401
+from app.models.household import Household, HouseholdMembership, HouseholdRole  # noqa: F401
+from app.models.access import AccountRole, AccountAccess  # noqa: F401
 
 # this is the Alembic Config object
 config = context.config

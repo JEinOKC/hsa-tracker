@@ -1,19 +1,46 @@
 /**
  * Passkey Registration Form - No email, no password!
+ *
+ * Props (all optional):
+ *   inviteToken  — pre-fill the invite token field (read-only when provided)
+ *   requirePin   — show the family PIN field (used when arriving via an invite link)
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import passkeyService from '../../services/passkey'
-import authService from '../../services/auth'
 
-export default function PasskeyRegisterForm() {
+interface Props {
+  inviteToken?: string
+  requirePin?: boolean
+  prefilledDisplayName?: string
+}
+
+export default function PasskeyRegisterForm({ inviteToken: propInviteToken, requirePin = false, prefilledDisplayName }: Props) {
   const [username, setUsername] = useState('')
-  const [displayName, setDisplayName] = useState('')
+  const [displayName, setDisplayName] = useState(prefilledDisplayName ?? '')
   const [deviceName, setDeviceName] = useState('')
+  const [inviteToken, setInviteToken] = useState(propInviteToken ?? '')
+  const [familyPin, setFamilyPin] = useState('')
+  const [requireInvite, setRequireInvite] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const navigate = useNavigate()
+
+  // When the prop changes (e.g. InvitePage passes a token), keep state in sync
+  useEffect(() => {
+    if (propInviteToken !== undefined) setInviteToken(propInviteToken)
+  }, [propInviteToken])
+
+  useEffect(() => {
+    // Only fetch app config when this form is used standalone (no prop token)
+    if (propInviteToken !== undefined) return
+    passkeyService.getAppConfig().then((cfg) => {
+      setRequireInvite(cfg.require_invite)
+    }).catch(() => {
+      // If config fetch fails, default to open registration
+    })
+  }, [propInviteToken])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -21,21 +48,22 @@ export default function PasskeyRegisterForm() {
     setIsLoading(true)
 
     try {
-      // Check if passkeys are supported
       if (!passkeyService.isSupported()) {
         setError('Passkeys are not supported in this browser. Please use a modern browser like Chrome, Safari, or Edge.')
         setIsLoading(false)
         return
       }
 
-      // Create account with passkey
-      await passkeyService.register(username, displayName, deviceName || undefined)
+      await passkeyService.register(
+        username,
+        displayName,
+        deviceName || undefined,
+        inviteToken || undefined,
+        familyPin || undefined,
+      )
 
-      // Auto-login after registration
-      const tokens = await passkeyService.login(username)
-
-      // Redirect to dashboard
-      navigate('/')
+      await passkeyService.login(username)
+      navigate('/family?setup=1')
     } catch (err: any) {
       console.error('Registration error:', err)
       const message = err.response?.data?.detail || err.message || 'Registration failed'
@@ -44,6 +72,10 @@ export default function PasskeyRegisterForm() {
       setIsLoading(false)
     }
   }
+
+  // Show invite token field when: app requires it OR a token was passed as a prop
+  const showInviteField = requireInvite || propInviteToken !== undefined
+  const inviteFieldReadOnly = propInviteToken !== undefined
 
   return (
     <div className="space-y-6">
@@ -56,6 +88,51 @@ export default function PasskeyRegisterForm() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {showInviteField && (
+          <div>
+            <label htmlFor="inviteToken" className="block text-sm font-medium text-gray-700 mb-1">
+              Invite Token *
+            </label>
+            <input
+              id="inviteToken"
+              type="text"
+              value={inviteToken}
+              onChange={(e) => setInviteToken(e.target.value.trim())}
+              required
+              disabled={isLoading || inviteFieldReadOnly}
+              readOnly={inviteFieldReadOnly}
+              className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 font-mono ${
+                inviteFieldReadOnly ? 'bg-gray-50 text-gray-500 cursor-default' : 'disabled:opacity-50'
+              }`}
+              placeholder="word-word-word"
+            />
+            {!inviteFieldReadOnly && (
+              <p className="mt-1 text-sm text-gray-500">Enter the invite token you were given</p>
+            )}
+          </div>
+        )}
+
+        {requirePin && (
+          <div>
+            <label htmlFor="familyPin" className="block text-sm font-medium text-gray-700 mb-1">
+              Family PIN *
+            </label>
+            <input
+              id="familyPin"
+              type="text"
+              value={familyPin}
+              onChange={(e) => setFamilyPin(e.target.value.trim())}
+              required
+              disabled={isLoading}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50 font-mono"
+              placeholder="word-word"
+            />
+            <p className="mt-1 text-sm text-gray-500">
+              Ask the person who invited you for the family PIN
+            </p>
+          </div>
+        )}
+
         <div>
           <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
             Username *
@@ -85,12 +162,16 @@ export default function PasskeyRegisterForm() {
             id="displayName"
             type="text"
             value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            onChange={(e) => !prefilledDisplayName && setDisplayName(e.target.value)}
             required
             disabled={isLoading}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
+            readOnly={!!prefilledDisplayName}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 ${prefilledDisplayName ? 'bg-gray-50 text-gray-500 cursor-default' : 'disabled:opacity-50'}`}
             placeholder="John Doe"
           />
+          {prefilledDisplayName && (
+            <p className="mt-1 text-sm text-gray-500">Pre-filled from your invite</p>
+          )}
         </div>
 
         <div>

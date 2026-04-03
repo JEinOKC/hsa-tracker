@@ -20,6 +20,7 @@ export interface BankAccount {
   created_at: string
   balance_ledger?: string | null
   balance_available?: string | null
+  owner_display_name?: string | null
 }
 
 export interface BankTransaction {
@@ -45,6 +46,7 @@ export interface BankTransaction {
   account_name: string | null
   institution_name: string | null
   document_count: number
+  owner_display_name?: string | null
 }
 
 export interface BankTransactionAnnotation {

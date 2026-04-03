@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     webauthn_rp_name: str = "HSA Tracker"
     webauthn_origin: str = "http://localhost:3001"
 
+    # Registration
+    require_invite: bool = False  # When True, new users must supply a valid invite token
+
     # CORS
     cors_origins: str = "http://localhost:3001"
 

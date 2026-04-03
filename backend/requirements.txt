@@ -30,6 +30,7 @@ pillow==10.2.0
 # Utilities
 python-dateutil==2.8.2
 pytz==2024.1
+coolname==2.2.0  # Human-readable random token generation (e.g. "solemn-laughing-monkey")
 
 # HTTP Client (for health checks)
 requests==2.31.0

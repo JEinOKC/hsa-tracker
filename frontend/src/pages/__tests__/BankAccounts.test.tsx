@@ -168,7 +168,7 @@ describe('BankAccounts page', () => {
 
   describe('handleConnect', () => {
     it('shows error when VITE_TELLER_APP_ID is not set', async () => {
-      // import.meta.env.VITE_TELLER_APP_ID is undefined in tests → TELLER_APP_ID = ''
+      vi.stubEnv('VITE_TELLER_APP_ID', '')
       render(<BankAccounts />)
       await waitFor(() => screen.getByRole('button', { name: /connect bank/i }))
 
@@ -177,27 +177,25 @@ describe('BankAccounts page', () => {
       await waitFor(() => {
         expect(screen.getByText(/VITE_TELLER_APP_ID is not set/i)).toBeInTheDocument()
       })
+      vi.unstubAllEnvs()
     })
 
     it('calls TellerConnect.setup with applicationId (not appId)', async () => {
+      vi.stubEnv('VITE_TELLER_APP_ID', '')
       const mockOpen = vi.fn()
       const mockSetup = vi.fn().mockReturnValue({ open: mockOpen })
       window.TellerConnect = { setup: mockSetup }
 
-      // Provide an app ID via module internals by overriding the env var
-      // We test indirectly: if setup is called, it must have applicationId
       ;(bankService.getStatus as any).mockResolvedValue({ teller_configured: true, active_connections: 0 })
 
       render(<BankAccounts />)
       await waitFor(() => screen.getByRole('button', { name: /connect bank/i }))
 
-      // Simulate env var being set by patching the module-level constant is not
-      // straightforward; instead assert setup is NOT called when app ID is empty
-      // (the guard returns early), which means TellerConnect.setup is never reached.
       fireEvent.click(screen.getByRole('button', { name: /connect bank/i }))
 
-      // With no VITE_TELLER_APP_ID in test env, setup should not be called
+      // With VITE_TELLER_APP_ID stubbed to '', the guard returns early
       expect(mockSetup).not.toHaveBeenCalled()
+      vi.unstubAllEnvs()
     })
 
     it('passes applicationId (not appId) to TellerConnect.setup when app ID is available', async () => {

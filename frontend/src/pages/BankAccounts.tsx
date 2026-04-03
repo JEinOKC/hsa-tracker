@@ -15,8 +15,6 @@ declare global {
   }
 }
 
-const TELLER_APP_ID = import.meta.env.VITE_TELLER_APP_ID || ''
-const TELLER_ENV = import.meta.env.VITE_TELLER_ENV || 'sandbox'
 
 function formatAmount(amount: string): string {
   const n = parseFloat(amount)
@@ -93,7 +91,10 @@ export default function BankAccounts() {
   }
 
   const handleConnect = () => {
-    if (!TELLER_APP_ID) {
+    const appId = import.meta.env.VITE_TELLER_APP_ID || ''
+    const tellerEnv = import.meta.env.VITE_TELLER_ENV || 'sandbox'
+
+    if (!appId) {
       setError('VITE_TELLER_APP_ID is not set. Add it to your .env file.')
       return
     }
@@ -102,8 +103,8 @@ export default function BankAccounts() {
     setError(null)
 
     const tellerConnect = window.TellerConnect.setup({
-      applicationId: TELLER_APP_ID,
-      environment: TELLER_ENV,
+      applicationId: appId,
+      environment: tellerEnv,
       onSuccess: async ({ accessToken }) => {
         try {
           const newAccounts = await bankService.connect(accessToken)
@@ -200,7 +201,7 @@ export default function BankAccounts() {
                       {account.institution_name}
                       {account.last_four ? ` ····${account.last_four}` : ''}
                     </p>
-                    <div className="flex gap-2 mt-1">
+                    <div className="flex gap-2 mt-1 flex-wrap">
                       {account.account_subtype && (
                         <span className="inline-block text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded capitalize">
                           {account.account_subtype}
@@ -209,6 +210,11 @@ export default function BankAccounts() {
                       {account.account_subtype === 'hsa' && (
                         <span className="inline-block text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">
                           HSA
+                        </span>
+                      )}
+                      {account.owner_display_name && (
+                        <span className="inline-block text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">
+                          {account.owner_display_name}'s account
                         </span>
                       )}
                     </div>

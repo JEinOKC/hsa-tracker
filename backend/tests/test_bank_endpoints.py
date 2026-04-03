@@ -49,6 +49,7 @@ def _make_external_txn(txn_id="txn_001", amount="-50.00", status="posted"):
 def _make_connection(db_session, user_id=None, provider_account_id="acct_001", token="tok_abc"):
     conn = BankConnection(
         id=uuid.uuid4(),
+        user_id=user_id,
         provider="teller",
         provider_account_id=provider_account_id,
         account_name="HSA Checking",
@@ -203,17 +204,17 @@ class TestBankConnect:
 # ---------------------------------------------------------------------------
 
 class TestListBankAccounts:
-    def test_returns_active_accounts(self, client, auth_headers, db_session):
-        _make_connection(db_session, provider_account_id="acct_001")
-        _make_connection(db_session, provider_account_id="acct_002")
+    def test_returns_active_accounts(self, client, auth_headers, db_session, test_user):
+        _make_connection(db_session, user_id=test_user.id, provider_account_id="acct_001")
+        _make_connection(db_session, user_id=test_user.id, provider_account_id="acct_002")
 
         resp = client.get("/api/v1/bank/accounts", headers=auth_headers)
         assert resp.status_code == 200
         assert len(resp.json()) == 2
 
-    def test_excludes_inactive_accounts(self, client, auth_headers, db_session):
-        active = _make_connection(db_session, provider_account_id="acct_active")
-        inactive = _make_connection(db_session, provider_account_id="acct_inactive")
+    def test_excludes_inactive_accounts(self, client, auth_headers, db_session, test_user):
+        active = _make_connection(db_session, user_id=test_user.id, provider_account_id="acct_active")
+        inactive = _make_connection(db_session, user_id=test_user.id, provider_account_id="acct_inactive")
         inactive.is_active = False
         db_session.commit()
 
@@ -233,8 +234,8 @@ class TestListBankAccounts:
 # ---------------------------------------------------------------------------
 
 class TestGetBankAccount:
-    def test_returns_account_with_live_balance(self, client, auth_headers, db_session):
-        conn = _make_connection(db_session)
+    def test_returns_account_with_live_balance(self, client, auth_headers, db_session, test_user):
+        conn = _make_connection(db_session, user_id=test_user.id)
 
         mock_provider = MagicMock()
         mock_provider.get_balance.return_value = ExternalBalance(
@@ -253,8 +254,8 @@ class TestGetBankAccount:
         assert data["balance_ledger"] == "4250.00"
         assert data["balance_available"] == "4250.00"
 
-    def test_returns_account_without_balance_on_provider_error(self, client, auth_headers, db_session):
-        conn = _make_connection(db_session)
+    def test_returns_account_without_balance_on_provider_error(self, client, auth_headers, db_session, test_user):
+        conn = _make_connection(db_session, user_id=test_user.id)
 
         mock_provider = MagicMock()
         mock_provider.get_balance.side_effect = Exception("Teller unavailable")
@@ -276,8 +277,8 @@ class TestGetBankAccount:
 # ---------------------------------------------------------------------------
 
 class TestSyncAccount:
-    def test_sync_stores_new_transactions(self, client, auth_headers, db_session):
-        conn = _make_connection(db_session)
+    def test_sync_stores_new_transactions(self, client, auth_headers, db_session, test_user):
+        conn = _make_connection(db_session, user_id=test_user.id)
 
         mock_provider = MagicMock()
         mock_provider.list_transactions.return_value = [
@@ -299,8 +300,8 @@ class TestSyncAccount:
         ).all()
         assert len(txns) == 2
 
-    def test_sync_skips_duplicates(self, client, auth_headers, db_session):
-        conn = _make_connection(db_session)
+    def test_sync_skips_duplicates(self, client, auth_headers, db_session, test_user):
+        conn = _make_connection(db_session, user_id=test_user.id)
         # Pre-insert one transaction
         existing = BankTransaction(
             id=uuid.uuid4(),
@@ -329,8 +330,8 @@ class TestSyncAccount:
         assert data["added"] == 1
         assert data["skipped"] == 1
 
-    def test_sync_updates_last_synced_at(self, client, auth_headers, db_session):
-        conn = _make_connection(db_session)
+    def test_sync_updates_last_synced_at(self, client, auth_headers, db_session, test_user):
+        conn = _make_connection(db_session, user_id=test_user.id)
         assert conn.last_synced_at is None
 
         mock_provider = MagicMock()
@@ -343,14 +344,14 @@ class TestSyncAccount:
         db_session.refresh(conn)
         assert conn.last_synced_at is not None
 
-    def test_sync_returns_503_when_not_configured(self, client, auth_headers, db_session):
-        conn = _make_connection(db_session)
+    def test_sync_returns_503_when_not_configured(self, client, auth_headers, db_session, test_user):
+        conn = _make_connection(db_session, user_id=test_user.id)
         with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=False):
             resp = client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
         assert resp.status_code == 503
 
-    def test_sync_returns_422_when_no_enrollment_token(self, client, auth_headers, db_session):
-        conn = _make_connection(db_session, token=None)
+    def test_sync_returns_422_when_no_enrollment_token(self, client, auth_headers, db_session, test_user):
+        conn = _make_connection(db_session, user_id=test_user.id, token=None)
         with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True):
             resp = client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
         assert resp.status_code == 422
@@ -360,8 +361,8 @@ class TestSyncAccount:
             resp = client.post(f"/api/v1/bank/accounts/{uuid.uuid4()}/sync", headers=auth_headers)
         assert resp.status_code == 404
 
-    def test_sync_passes_enrollment_token_to_provider(self, client, auth_headers, db_session):
-        conn = _make_connection(db_session, token="my_secret_token")
+    def test_sync_passes_enrollment_token_to_provider(self, client, auth_headers, db_session, test_user):
+        conn = _make_connection(db_session, user_id=test_user.id, token="my_secret_token")
 
         mock_provider = MagicMock()
         mock_provider.list_transactions.return_value = []
@@ -379,8 +380,8 @@ class TestSyncAccount:
 
 class TestListBankTransactions:
     @pytest.fixture
-    def conn_with_txns(self, db_session):
-        conn = _make_connection(db_session)
+    def conn_with_txns(self, db_session, test_user):
+        conn = _make_connection(db_session, user_id=test_user.id)
         txns = [
             BankTransaction(
                 id=uuid.uuid4(),
@@ -437,16 +438,16 @@ class TestListBankTransactions:
 # ---------------------------------------------------------------------------
 
 class TestDisconnectAccount:
-    def test_deactivates_connection(self, client, auth_headers, db_session):
-        conn = _make_connection(db_session)
+    def test_deactivates_connection(self, client, auth_headers, db_session, test_user):
+        conn = _make_connection(db_session, user_id=test_user.id)
         resp = client.delete(f"/api/v1/bank/accounts/{conn.id}", headers=auth_headers)
         assert resp.status_code == 204
 
         db_session.refresh(conn)
         assert conn.is_active is False
 
-    def test_preserves_transactions_after_disconnect(self, client, auth_headers, db_session):
-        conn = _make_connection(db_session)
+    def test_preserves_transactions_after_disconnect(self, client, auth_headers, db_session, test_user):
+        conn = _make_connection(db_session, user_id=test_user.id)
         txn = BankTransaction(
             id=uuid.uuid4(),
             connection_id=conn.id,

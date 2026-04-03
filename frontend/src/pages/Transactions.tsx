@@ -243,6 +243,9 @@ function TxnRow({ txn, members, tab, onChange }: TxnRowProps) {
           <p className="text-xs text-gray-400 truncate">
             {txn.institution_name || txn.account_name || ''}
             {txn.account_name && txn.institution_name ? ` · ${txn.account_name}` : ''}
+            {txn.owner_display_name && (
+              <span className="ml-1.5 text-amber-600">· From: {txn.owner_display_name}</span>
+            )}
           </p>
         </div>
 

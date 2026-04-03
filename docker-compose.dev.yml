@@ -55,6 +55,7 @@ services:
       - TELLER_CERT_B64=${TELLER_CERT_B64:-}
       - TELLER_PRIVATE_KEY_B64=${TELLER_PRIVATE_KEY_B64:-}
       - TELLER_ENV=${TELLER_ENV:-sandbox}
+      - REQUIRE_INVITE=${REQUIRE_INVITE:-false}
     volumes:
       - ./backend:/app  # Mount source code for hot reload
       - backend_cache:/root/.cache  # Cache pip packages

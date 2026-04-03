@@ -24,9 +24,9 @@ class FamilyMember(Base):
     __tablename__ = "family_members"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(
+    household_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("households.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -34,6 +34,7 @@ class FamilyMember(Base):
     name = Column(String(255), nullable=False)
     # "self", "spouse", "child", "other" — column name avoids shadowing sqlalchemy.orm.relationship
     member_relationship = Column(String(50), nullable=False)
+    linked_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     date_of_birth = Column(Date, nullable=True)
     is_tax_dependent = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)

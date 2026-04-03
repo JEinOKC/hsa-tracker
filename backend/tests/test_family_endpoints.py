@@ -6,6 +6,7 @@ from datetime import date
 import pytest
 
 from app.models.family import FamilyMember, HsaEligibilityPeriod
+from app.models.user import User
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +88,7 @@ class TestCreateFamilyMember:
             "/api/v1/families/",
             json={
                 "name": "Bob",
-                "member_relationship": "self",
+                "member_relationship": "spouse",
                 "eligibility_start": "2024-01-01",
                 "eligibility_end": None,
             },
@@ -126,7 +127,7 @@ class TestCreateFamilyMember:
         assert resp.status_code == 422
 
     def test_all_valid_relationships_accepted(self, client, auth_headers):
-        for rel in ("self", "spouse", "child", "other"):
+        for rel in ("spouse", "child", "other"):
             resp = client.post(
                 "/api/v1/families/",
                 json={"name": f"Person {rel}", "member_relationship": rel},
@@ -183,12 +184,14 @@ class TestListFamilyMembers:
         assert str(member.id) in ids
 
     def test_does_not_return_other_users_members(self, client, auth_headers, db_session):
-        other_user_id = uuid.uuid4()
+        other_user = User(id=uuid.uuid4(), username="other1", display_name="Other", is_active=True, is_superuser=False)
+        db_session.add(other_user)
+        db_session.flush()
         other_member = FamilyMember(
             id=uuid.uuid4(),
-            user_id=other_user_id,
+            user_id=other_user.id,
             name="Someone Else",
-            member_relationship="self",
+            member_relationship="other",
             is_active=True,
         )
         db_session.add(other_member)
@@ -215,11 +218,14 @@ class TestGetFamilyMember:
         assert resp.status_code == 404
 
     def test_returns_404_for_other_users_member(self, client, auth_headers, db_session):
+        other_user = User(id=uuid.uuid4(), username="other2", display_name="Other2", is_active=True, is_superuser=False)
+        db_session.add(other_user)
+        db_session.flush()
         other = FamilyMember(
             id=uuid.uuid4(),
-            user_id=uuid.uuid4(),
+            user_id=other_user.id,
             name="Not Mine",
-            member_relationship="self",
+            member_relationship="other",
             is_active=True,
         )
         db_session.add(other)
