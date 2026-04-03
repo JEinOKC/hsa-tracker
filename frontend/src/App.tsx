@@ -6,6 +6,7 @@ import FamilyMembers from './pages/FamilyMembers'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import InvitePage from './pages/InvitePage'
+import Settings from './pages/Settings'
 import ProtectedRoute from './components/ProtectedRoute'
 
 function Nav() {
@@ -26,6 +27,7 @@ function Nav() {
           <NavLink to="/bank" className={linkClass}>Bank Accounts</NavLink>
           <NavLink to="/family" className={linkClass}>Family</NavLink>
           <NavLink to="/transactions" className={linkClass}>Transactions</NavLink>
+          <NavLink to="/settings" className={linkClass}>Settings</NavLink>
         </div>
       </div>
     </nav>
@@ -55,6 +57,7 @@ function App() {
         <Route path="/bank" element={<ProtectedLayout><BankAccounts /></ProtectedLayout>} />
         <Route path="/family" element={<ProtectedLayout><FamilyMembers /></ProtectedLayout>} />
         <Route path="/transactions" element={<ProtectedLayout><Transactions /></ProtectedLayout>} />
+        <Route path="/settings" element={<ProtectedLayout><Settings /></ProtectedLayout>} />
       </Routes>
     </div>
   )

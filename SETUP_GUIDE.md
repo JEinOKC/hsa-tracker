@@ -193,6 +193,40 @@ make dev-logs
 make dev-down
 ```
 
+### Enable Push Notifications (Optional)
+
+Push notifications require a one-time VAPID key setup. The same key pair is used for all users — **do not regenerate keys after users have subscribed**, as it will break existing subscriptions.
+
+**1. Generate keys** (run once per install):
+```bash
+make generate-vapid
+```
+
+This prints three values. Add them to Doppler or your `.env`:
+
+```
+VAPID_PRIVATE_KEY=<value>
+VAPID_PUBLIC_KEY=<value>
+VITE_VAPID_PUBLIC_KEY=<value>   # same value as VAPID_PUBLIC_KEY
+VAPID_CLAIMS_EMAIL=mailto:you@example.com
+```
+
+**2. Restart the containers** to pick up the new secrets:
+```bash
+make dev-rebuild
+```
+
+**3. Subscribe in the app**: go to **Settings**, click **Enable Push Notifications**, and allow the browser prompt.
+
+**4. Test it**:
+```bash
+make push-test
+```
+
+> **Important:** `VITE_VAPID_PUBLIC_KEY` and `VAPID_PUBLIC_KEY` must always be the same value. If you ever need to regenerate keys (e.g. they were leaked), all users will need to go to Settings → Disable → Enable again to resubscribe with the new key.
+
+---
+
 ### Connect a Bank Account (Teller)
 
 1. Go to **Bank Accounts** (`/bank`)

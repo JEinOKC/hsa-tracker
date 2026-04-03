@@ -52,6 +52,11 @@ class Settings(BaseSettings):
         """Parse CORS origins from comma-separated string"""
         return [origin.strip() for origin in self.cors_origins.split(",")]
 
+    # Web Push / VAPID (optional — push is silently disabled if not set)
+    vapid_private_key: Optional[str] = None  # PEM string
+    vapid_public_key: Optional[str] = None   # URL-safe base64
+    vapid_claims_email: str = "mailto:admin@localhost"
+
     # Teller.io bank integration (optional, per-install)
     teller_app_id: Optional[str] = None
     teller_cert_b64: Optional[str] = None

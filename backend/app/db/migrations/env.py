@@ -17,6 +17,7 @@ from app.models.bank import BankConnection, BankTransaction, TransactionDocument
 from app.models.family import FamilyMember, HsaEligibilityPeriod  # noqa: F401
 from app.models.household import Household, HouseholdMembership, HouseholdRole  # noqa: F401
 from app.models.access import AccountRole, AccountAccess  # noqa: F401
+from app.models.push_subscription import PushSubscription  # noqa: F401
 
 # this is the Alembic Config object
 config = context.config
