@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from mangum import Mangum
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -74,3 +75,8 @@ async def startup_event():
 async def shutdown_event():
     """Run on application shutdown"""
     print(f"Shutting down {settings.app_name}...")
+
+
+# Lambda handler — used by AWS Lambda via Mangum.
+# Ignored when running with uvicorn directly (local dev or server deployments).
+handler = Mangum(app, lifespan="off")

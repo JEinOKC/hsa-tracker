@@ -2,7 +2,7 @@
 
 import uuid
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Depends, Request, status
 from coolname import generate_slug
 from sqlalchemy.orm import Session
@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.family import FamilyMember
 from app.models.household import Household, HouseholdMembership, HouseholdRole
-from app.models.user import User, UserPasskey, RegistrationToken, FamilyInvite
+from app.models.user import User, UserPasskey, RegistrationToken, FamilyInvite, PasskeyChallenge
 from app.schemas.auth import (
     PasskeyRegisterStartRequest,
     PasskeyRegisterCompleteRequest,
@@ -35,9 +35,40 @@ from app.utils.rate_limit import limiter
 
 router = APIRouter()
 
-# In-memory challenge storage (in production, use Redis or database)
-# Format: {username: {challenge: bytes, expires_at: datetime}}
-_challenges = {}
+_CHALLENGE_TTL_MINUTES = 10
+
+
+def _save_challenge(db: Session, username: str, challenge: bytes, challenge_type: str, metadata: dict) -> None:
+    """Persist a WebAuthn challenge to the database, replacing any existing one for this username."""
+    db.query(PasskeyChallenge).filter(PasskeyChallenge.username == username).delete()
+    db.add(PasskeyChallenge(
+        username=username,
+        challenge_b64=bytes_to_base64url(challenge),
+        challenge_type=challenge_type,
+        metadata_json=json.dumps(metadata),
+        expires_at=datetime.utcnow() + timedelta(minutes=_CHALLENGE_TTL_MINUTES),
+    ))
+    db.flush()
+
+
+def _consume_challenge(db: Session, username: str, challenge_type: str) -> dict:
+    """Retrieve and delete a challenge row. Raises HTTPException if missing or expired."""
+    row = (
+        db.query(PasskeyChallenge)
+        .filter(PasskeyChallenge.username == username, PasskeyChallenge.challenge_type == challenge_type)
+        .first()
+    )
+    if not row or row.is_expired:
+        db.query(PasskeyChallenge).filter(PasskeyChallenge.username == username).delete()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired session — please start again",
+        )
+    metadata = json.loads(row.metadata_json)
+    metadata["challenge"] = base64url_to_bytes(row.challenge_b64)
+    db.delete(row)
+    db.flush()
+    return metadata
 
 
 def _resolve_invite_token(invite_token: str | None, family_pin: str | None, db: Session, strict: bool = True):
@@ -148,16 +179,13 @@ async def passkey_register_start(
         user_id=temp_user_id
     )
 
-    # Store challenge temporarily (with temp_user_id for verification)
-    _challenges[body.username] = {
-        "challenge": challenge,
-        "type": "registration",
-        "temp_user_id": temp_user_id,
+    # Persist challenge to DB so multi-container deployments share state
+    _save_challenge(db, body.username, challenge, "registration", {
+        "temp_user_id": bytes_to_base64url(temp_user_id),
         "display_name": body.display_name,
         "invite_token": body.invite_token,
-        "invite_type": invite_type,  # "registration_token", "family_invite", or None
-        "created_at": datetime.utcnow()
-    }
+        "invite_type": invite_type,
+    })
 
     # Update options with our challenge (base64url encoded)
     options["challenge"] = bytes_to_base64url(challenge)
@@ -186,13 +214,7 @@ async def passkey_register_complete(
 
     After this, user can login with just their passkey!
     """
-    # Get stored challenge
-    challenge_data = _challenges.get(request.username)
-    if not challenge_data or challenge_data.get("type") != "registration":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired registration session"
-        )
+    challenge_data = _consume_challenge(db, request.username, "registration")
 
     # Verify the credential
     try:
@@ -327,9 +349,6 @@ async def passkey_register_complete(
     db.commit()
     db.refresh(user)
 
-    # Clean up challenge
-    _challenges.pop(request.username, None)
-
     return user
 
 
@@ -387,13 +406,9 @@ async def passkey_login_start(
         user_verification=UserVerificationRequirement.REQUIRED
     )
 
-    # Store challenge
-    _challenges[body.username] = {
-        "challenge": challenge,
-        "type": "authentication",
+    _save_challenge(db, body.username, challenge, "authentication", {
         "user_id": str(user.id),
-        "created_at": datetime.utcnow()
-    }
+    })
 
     # Update options with our challenge
     options["challenge"] = bytes_to_base64url(challenge)
@@ -419,13 +434,7 @@ async def passkey_login_complete(
 
     User is now logged in!
     """
-    # Get stored challenge
-    challenge_data = _challenges.get(request.username)
-    if not challenge_data or challenge_data.get("type") != "authentication":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired login session"
-        )
+    challenge_data = _consume_challenge(db, request.username, "authentication")
 
     # Get user
     user_id = uuid.UUID(challenge_data["user_id"])
@@ -471,9 +480,6 @@ async def passkey_login_complete(
     passkey.sign_count = verified["new_sign_count"]
     passkey.last_used_at = datetime.utcnow()
     db.commit()
-
-    # Clean up challenge
-    _challenges.pop(request.username, None)
 
     # Create tokens
     access_token = create_access_token({"sub": str(user.id)})

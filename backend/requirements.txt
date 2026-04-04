@@ -44,3 +44,6 @@ pywebpush==2.0.0
 
 # Rate Limiting
 slowapi==0.1.9
+
+# AWS Lambda
+mangum==0.17.0
