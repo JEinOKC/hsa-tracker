@@ -1,11 +1,12 @@
 """Integration tests for family member and HSA eligibility period endpoints."""
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
 from app.models.family import FamilyMember, HsaEligibilityPeriod
+from app.models.household import Household, HouseholdMembership, HouseholdRole
 from app.models.user import User
 
 
@@ -14,11 +15,11 @@ from app.models.user import User
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def member(db_session, test_user):
-    """A single active family member owned by test_user."""
+def member(db_session, test_user_household):
+    """A single active family member in test_user's household."""
     m = FamilyMember(
         id=uuid.uuid4(),
-        user_id=test_user.id,
+        household_id=test_user_household.id,
         name="Jane Doe",
         member_relationship="spouse",
         date_of_birth=date(1985, 6, 15),
@@ -69,7 +70,7 @@ class TestFamilyAuthRequired:
 # ---------------------------------------------------------------------------
 
 class TestCreateFamilyMember:
-    def test_creates_member(self, client, auth_headers, db_session, test_user):
+    def test_creates_member(self, client, auth_headers, db_session, test_user, test_user_household):
         resp = client.post(
             "/api/v1/families/",
             json={"name": "Alice", "member_relationship": "child"},
@@ -81,9 +82,9 @@ class TestCreateFamilyMember:
         assert data["member_relationship"] == "child"
         assert data["is_active"] is True
         assert data["is_tax_dependent"] is False
-        assert data["user_id"] == str(test_user.id)
+        assert data["household_id"] == str(test_user_household.id)
 
-    def test_creates_with_eligibility_period(self, client, auth_headers):
+    def test_creates_with_eligibility_period(self, client, auth_headers, test_user_household):
         resp = client.post(
             "/api/v1/families/",
             json={
@@ -100,7 +101,7 @@ class TestCreateFamilyMember:
         assert data["eligibility_periods"][0]["start_date"] == "2024-01-01"
         assert data["eligibility_periods"][0]["end_date"] is None
 
-    def test_creates_with_date_of_birth(self, client, auth_headers):
+    def test_creates_with_date_of_birth(self, client, auth_headers, test_user_household):
         resp = client.post(
             "/api/v1/families/",
             json={"name": "Carol", "member_relationship": "child", "date_of_birth": "2010-03-20"},
@@ -126,7 +127,7 @@ class TestCreateFamilyMember:
         )
         assert resp.status_code == 422
 
-    def test_all_valid_relationships_accepted(self, client, auth_headers):
+    def test_all_valid_relationships_accepted(self, client, auth_headers, test_user_household):
         for rel in ("spouse", "child", "other"):
             resp = client.post(
                 "/api/v1/families/",
@@ -152,10 +153,10 @@ class TestListFamilyMembers:
         assert len(resp.json()) == 1
         assert resp.json()[0]["id"] == str(member.id)
 
-    def test_excludes_inactive_by_default(self, client, auth_headers, db_session, test_user):
+    def test_excludes_inactive_by_default(self, client, auth_headers, db_session, test_user_household):
         inactive = FamilyMember(
             id=uuid.uuid4(),
-            user_id=test_user.id,
+            household_id=test_user_household.id,
             name="Inactive",
             member_relationship="other",
             is_active=False,
@@ -167,10 +168,10 @@ class TestListFamilyMembers:
         ids = [m["id"] for m in resp.json()]
         assert str(inactive.id) not in ids
 
-    def test_includes_inactive_when_requested(self, client, auth_headers, db_session, test_user, member):
+    def test_includes_inactive_when_requested(self, client, auth_headers, db_session, test_user_household, member):
         inactive = FamilyMember(
             id=uuid.uuid4(),
-            user_id=test_user.id,
+            household_id=test_user_household.id,
             name="Inactive",
             member_relationship="other",
             is_active=False,
@@ -183,13 +184,21 @@ class TestListFamilyMembers:
         assert str(inactive.id) in ids
         assert str(member.id) in ids
 
-    def test_does_not_return_other_users_members(self, client, auth_headers, db_session):
+    def test_does_not_return_other_users_members(self, client, auth_headers, db_session, test_user_household):
         other_user = User(id=uuid.uuid4(), username="other1", display_name="Other", is_active=True, is_superuser=False)
         db_session.add(other_user)
         db_session.flush()
+        other_household = Household(
+            id=uuid.uuid4(),
+            name="Other Family",
+            created_by_id=other_user.id,
+            created_at=datetime.utcnow(),
+        )
+        db_session.add(other_household)
+        db_session.flush()
         other_member = FamilyMember(
             id=uuid.uuid4(),
-            user_id=other_user.id,
+            household_id=other_household.id,
             name="Someone Else",
             member_relationship="other",
             is_active=True,
@@ -217,13 +226,21 @@ class TestGetFamilyMember:
         resp = client.get(f"/api/v1/families/{uuid.uuid4()}", headers=auth_headers)
         assert resp.status_code == 404
 
-    def test_returns_404_for_other_users_member(self, client, auth_headers, db_session):
+    def test_returns_404_for_other_users_member(self, client, auth_headers, db_session, test_user_household):
         other_user = User(id=uuid.uuid4(), username="other2", display_name="Other2", is_active=True, is_superuser=False)
         db_session.add(other_user)
         db_session.flush()
+        other_household = Household(
+            id=uuid.uuid4(),
+            name="Other Family",
+            created_by_id=other_user.id,
+            created_at=datetime.utcnow(),
+        )
+        db_session.add(other_household)
+        db_session.flush()
         other = FamilyMember(
             id=uuid.uuid4(),
-            user_id=other_user.id,
+            household_id=other_household.id,
             name="Not Mine",
             member_relationship="other",
             is_active=True,

@@ -109,10 +109,49 @@ def _make_transaction(db_session, connection_id):
     return txn
 
 
-def _make_family_member(db_session, user_id, name="Alice"):
+def _make_household_for(db_session, admin_user, member_user=None, member_can_write_family=False):
+    """Create a household with admin_user as admin. Optionally add member_user."""
+    from app.models.household import Household, HouseholdRole, HouseholdMembership
+    h = Household(id=uuid.uuid4(), name="Test Family", created_by_id=admin_user.id, created_at=datetime.utcnow())
+    db_session.add(h)
+    db_session.flush()
+    admin_role = HouseholdRole(
+        id=uuid.uuid4(), household_id=h.id, name="Admin", created_at=datetime.utcnow(),
+        can_read_transactions=True, can_write_transactions=True, can_delete_transactions=True,
+        can_read_bank_accounts=True, can_write_bank_accounts=True, can_delete_bank_accounts=True,
+        can_read_documents=True, can_write_documents=True, can_delete_documents=True,
+        can_read_family_members=True, can_write_family_members=True, can_delete_family_members=True,
+    )
+    db_session.add(admin_role)
+    db_session.flush()
+    db_session.add(HouseholdMembership(
+        id=uuid.uuid4(), household_id=h.id, user_id=admin_user.id,
+        role_id=admin_role.id, is_admin=True, joined_at=datetime.utcnow(),
+    ))
+    if member_user is not None:
+        member_role = HouseholdRole(
+            id=uuid.uuid4(), household_id=h.id, name="Member", created_at=datetime.utcnow(),
+            can_read_transactions=True, can_write_transactions=False, can_delete_transactions=False,
+            can_read_bank_accounts=True, can_write_bank_accounts=False, can_delete_bank_accounts=False,
+            can_read_documents=True, can_write_documents=False, can_delete_documents=False,
+            can_read_family_members=True,
+            can_write_family_members=member_can_write_family,
+            can_delete_family_members=False,
+        )
+        db_session.add(member_role)
+        db_session.flush()
+        db_session.add(HouseholdMembership(
+            id=uuid.uuid4(), household_id=h.id, user_id=member_user.id,
+            role_id=member_role.id, is_admin=False, joined_at=datetime.utcnow(),
+        ))
+    db_session.commit()
+    return h
+
+
+def _make_family_member(db_session, household_id, name="Alice"):
     member = FamilyMember(
         id=uuid.uuid4(),
-        user_id=user_id,
+        household_id=household_id,
         name=name,
         member_relationship="spouse",
         is_active=True,
@@ -274,9 +313,8 @@ class TestDataVisibility:
 
     def test_sub_user_sees_shared_family_members(self, client, db_session, test_user):
         sub = _make_user(db_session, "fam_sub")
-        role = _make_role(db_session, test_user.id, can_read_family_members=True)
-        _grant(db_session, test_user.id, sub.id, role.id)
-        _make_family_member(db_session, test_user.id, name="Bob")
+        h = _make_household_for(db_session, test_user, member_user=sub)
+        _make_family_member(db_session, h.id, name="Bob")
 
         resp = client.get("/api/v1/families/", headers=_auth(sub))
         assert resp.status_code == 200
@@ -354,9 +392,8 @@ class TestPermissionEnforcement:
 
     def test_write_family_member_allowed(self, client, db_session, test_user):
         sub = _make_user(db_session, "fam_write_ok")
-        role = _make_role(db_session, test_user.id, can_read_family_members=True, can_write_family_members=True)
-        _grant(db_session, test_user.id, sub.id, role.id)
-        member = _make_family_member(db_session, test_user.id, name="Charlie")
+        h = _make_household_for(db_session, test_user, member_user=sub, member_can_write_family=True)
+        member = _make_family_member(db_session, h.id, name="Charlie")
 
         resp = client.put(
             f"/api/v1/families/{member.id}",
@@ -367,13 +404,13 @@ class TestPermissionEnforcement:
 
     def test_write_family_member_denied_without_permission(self, client, db_session, test_user):
         sub = _make_user(db_session, "fam_write_denied")
-        role = _make_role(db_session, test_user.id, can_read_family_members=True, can_write_family_members=False)
-        _grant(db_session, test_user.id, sub.id, role.id)
-        member = _make_family_member(db_session, test_user.id, name="Diana")
+        # sub is NOT in test_user's household — cannot see the family member at all
+        h = _make_household_for(db_session, test_user)
+        member = _make_family_member(db_session, h.id, name="Diana")
 
         resp = client.put(
             f"/api/v1/families/{member.id}",
             json={"name": "Diana Blocked"},
             headers=_auth(sub),
         )
-        assert resp.status_code == 404  # Returns 404 (not 403) to avoid info leakage
+        assert resp.status_code == 404  # sub not in household → 404

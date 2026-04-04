@@ -8,13 +8,12 @@ from typing import Generator
 from app.config import settings
 
 # Create database engine
-engine = create_engine(
-    settings.database_url,
-    echo=settings.debug,
-    pool_pre_ping=True,  # Verify connections before using them
-    pool_size=5,
-    max_overflow=10,
-)
+# pool_size/max_overflow are only valid for non-SQLite backends (QueuePool)
+_engine_kwargs = dict(echo=settings.debug, pool_pre_ping=True)
+if not settings.database_url.startswith("sqlite"):
+    _engine_kwargs["pool_size"] = 5
+    _engine_kwargs["max_overflow"] = 10
+engine = create_engine(settings.database_url, **_engine_kwargs)
 
 # Create sessionmaker
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

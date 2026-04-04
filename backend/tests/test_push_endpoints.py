@@ -92,7 +92,7 @@ def test_subscribe_requires_auth(client):
         "/api/v1/push/subscribe",
         json={"endpoint": SAMPLE_ENDPOINT, "keys": SAMPLE_KEYS},
     )
-    assert response.status_code == 401
+    assert response.status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +120,7 @@ def test_unsubscribe_requires_auth(client):
         "/api/v1/push/subscribe",
         json={"endpoint": SAMPLE_ENDPOINT, "keys": SAMPLE_KEYS},
     )
-    assert response.status_code == 401
+    assert response.status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -150,4 +150,4 @@ def test_send_test_push_returns_zero_when_no_vapid(client, auth_headers):
 
 def test_send_test_push_requires_auth(client):
     response = client.post("/api/v1/push/test")
-    assert response.status_code == 401
+    assert response.status_code == 403

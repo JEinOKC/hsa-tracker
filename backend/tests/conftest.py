@@ -7,6 +7,8 @@ Settings (config.py:68) and database.py are instantiated at module level.
 import os
 
 # Set test env vars before any app imports
+# Use assignment (not setdefault) for REQUIRE_INVITE so Doppler cannot override it in CI/dev
+os.environ["REQUIRE_INVITE"] = "false"
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("DATABASE_URL", "sqlite:///")
 os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
@@ -128,6 +130,17 @@ def clear_passkey_challenges():
     _challenges.clear()
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Reset rate limiter counters between tests so limits don't bleed across."""
+    yield
+    try:
+        from app.utils.rate_limit import limiter
+        limiter._storage.reset()
+    except Exception:
+        pass
+
+
 @pytest.fixture
 def test_user(db_session):
     """Create a basic passkey-only test user (no passkey credential attached)."""
@@ -180,3 +193,51 @@ def auth_headers(test_user):
     """Valid JWT Authorization headers for test_user."""
     token = create_access_token({"sub": str(test_user.id)})
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def test_user_household(db_session, test_user):
+    """Create a household with a full-permission admin role and membership for test_user."""
+    from datetime import datetime
+
+    household = Household(
+        id=uuid_module.uuid4(),
+        name="Test Family",
+        created_by_id=test_user.id,
+        created_at=datetime.utcnow(),
+    )
+    db_session.add(household)
+    db_session.flush()
+
+    role = HouseholdRole(
+        id=uuid_module.uuid4(),
+        household_id=household.id,
+        name="Member",
+        can_read_transactions=True,
+        can_write_transactions=True,
+        can_delete_transactions=True,
+        can_read_bank_accounts=True,
+        can_write_bank_accounts=True,
+        can_delete_bank_accounts=True,
+        can_read_documents=True,
+        can_write_documents=True,
+        can_delete_documents=True,
+        can_read_family_members=True,
+        can_write_family_members=True,
+        can_delete_family_members=True,
+        created_at=datetime.utcnow(),
+    )
+    db_session.add(role)
+    db_session.flush()
+
+    membership = HouseholdMembership(
+        id=uuid_module.uuid4(),
+        household_id=household.id,
+        user_id=test_user.id,
+        role_id=role.id,
+        is_admin=True,
+        joined_at=datetime.utcnow(),
+    )
+    db_session.add(membership)
+    db_session.commit()
+    return household

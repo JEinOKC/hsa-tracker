@@ -3,7 +3,7 @@
 import uuid
 import json
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, Request, status
 from coolname import generate_slug
 from sqlalchemy.orm import Session
 
@@ -31,6 +31,7 @@ from app.utils.webauthn import (
 )
 from webauthn.helpers.structs import UserVerificationRequirement
 from app.config import settings
+from app.utils.rate_limit import limiter
 
 router = APIRouter()
 
@@ -98,8 +99,10 @@ def _resolve_invite_token(invite_token: str | None, family_pin: str | None, db: 
 
 
 @router.post("/register/start", status_code=200)
+@limiter.limit("5/minute")
 async def passkey_register_start(
-    request: PasskeyRegisterStartRequest,
+    request: Request,
+    body: PasskeyRegisterStartRequest,
     db: Session = Depends(get_db)
 ):
     """
@@ -114,7 +117,7 @@ async def passkey_register_start(
     No email or password required!
     """
     # Gate: require some token when REQUIRE_INVITE is set
-    if settings.require_invite and not request.invite_token:
+    if settings.require_invite and not body.invite_token:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="An invite token is required to register"
@@ -123,11 +126,11 @@ async def passkey_register_start(
     # Resolve + validate the token (works for both RegistrationToken and FamilyInvite)
     # strict=True means an unrecognised token is rejected; in open mode, unknown tokens are ignored
     invite_type, _ = _resolve_invite_token(
-        request.invite_token, request.family_pin, db, strict=settings.require_invite
+        body.invite_token, body.family_pin, db, strict=settings.require_invite
     )
 
     # Check if username already exists
-    existing_user = db.query(User).filter(User.username == request.username).first()
+    existing_user = db.query(User).filter(User.username == body.username).first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -140,18 +143,18 @@ async def passkey_register_start(
     # Generate WebAuthn registration options
     challenge = generate_challenge()
     options = create_registration_options(
-        username=request.username,
-        display_name=request.display_name,
+        username=body.username,
+        display_name=body.display_name,
         user_id=temp_user_id
     )
 
     # Store challenge temporarily (with temp_user_id for verification)
-    _challenges[request.username] = {
+    _challenges[body.username] = {
         "challenge": challenge,
         "type": "registration",
         "temp_user_id": temp_user_id,
-        "display_name": request.display_name,
-        "invite_token": request.invite_token,
+        "display_name": body.display_name,
+        "invite_token": body.invite_token,
         "invite_type": invite_type,  # "registration_token", "family_invite", or None
         "created_at": datetime.utcnow()
     }
@@ -161,7 +164,7 @@ async def passkey_register_start(
 
     return {
         "options": options,
-        "username": request.username
+        "username": body.username
     }
 
 
@@ -331,8 +334,10 @@ async def passkey_register_complete(
 
 
 @router.post("/login/start", status_code=200)
+@limiter.limit("10/minute")
 async def passkey_login_start(
-    request: PasskeyLoginStartRequest,
+    request: Request,
+    body: PasskeyLoginStartRequest,
     db: Session = Depends(get_db)
 ):
     """
@@ -345,7 +350,7 @@ async def passkey_login_start(
     4. Returns options for browser to authenticate with passkey
     """
     # Find user
-    user = db.query(User).filter(User.username == request.username).first()
+    user = db.query(User).filter(User.username == body.username).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -383,7 +388,7 @@ async def passkey_login_start(
     )
 
     # Store challenge
-    _challenges[request.username] = {
+    _challenges[body.username] = {
         "challenge": challenge,
         "type": "authentication",
         "user_id": str(user.id),
@@ -395,7 +400,7 @@ async def passkey_login_start(
 
     return {
         "options": options,
-        "username": request.username
+        "username": body.username
     }
 
 
