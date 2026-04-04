@@ -411,25 +411,31 @@ class TestHouseholdJoinCreatesFamilyMembers:
             existing_user = db.query(User).filter(User.id == mem.user_id).first()
             if not existing_user:
                 continue
+            # Check whether there is already a FamilyMember in the household representing new_user
             linked_exists = (
                 family_member_id is not None
                 and db.query(FamilyMember).filter(
                     FamilyMember.id == family_member_id,
-                    FamilyMember.user_id == mem.user_id,
+                    FamilyMember.household_id == household_id,
                 ).first() is not None
             )
             if not linked_exists:
                 db.add(FamilyMember(
-                    user_id=mem.user_id,
+                    household_id=household_id,
                     name=new_user.display_name,
                     member_relationship=new_user_rel,
                     linked_user_id=new_user.id,
                     is_active=True,
                 ))
+            else:
+                # Link the pre-existing record to the new user's account
+                pre = db.query(FamilyMember).filter(FamilyMember.id == family_member_id).first()
+                if pre:
+                    pre.linked_user_id = new_user.id
             existing_role = db.query(HouseholdRole).filter(HouseholdRole.id == mem.role_id).first()
             existing_rel = existing_role.name.lower() if existing_role and existing_role.name.lower() in _valid_rels else "other"
             db.add(FamilyMember(
-                user_id=new_user.id,
+                household_id=household_id,
                 name=existing_user.display_name,
                 member_relationship=existing_rel,
                 linked_user_id=existing_user.id,
@@ -447,9 +453,9 @@ class TestHouseholdJoinCreatesFamilyMembers:
         jenny = _make_user(db_session, "jenny_fam")
         self._simulate_household_join(db_session, h.id, spouse_role.id, jenny)
 
-        # test_user should now have Jenny in their family list
+        # Jenny's FamilyMember record should be in the household
         members = db_session.query(FamilyMember).filter(
-            FamilyMember.user_id == test_user.id
+            FamilyMember.household_id == h.id
         ).all()
         assert any(m.name == jenny.display_name for m in members)
         jenny_record = next(m for m in members if m.name == jenny.display_name)
@@ -465,9 +471,9 @@ class TestHouseholdJoinCreatesFamilyMembers:
         jenny = _make_user(db_session, "jenny_fam2")
         self._simulate_household_join(db_session, h.id, spouse_role.id, jenny)
 
-        # Jenny should have test_user in her family list
+        # test_user's FamilyMember record should also be in the household (created for jenny to see)
         members = db_session.query(FamilyMember).filter(
-            FamilyMember.user_id == jenny.id
+            FamilyMember.household_id == h.id
         ).all()
         assert any(m.name == test_user.display_name for m in members)
 
@@ -482,7 +488,7 @@ class TestHouseholdJoinCreatesFamilyMembers:
         self._simulate_household_join(db_session, h.id, child_role.id, kid)
 
         record = db_session.query(FamilyMember).filter(
-            FamilyMember.user_id == test_user.id,
+            FamilyMember.household_id == h.id,
             FamilyMember.name == kid.display_name,
         ).first()
         assert record.member_relationship == "child"
@@ -498,7 +504,7 @@ class TestHouseholdJoinCreatesFamilyMembers:
         self._simulate_household_join(db_session, h.id, custom_role.id, roomie)
 
         record = db_session.query(FamilyMember).filter(
-            FamilyMember.user_id == test_user.id,
+            FamilyMember.household_id == h.id,
             FamilyMember.name == roomie.display_name,
         ).first()
         assert record.member_relationship == "other"
@@ -511,10 +517,10 @@ class TestHouseholdJoinCreatesFamilyMembers:
         spouse_role = _make_role(db_session, h.id, name="Spouse")
         db_session.commit()
 
-        # Pre-create a FamilyMember record for Jenny in test_user's list
+        # Pre-create a FamilyMember record for Jenny in the household
         jenny = _make_user(db_session, "jenny_linked")
         pre_existing = FamilyMember(
-            user_id=test_user.id,
+            household_id=h.id,
             name=jenny.display_name,
             member_relationship="spouse",
             is_active=True,
@@ -526,9 +532,9 @@ class TestHouseholdJoinCreatesFamilyMembers:
         # Simulate Jenny joining via invite that references the pre-existing record
         self._simulate_household_join(db_session, h.id, spouse_role.id, jenny, family_member_id=pre_existing.id)
 
-        # test_user should still have exactly one FamilyMember record for Jenny
+        # Household should still have exactly one FamilyMember record for Jenny
         jenny_records = db_session.query(FamilyMember).filter(
-            FamilyMember.user_id == test_user.id,
+            FamilyMember.household_id == h.id,
             FamilyMember.name == jenny.display_name,
         ).all()
         assert len(jenny_records) == 1
@@ -553,10 +559,10 @@ class TestHouseholdJoinCreatesFamilyMembers:
         ))
         db_session.commit()
 
-        # Pre-create Jenny in test_user's list (but NOT in alice's list)
+        # Pre-create Jenny's FamilyMember in the household
         jenny = _make_user(db_session, "jenny_linked2")
         pre_existing = FamilyMember(
-            user_id=test_user.id,
+            household_id=h.id,
             name=jenny.display_name,
             member_relationship="spouse",
             is_active=True,
@@ -567,19 +573,19 @@ class TestHouseholdJoinCreatesFamilyMembers:
 
         self._simulate_household_join(db_session, h.id, spouse_role.id, jenny, family_member_id=pre_existing.id)
 
-        # test_user: no new duplicate
-        jenny_for_test_user = db_session.query(FamilyMember).filter(
-            FamilyMember.user_id == test_user.id,
+        # No duplicate jenny record — pre-existing is reused (linked_user_id set)
+        jenny_records = db_session.query(FamilyMember).filter(
+            FamilyMember.household_id == h.id,
             FamilyMember.name == jenny.display_name,
         ).all()
-        assert len(jenny_for_test_user) == 1
+        assert len(jenny_records) == 1
 
-        # alice: should have received a new record for Jenny
-        jenny_for_alice = db_session.query(FamilyMember).filter(
-            FamilyMember.user_id == alice.id,
-            FamilyMember.name == jenny.display_name,
-        ).all()
-        assert len(jenny_for_alice) == 1
+        # Records for existing household members (test_user, alice) are created for jenny to see
+        non_jenny_records = db_session.query(FamilyMember).filter(
+            FamilyMember.household_id == h.id,
+            FamilyMember.name != jenny.display_name,
+        ).count()
+        assert non_jenny_records >= 2
 
     def test_linked_user_id_set_on_both_sides(self, client, db_session, test_user, auth_headers):
         """Both the new user's records for existing members AND existing members' records
@@ -593,16 +599,16 @@ class TestHouseholdJoinCreatesFamilyMembers:
         jenny = _make_user(db_session, "jenny_link")
         self._simulate_household_join(db_session, h.id, spouse_role.id, jenny)
 
-        # test_user's record for jenny should have linked_user_id = jenny.id
+        # Jenny's FamilyMember in the household should have linked_user_id = jenny.id
         jenny_record = db_session.query(FamilyMember).filter(
-            FamilyMember.user_id == test_user.id,
+            FamilyMember.household_id == h.id,
             FamilyMember.linked_user_id == jenny.id,
         ).first()
         assert jenny_record is not None
 
-        # jenny's record for test_user should have linked_user_id = test_user.id
+        # test_user's FamilyMember in the household should have linked_user_id = test_user.id
         test_user_record = db_session.query(FamilyMember).filter(
-            FamilyMember.user_id == jenny.id,
+            FamilyMember.household_id == h.id,
             FamilyMember.linked_user_id == test_user.id,
         ).first()
         assert test_user_record is not None

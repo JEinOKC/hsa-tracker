@@ -1,8 +1,10 @@
 """Authentication endpoints - Complete implementation with email/password, passkeys, and TOTP"""
 
+import re
+import uuid as uuid_mod
 from typing import List
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, Request, status
 from pydantic import BaseModel
 from coolname import generate_slug
 from sqlalchemy.orm import Session
@@ -35,26 +37,65 @@ from app.utils.security import (
     verify_backup_code,
 )
 from app.config import settings
+from app.utils.rate_limit import limiter
 
 router = APIRouter()
+
+# Number of consecutive failures before account is locked
+_MAX_LOGIN_ATTEMPTS = 5
+# How long the lockout lasts
+_LOCKOUT_MINUTES = 15
+
+
+def _check_and_enforce_lockout(user: "User") -> None:
+    """Raise 403 if the account is currently locked."""
+    if user.locked_until and user.locked_until > datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account temporarily locked due to too many failed login attempts. Try again later.",
+        )
+
+
+def _record_failed_login(user: "User", db: "Session") -> None:
+    """Increment failure counter; lock the account if the threshold is reached."""
+    from datetime import timedelta
+    user.failed_login_count = (user.failed_login_count or 0) + 1
+    if user.failed_login_count >= _MAX_LOGIN_ATTEMPTS:
+        user.locked_until = datetime.utcnow() + timedelta(minutes=_LOCKOUT_MINUTES)
+    db.commit()
+
+
+def _reset_failed_login(user: "User", db: "Session") -> None:
+    """Clear failure state after a successful login."""
+    user.failed_login_count = 0
+    user.locked_until = None
+    db.commit()
 
 
 # ===== Basic Email/Password Authentication =====
 
 @router.post("/register", status_code=201, response_model=UserSchema)
-async def register(request: RegisterRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+async def register(request: Request, body: RegisterRequest, db: Session = Depends(get_db)):
     """Register a new user with email and password"""
-    existing_user = db.query(User).filter(User.email == request.email).first()
+    existing_user = db.query(User).filter(User.email == body.email).first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
 
+    # Derive a unique username from the email address (legacy endpoint has no passkey)
+    email_prefix = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", body.email.split("@")[0])[:40]
+    username = email_prefix
+    while db.query(User).filter(User.username == username).first():
+        username = f"{email_prefix}_{uuid_mod.uuid4().hex[:6]}"
+
     user = User(
-        email=request.email,
-        display_name=request.display_name,
-        hashed_password=hash_password(request.password),
+        username=username,
+        email=body.email,
+        display_name=body.display_name,
+        hashed_password=hash_password(body.password),
         is_active=True,
         is_superuser=False,
     )
@@ -67,17 +108,11 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(request: LoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+async def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
     """Login with email and password"""
-    user = db.query(User).filter(User.email == request.email).first()
+    user = db.query(User).filter(User.email == body.email).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    if not user.hashed_password or not verify_password(request.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -88,6 +123,16 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Inactive user"
+        )
+
+    _check_and_enforce_lockout(user)
+
+    if not user.hashed_password or not verify_password(body.password, user.hashed_password):
+        _record_failed_login(user, db)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     # Check if TOTP is required
@@ -103,6 +148,7 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)):
             headers={"X-TOTP-Required": "true"},
         )
 
+    _reset_failed_login(user, db)
     access_token = create_access_token(data={"sub": str(user.id)})
     refresh_token = create_refresh_token(data={"sub": str(user.id)})
 
@@ -250,7 +296,9 @@ async def totp_verify(
 
 
 @router.post("/totp/login", response_model=TokenResponse)
+@limiter.limit("10/minute")
 async def totp_login(
+    request: Request,
     email: str,
     password: str,
     totp_code: str,
@@ -281,11 +329,28 @@ async def totp_login(
             detail="TOTP not enabled for this account"
         )
 
+    _check_and_enforce_lockout(user)
+
+    # Replay prevention: reject a code that was already used in this window
+    if totp.last_used_code == totp_code and totp.last_used_at:
+        from datetime import timedelta
+        if datetime.utcnow() - totp.last_used_at < timedelta(seconds=30):
+            _record_failed_login(user, db)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="TOTP code has already been used",
+            )
+
     if not verify_totp_code(totp.secret, totp_code):
+        _record_failed_login(user, db)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid TOTP code"
         )
+
+    totp.last_used_code = totp_code
+    totp.last_used_at = datetime.utcnow()
+    _reset_failed_login(user, db)
 
     access_token = create_access_token(data={"sub": str(user.id)})
     refresh_token = create_refresh_token(data={"sub": str(user.id)})
@@ -318,7 +383,9 @@ async def totp_disable(
 
 
 @router.post("/backup-code/verify", response_model=TokenResponse)
+@limiter.limit("5/minute")
 async def backup_code_verify(
+    request: Request,
     email: str,
     password: str,
     backup_code: str,
@@ -338,6 +405,8 @@ async def backup_code_verify(
             detail="Invalid credentials"
         )
 
+    _check_and_enforce_lockout(user)
+
     backup_codes = db.query(UserBackupCode).filter(
         UserBackupCode.user_id == user.id,
         UserBackupCode.used_at == None
@@ -356,12 +425,14 @@ async def backup_code_verify(
             break
 
     if not matched_code:
+        _record_failed_login(user, db)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid backup code"
         )
 
     matched_code.used_at = datetime.utcnow()
+    _reset_failed_login(user, db)
     db.commit()
 
     access_token = create_access_token(data={"sub": str(user.id)})

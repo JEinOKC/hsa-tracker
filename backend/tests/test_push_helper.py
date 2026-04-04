@@ -6,12 +6,22 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.models.push_subscription import PushSubscription
+from app.models.user import User
 from app.utils.push import send_push_to_user
 
 
 @pytest.fixture
-def user_id():
-    return uuid.uuid4()
+def user_id(db_session):
+    user = User(
+        id=uuid.uuid4(),
+        username=f"pushtest_{uuid.uuid4().hex[:8]}",
+        display_name="Push Test User",
+        is_active=True,
+        is_superuser=False,
+    )
+    db_session.add(user)
+    db_session.commit()
+    return user.id
 
 
 @pytest.fixture

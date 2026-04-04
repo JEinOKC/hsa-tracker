@@ -92,12 +92,12 @@ class TestListAllTransactions:
         assert r.status_code == 200
         assert all(t["is_hsa_eligible"] is True for t in r.json())
 
-    def test_filter_by_family_member(self, client, db_session, test_user, auth_headers):
+    def test_filter_by_family_member(self, client, db_session, test_user, auth_headers, test_user_household):
         from app.models.family import FamilyMember
         conn = _make_connection(db_session, test_user.id)
         member = FamilyMember(
             id=uuid.uuid4(),
-            user_id=test_user.id,
+            household_id=test_user_household.id,
             name="Jane",
             member_relationship="spouse",
         )
@@ -137,15 +137,15 @@ class TestAnnotateTransaction:
         assert r.status_code == 200
         assert r.json()["is_hsa_eligible"] is True
 
-    def test_assign_family_member(self, client, db_session, test_user, auth_headers):
+    def test_assign_family_member(self, client, db_session, test_user, auth_headers, test_user_household):
         from app.models.family import FamilyMember
         conn = _make_connection(db_session, test_user.id)
         txn = _make_txn(db_session, conn.id)
         member = FamilyMember(
             id=uuid.uuid4(),
-            user_id=test_user.id,
+            household_id=test_user_household.id,
             name="Bob",
-            member_relationship="self",
+            member_relationship="other",
         )
         db_session.add(member)
         db_session.commit()

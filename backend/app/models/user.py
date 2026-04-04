@@ -79,6 +79,10 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
+    # Account lockout — tracks consecutive failed password/TOTP/backup-code attempts
+    failed_login_count = Column(Integer, default=0, nullable=False)
+    locked_until = Column(DateTime, nullable=True)  # Non-null while account is locked
+
     # Relationships
     passkeys = relationship("UserPasskey", back_populates="user", cascade="all, delete-orphan")
     totp = relationship("UserTOTP", back_populates="user", uselist=False, cascade="all, delete-orphan")
@@ -130,6 +134,11 @@ class UserTOTP(Base):
     is_verified = Column(Boolean, default=False, nullable=False)  # True after first successful verification
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     verified_at = Column(DateTime, nullable=True)
+
+    # Replay prevention — store the last code that was accepted so the same
+    # code cannot be used twice within its 30-second validity window.
+    last_used_code = Column(String(10), nullable=True)
+    last_used_at = Column(DateTime, nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="totp")
