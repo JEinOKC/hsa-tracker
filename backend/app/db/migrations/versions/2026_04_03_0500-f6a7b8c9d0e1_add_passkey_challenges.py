@@ -3,8 +3,8 @@
 Replaces in-memory challenge storage with a DB table so that multi-container
 deployments (Lambda, multi-replica servers) share WebAuthn challenge state.
 
-Revision ID: e5f6a7b8c9d0
-Revises: d4e5f6a7b8c9
+Revision ID: f6a7b8c9d0e1
+Revises: e5f6a7b8c9d0
 Create Date: 2026-04-03 05:00:00.000000
 
 """
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 
 # revision identifiers, used by Alembic.
-revision: str = 'e5f6a7b8c9d0'
-down_revision: Union[str, None] = 'd4e5f6a7b8c9'
+revision: str = 'f6a7b8c9d0e1'
+down_revision: Union[str, None] = 'e5f6a7b8c9d0'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

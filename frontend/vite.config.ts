@@ -14,7 +14,8 @@ export default defineConfig({
       filename: 'sw.ts',
       registerType: 'autoUpdate',
       devOptions: {
-        enabled: false,
+        enabled: true,
+        type: 'module',
       },
       manifest: {
         name: 'HSA Tracker',
