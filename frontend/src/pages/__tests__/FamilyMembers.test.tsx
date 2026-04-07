@@ -46,8 +46,6 @@ import { familyService } from '../../services/family'
 import familyInvitesService from '../../services/familyInvites'
 import householdsService from '../../services/households'
 
-const today = new Date().toISOString().split('T')[0]
-
 const mockMember = {
   id: 'member-uuid-1',
   user_id: 'user-uuid-1',

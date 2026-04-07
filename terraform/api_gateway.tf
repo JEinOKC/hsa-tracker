@@ -41,3 +41,43 @@ resource "aws_lambda_permission" "api_gateway" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.backend.execution_arn}/*/*"
 }
+
+# ── Custom domain (optional) ───────────────────────────────────────────────────
+# Only created when api_custom_domain is set.
+# ACM cert is validated via DNS — Cloudflare DNS records are added in cloudflare.tf.
+
+resource "aws_acm_certificate" "api" {
+  count             = var.api_custom_domain != "" ? 1 : 0
+  domain_name       = var.api_custom_domain
+  validation_method = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_acm_certificate_validation" "api" {
+  count                   = var.api_custom_domain != "" ? 1 : 0
+  certificate_arn         = aws_acm_certificate.api[0].arn
+  validation_record_fqdns = [for r in cloudflare_record.acm_validation : r.hostname]
+
+  depends_on = [cloudflare_record.acm_validation]
+}
+
+resource "aws_apigatewayv2_domain_name" "api" {
+  count       = var.api_custom_domain != "" ? 1 : 0
+  domain_name = var.api_custom_domain
+
+  domain_name_configuration {
+    certificate_arn = aws_acm_certificate_validation.api[0].certificate_arn
+    endpoint_type   = "REGIONAL"
+    security_policy = "TLS_1_2"
+  }
+}
+
+resource "aws_apigatewayv2_api_mapping" "api" {
+  count       = var.api_custom_domain != "" ? 1 : 0
+  api_id      = aws_apigatewayv2_api.backend.id
+  domain_name = aws_apigatewayv2_domain_name.api[0].id
+  stage       = aws_apigatewayv2_stage.default.id
+}

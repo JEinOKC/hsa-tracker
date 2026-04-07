@@ -49,6 +49,16 @@ output "lambda_function_name" {
   value       = aws_lambda_function.backend.function_name
 }
 
+output "api_url" {
+  description = "API base URL — custom domain if configured, otherwise raw API Gateway URL"
+  value       = var.api_custom_domain != "" ? "https://${var.api_custom_domain}" : aws_apigatewayv2_stage.default.invoke_url
+}
+
+output "frontend_pages_url" {
+  description = "Cloudflare Pages deployment URL (available when cloudflare_enabled = true)"
+  value       = var.cloudflare_enabled ? cloudflare_pages_project.frontend[0].subdomain : "N/A — cloudflare_enabled is false"
+}
+
 # Helpful commands to copy credentials to .env
 output "env_file_instructions" {
   description = "Instructions for updating .env file"
