@@ -1,4 +1,4 @@
-.PHONY: help setup-wizard dev-build dev-up dev-rebuild dev-down dev-logs prod-up prod-down prod-logs tf-init tf-plan tf-apply tf-destroy tf-ecr-bootstrap db-init db-migrate db-migrate-prod db-upgrade db-downgrade db-reset test-backend test-frontend test-all clean format lint push-test generate-vapid lambda-build lambda-push lambda-deploy frontend-deploy deploy
+.PHONY: help setup-wizard dev-build dev-up dev-rebuild dev-down dev-logs prod-up prod-down prod-logs tf-init tf-plan tf-apply tf-destroy tf-ecr-bootstrap db-init db-migrate db-migrate-prod db-upgrade db-downgrade db-reset test-backend test-frontend test-all clean format lint push-test generate-vapid generate-invite lambda-build lambda-push lambda-deploy frontend-deploy deploy
 
 # Default target
 .DEFAULT_GOAL := help
@@ -223,20 +223,33 @@ tf-ecr-bootstrap: ## Create ECR repository (one-time, before first deploy)
 			-auto-approve'
 	@echo "$(GREEN)✓ ECR repository created$(NC)"
 
+generate-invite: ## Manage invite tokens. ENV=prd|dev (default: dev), CMD=create|list|"revoke <token>"
+	doppler run --config $${ENV:-dev} -- sh -c 'docker-compose -f docker-compose.dev.yml exec -e DATABASE_URL="$$DATABASE_URL" backend python scripts/generate_invite.py $${CMD:-create}'
+
 lambda-build: ## Build the Lambda Docker image
 	@echo "$(BLUE)Building Lambda Docker image...$(NC)"
 	docker build --platform linux/amd64 -f backend/Dockerfile.lambda -t hsa-tracker-backend:latest ./backend
 	@echo "$(GREEN)✓ Lambda image built$(NC)"
 
-lambda-push: ## Authenticate to ECR and push the Lambda image
+lambda-push: ## Authenticate to ECR, push the Lambda image, and force Lambda to use it
 	@echo "$(BLUE)Pushing Lambda image to ECR...$(NC)"
 	@ACCOUNT_ID=$$(aws sts get-caller-identity --query Account --output text) && \
 	REGION=$$(terraform -chdir=terraform output -raw s3_bucket_region 2>/dev/null || echo "us-east-1") && \
 	ECR_REPO="$$ACCOUNT_ID.dkr.ecr.$$REGION.amazonaws.com/hsa-tracker-backend" && \
 	aws ecr get-login-password --region $$REGION | docker login --username AWS --password-stdin "$$ACCOUNT_ID.dkr.ecr.$$REGION.amazonaws.com" && \
 	docker tag hsa-tracker-backend:latest "$$ECR_REPO:latest" && \
-	docker push "$$ECR_REPO:latest"
-	@echo "$(GREEN)✓ Lambda image pushed to ECR$(NC)"
+	docker push "$$ECR_REPO:latest" && \
+	echo "$(BLUE)Updating Lambda function code...$(NC)" && \
+	aws lambda update-function-code \
+		--function-name hsa-tracker-backend \
+		--region $$REGION \
+		--image-uri "$$ECR_REPO:latest" \
+		--query 'LastUpdateStatus' \
+		--output text && \
+	aws lambda wait function-updated \
+		--function-name hsa-tracker-backend \
+		--region $$REGION
+	@echo "$(GREEN)✓ Lambda image pushed and function updated$(NC)"
 
 lambda-deploy: lambda-build lambda-push ## Build and push Lambda image (run tf-ecr-bootstrap first if ECR doesn't exist)
 

@@ -186,6 +186,7 @@ async def passkey_register_start(
         "invite_token": body.invite_token,
         "invite_type": invite_type,
     })
+    db.commit()
 
     # Update options with our challenge (base64url encoded)
     options["challenge"] = bytes_to_base64url(challenge)
@@ -409,6 +410,7 @@ async def passkey_login_start(
     _save_challenge(db, body.username, challenge, "authentication", {
         "user_id": str(user.id),
     })
+    db.commit()
 
     # Update options with our challenge
     options["challenge"] = bytes_to_base64url(challenge)
