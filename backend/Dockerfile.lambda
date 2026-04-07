@@ -1,0 +1,24 @@
+# Lambda container image for the HSA Tracker FastAPI backend.
+#
+# Build:
+#   docker build -f Dockerfile.lambda -t hsa-tracker-lambda .
+#
+# Deploy via Terraform (see terraform/lambda.tf + terraform/ecr.tf).
+# For local development use Dockerfile / docker-compose.dev.yml instead.
+
+FROM --platform=linux/amd64 public.ecr.aws/lambda/python:3.11
+
+WORKDIR ${LAMBDA_TASK_ROOT}
+
+# Install system dependencies needed by psycopg2-binary and cryptography
+RUN yum install -y gcc postgresql-libs && yum clean all
+
+# Install Python dependencies into the Lambda task root
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt --target "${LAMBDA_TASK_ROOT}"
+
+# Copy application source
+COPY app/ app/
+
+# Mangum entry point: app.main.handler
+CMD ["app.main.handler"]

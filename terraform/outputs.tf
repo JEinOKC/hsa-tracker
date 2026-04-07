@@ -34,6 +34,31 @@ output "kms_key_id" {
   value       = var.enable_kms_encryption ? aws_kms_key.receipts[0].id : null
 }
 
+output "api_gateway_url" {
+  description = "Base URL for the deployed API (set as VITE_API_URL in the frontend)"
+  value       = aws_apigatewayv2_stage.default.invoke_url
+}
+
+output "ecr_repository_url" {
+  description = "ECR repository URL — push your Lambda image here before deploying"
+  value       = aws_ecr_repository.backend.repository_url
+}
+
+output "lambda_function_name" {
+  description = "Lambda function name (useful for manual invocations and log tailing)"
+  value       = aws_lambda_function.backend.function_name
+}
+
+output "api_url" {
+  description = "API base URL — custom domain if configured, otherwise raw API Gateway URL"
+  value       = var.api_custom_domain != "" ? "https://${var.api_custom_domain}" : aws_apigatewayv2_stage.default.invoke_url
+}
+
+output "frontend_pages_url" {
+  description = "Cloudflare Pages deployment URL (available when cloudflare_enabled = true)"
+  value       = var.cloudflare_enabled ? cloudflare_pages_project.frontend[0].subdomain : "N/A — cloudflare_enabled is false"
+}
+
 # Helpful commands to copy credentials to .env
 output "env_file_instructions" {
   description = "Instructions for updating .env file"

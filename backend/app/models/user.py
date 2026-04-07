@@ -147,6 +147,33 @@ class UserTOTP(Base):
         return f"<UserTOTP(id={self.id}, user_id={self.user_id}, verified={self.is_verified})>"
 
 
+class PasskeyChallenge(Base):
+    """Temporary storage for WebAuthn challenges during registration/login.
+
+    Replaces the in-memory _challenges dict so that multi-container deployments
+    (Lambda, multi-replica servers) share state via the database.
+    Rows are deleted immediately after use; expires_at allows cleanup of
+    abandoned challenges.
+    """
+
+    __tablename__ = "passkey_challenges"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username = Column(String(255), nullable=False, index=True)
+    challenge_b64 = Column(Text, nullable=False)       # base64url-encoded bytes
+    challenge_type = Column(String(20), nullable=False)  # "registration" or "authentication"
+    metadata_json = Column(Text, nullable=False, default="{}")  # extra fields as JSON
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)       # typically created_at + 10 min
+
+    @property
+    def is_expired(self) -> bool:
+        return datetime.utcnow() > self.expires_at
+
+    def __repr__(self):
+        return f"<PasskeyChallenge(username={self.username}, type={self.challenge_type})>"
+
+
 class UserBackupCode(Base):
     """Backup codes for account recovery"""
 

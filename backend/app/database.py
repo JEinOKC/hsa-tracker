@@ -1,18 +1,32 @@
 """Database configuration and session management"""
 
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.pool import NullPool
 from typing import Generator
 
 from app.config import settings
 
-# Create database engine
-# pool_size/max_overflow are only valid for non-SQLite backends (QueuePool)
-_engine_kwargs = dict(echo=settings.debug, pool_pre_ping=True)
-if not settings.database_url.startswith("sqlite"):
+# On Lambda each container is short-lived; let Neon's PgBouncer handle pooling.
+# On a long-running server, use SQLAlchemy's built-in pool.
+_is_lambda = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+
+_is_sqlite = settings.database_url.startswith("sqlite")
+
+_engine_kwargs = {
+    "echo": settings.debug,
+    "pool_pre_ping": True,
+}
+if _is_lambda or _is_sqlite:
+    # Lambda: let Neon's PgBouncer manage pooling.
+    # SQLite: doesn't support pool_size/max_overflow (also used in tests).
+    _engine_kwargs["poolclass"] = NullPool
+else:
     _engine_kwargs["pool_size"] = 5
     _engine_kwargs["max_overflow"] = 10
+
 engine = create_engine(settings.database_url, **_engine_kwargs)
 
 # Create sessionmaker

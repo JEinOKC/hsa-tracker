@@ -65,7 +65,7 @@ PG_UUID.result_processor = _patched_result_processor
 
 from app.database import Base, get_db
 from app.main import app
-from app.models.user import User, UserPasskey, RegistrationToken, FamilyInvite  # noqa: F401
+from app.models.user import User, UserPasskey, RegistrationToken, FamilyInvite, PasskeyChallenge  # noqa: F401
 from app.models.access import AccountRole, AccountAccess  # noqa: F401
 from app.models.household import Household, HouseholdRole, HouseholdMembership  # noqa: F401
 from app.utils.security import create_access_token
@@ -121,13 +121,13 @@ def client(db_session):
 
 
 @pytest.fixture(autouse=True)
-def clear_passkey_challenges():
-    """Clear the in-memory challenge store between tests."""
-    from app.api.v1.endpoints.passkey import _challenges
-
-    _challenges.clear()
+def clear_passkey_challenges(db_session):
+    """Delete any PasskeyChallenge rows between tests (replaces the old in-memory dict clear)."""
+    db_session.query(PasskeyChallenge).delete()
+    db_session.commit()
     yield
-    _challenges.clear()
+    db_session.query(PasskeyChallenge).delete()
+    db_session.commit()
 
 
 @pytest.fixture(autouse=True)

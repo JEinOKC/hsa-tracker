@@ -1,4 +1,4 @@
-.PHONY: help setup-wizard dev-build dev-up dev-rebuild dev-down dev-logs prod-up prod-down prod-logs tf-init tf-plan tf-apply tf-destroy db-init db-migrate db-upgrade db-downgrade db-reset test-backend test-frontend test-all clean format lint push-test generate-vapid
+.PHONY: help setup-wizard dev-build dev-up dev-rebuild dev-down dev-logs prod-up prod-down prod-logs tf-init tf-plan tf-apply tf-destroy tf-ecr-bootstrap db-init db-migrate db-migrate-prod db-upgrade db-downgrade db-reset test-backend test-frontend test-all clean format lint push-test generate-vapid lambda-build lambda-push lambda-deploy frontend-deploy deploy
 
 # Default target
 .DEFAULT_GOAL := help
@@ -160,6 +160,15 @@ db-upgrade: ## Upgrade database to latest version
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.dev.yml exec backend alembic upgrade head
 	@echo "$(GREEN)✓ Database upgraded$(NC)"
 
+db-migrate-prod: ## Run Alembic migrations against production database (via Doppler prd config)
+	@echo "$(BLUE)Running production migrations...$(NC)"
+	doppler run --config prd -- sh -c '\
+		docker run --rm \
+			-e DATABASE_URL \
+			$(shell terraform -chdir=terraform output -raw ecr_repository_url 2>/dev/null):latest \
+			alembic upgrade head'
+	@echo "$(GREEN)✓ Production migrations complete$(NC)"
+
 db-downgrade: ## Downgrade database by one version
 	@echo "$(YELLOW)Downgrading database...$(NC)"
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.dev.yml exec backend alembic downgrade -1
@@ -182,6 +191,76 @@ db-reset: ## Reset database (WARNING: Deletes all data!)
 # Terraform Commands
 # ==========================================
 
+# ==========================================
+# Lambda Deployment Commands
+# ==========================================
+
+tf-ecr-bootstrap: ## Create ECR repository (one-time, before first deploy)
+	@echo "$(BLUE)Creating ECR repository...$(NC)"
+	doppler run -- sh -c '\
+		unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN && \
+		TF_VAR_database_url="$$DATABASE_URL" \
+		TF_VAR_secret_key="$$SECRET_KEY" \
+		TF_VAR_jwt_secret_key="$$JWT_SECRET_KEY" \
+		TF_VAR_webauthn_rp_id="$$WEBAUTHN_RP_ID" \
+		TF_VAR_webauthn_origin="$$FRONTEND_URL" \
+		TF_VAR_cors_origins="$$FRONTEND_URL" \
+		TF_VAR_vapid_public_key="$$VAPID_PUBLIC_KEY" \
+		TF_VAR_vapid_private_key="$$VAPID_PRIVATE_KEY" \
+		TF_VAR_vapid_claims_email="$$VAPID_CLAIMS_EMAIL" \
+		TF_VAR_allowed_cors_origins="[\"$$FRONTEND_URL\"]" \
+		TF_VAR_cloudflare_api_token="$$CLOUDFLARE_API_TOKEN" \
+		TF_VAR_cloudflare_zone_id="$$CLOUDFLARE_ZONE_ID" \
+		TF_VAR_cloudflare_account_id="$$CLOUDFLARE_ACCOUNT_ID" \
+		TF_VAR_frontend_domain="$$FRONTEND_DOMAIN" \
+		TF_VAR_api_custom_domain="$$API_CUSTOM_DOMAIN" \
+		TF_VAR_github_repo="$$GITHUB_REPO" \
+		TF_VAR_teller_app_id="$$TELLER_APP_ID" \
+		TF_VAR_require_invite="$${REQUIRE_INVITE:-true}" \
+		terraform -chdir=terraform apply \
+			-target=aws_ecr_repository.backend \
+			-target=aws_ecr_lifecycle_policy.backend \
+			-auto-approve'
+	@echo "$(GREEN)✓ ECR repository created$(NC)"
+
+lambda-build: ## Build the Lambda Docker image
+	@echo "$(BLUE)Building Lambda Docker image...$(NC)"
+	docker build --platform linux/amd64 -f backend/Dockerfile.lambda -t hsa-tracker-backend:latest ./backend
+	@echo "$(GREEN)✓ Lambda image built$(NC)"
+
+lambda-push: ## Authenticate to ECR and push the Lambda image
+	@echo "$(BLUE)Pushing Lambda image to ECR...$(NC)"
+	@ACCOUNT_ID=$$(aws sts get-caller-identity --query Account --output text) && \
+	REGION=$$(terraform -chdir=terraform output -raw s3_bucket_region 2>/dev/null || echo "us-east-1") && \
+	ECR_REPO="$$ACCOUNT_ID.dkr.ecr.$$REGION.amazonaws.com/hsa-tracker-backend" && \
+	aws ecr get-login-password --region $$REGION | docker login --username AWS --password-stdin "$$ACCOUNT_ID.dkr.ecr.$$REGION.amazonaws.com" && \
+	docker tag hsa-tracker-backend:latest "$$ECR_REPO:latest" && \
+	docker push "$$ECR_REPO:latest"
+	@echo "$(GREEN)✓ Lambda image pushed to ECR$(NC)"
+
+lambda-deploy: lambda-build lambda-push ## Build and push Lambda image (run tf-ecr-bootstrap first if ECR doesn't exist)
+
+deploy: lambda-deploy db-migrate-prod frontend-deploy ## Full production deploy: build + push Lambda, run migrations, deploy frontend
+
+frontend-deploy: ## Build and deploy frontend to Cloudflare Pages (manual — does not auto-deploy on git push)
+	@echo "$(BLUE)Building frontend...$(NC)"
+	doppler run --config prd -- sh -c '\
+		cd frontend && \
+		VITE_API_URL="https://$$API_CUSTOM_DOMAIN/api/v1" \
+		VITE_VAPID_PUBLIC_KEY="$$VAPID_PUBLIC_KEY" \
+		VITE_WEBAUTHN_RP_ID="$$WEBAUTHN_RP_ID" \
+		VITE_TELLER_APP_ID="$$TELLER_APP_ID" \
+		VITE_TELLER_ENV="development" \
+		npm run build && \
+		npx wrangler pages deploy dist \
+			--project-name hsa-tracker \
+			--branch main'
+	@echo "$(GREEN)✓ Frontend deployed to Cloudflare Pages$(NC)"
+
+# ==========================================
+# Terraform Commands
+# ==========================================
+
 tf-init: ## Initialize Terraform
 	@echo "$(BLUE)Initializing Terraform...$(NC)"
 	cd terraform && terraform init
@@ -189,11 +268,51 @@ tf-init: ## Initialize Terraform
 
 tf-plan: ## Plan Terraform changes
 	@echo "$(BLUE)Planning Terraform changes...$(NC)"
-	cd terraform && TF_VAR_allowed_cors_origins="$$(doppler secrets get TF_VAR_ALLOWED_CORS_ORIGINS --plain 2>/dev/null)" terraform plan
+	doppler run -- sh -c '\
+		unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN && \
+		TF_VAR_database_url="$$DATABASE_URL" \
+		TF_VAR_secret_key="$$SECRET_KEY" \
+		TF_VAR_jwt_secret_key="$$JWT_SECRET_KEY" \
+		TF_VAR_webauthn_rp_id="$$WEBAUTHN_RP_ID" \
+		TF_VAR_webauthn_origin="$$FRONTEND_URL" \
+		TF_VAR_cors_origins="$$FRONTEND_URL" \
+		TF_VAR_vapid_public_key="$$VAPID_PUBLIC_KEY" \
+		TF_VAR_vapid_private_key="$$VAPID_PRIVATE_KEY" \
+		TF_VAR_vapid_claims_email="$$VAPID_CLAIMS_EMAIL" \
+		TF_VAR_allowed_cors_origins="[\"$$FRONTEND_URL\"]" \
+		TF_VAR_cloudflare_api_token="$$CLOUDFLARE_API_TOKEN" \
+		TF_VAR_cloudflare_zone_id="$$CLOUDFLARE_ZONE_ID" \
+		TF_VAR_cloudflare_account_id="$$CLOUDFLARE_ACCOUNT_ID" \
+		TF_VAR_frontend_domain="$$FRONTEND_DOMAIN" \
+		TF_VAR_api_custom_domain="$$API_CUSTOM_DOMAIN" \
+		TF_VAR_github_repo="$$GITHUB_REPO" \
+		TF_VAR_teller_app_id="$$TELLER_APP_ID" \
+		TF_VAR_require_invite="$${REQUIRE_INVITE:-true}" \
+		terraform -chdir=terraform plan'
 
 tf-apply: ## Apply Terraform changes (create AWS infrastructure)
 	@echo "$(BLUE)Applying Terraform changes...$(NC)"
-	cd terraform && TF_VAR_allowed_cors_origins="$$(doppler secrets get TF_VAR_ALLOWED_CORS_ORIGINS --plain 2>/dev/null)" terraform apply
+	doppler run -- sh -c '\
+		unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN && \
+		TF_VAR_database_url="$$DATABASE_URL" \
+		TF_VAR_secret_key="$$SECRET_KEY" \
+		TF_VAR_jwt_secret_key="$$JWT_SECRET_KEY" \
+		TF_VAR_webauthn_rp_id="$$WEBAUTHN_RP_ID" \
+		TF_VAR_webauthn_origin="$$FRONTEND_URL" \
+		TF_VAR_cors_origins="$$FRONTEND_URL" \
+		TF_VAR_vapid_public_key="$$VAPID_PUBLIC_KEY" \
+		TF_VAR_vapid_private_key="$$VAPID_PRIVATE_KEY" \
+		TF_VAR_vapid_claims_email="$$VAPID_CLAIMS_EMAIL" \
+		TF_VAR_allowed_cors_origins="[\"$$FRONTEND_URL\"]" \
+		TF_VAR_cloudflare_api_token="$$CLOUDFLARE_API_TOKEN" \
+		TF_VAR_cloudflare_zone_id="$$CLOUDFLARE_ZONE_ID" \
+		TF_VAR_cloudflare_account_id="$$CLOUDFLARE_ACCOUNT_ID" \
+		TF_VAR_frontend_domain="$$FRONTEND_DOMAIN" \
+		TF_VAR_api_custom_domain="$$API_CUSTOM_DOMAIN" \
+		TF_VAR_github_repo="$$GITHUB_REPO" \
+		TF_VAR_teller_app_id="$$TELLER_APP_ID" \
+		TF_VAR_require_invite="$${REQUIRE_INVITE:-true}" \
+		terraform -chdir=terraform apply'
 	@echo "$(GREEN)✓ AWS infrastructure created$(NC)"
 	@echo "$(YELLOW)Remember to update your secrets with the output values!$(NC)"
 
