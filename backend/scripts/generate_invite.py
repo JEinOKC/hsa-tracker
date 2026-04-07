@@ -33,12 +33,18 @@ except ImportError:
     pass  # dotenv is optional; env vars may already be set
 
 from app.config import settings
-from app.database import Base
-from app.models.user import RegistrationToken  # noqa: F401 — registers with Base.metadata
+from app.database import Base, _clean_database_url
+import app.models.user  # noqa: F401
+import app.models.access  # noqa: F401
+import app.models.bank  # noqa: F401
+import app.models.family  # noqa: F401
+import app.models.household  # noqa: F401
+import app.models.push_subscription  # noqa: F401
+from app.models.user import RegistrationToken
 
 
 def get_session():
-    engine = create_engine(settings.database_url)
+    engine = create_engine(_clean_database_url(settings.database_url))
     Base.metadata.create_all(bind=engine)  # no-op if tables already exist
     Session = sessionmaker(bind=engine)
     return Session()
