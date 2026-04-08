@@ -1,5 +1,6 @@
 import { Routes, Route, NavLink } from 'react-router-dom'
 import { ToastProvider } from './components/Toast'
+import UpdatePrompt from './components/UpdatePrompt'
 import Dashboard from './pages/Dashboard'
 import Transactions from './pages/Transactions'
 import BankAccounts from './pages/BankAccounts'
@@ -102,6 +103,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <ToastProvider>
+    <UpdatePrompt />
     <div className="min-h-screen bg-gray-50">
       <Routes>
         <Route path="/login" element={<Login />} />

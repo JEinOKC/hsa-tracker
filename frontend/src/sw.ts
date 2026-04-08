@@ -7,6 +7,12 @@ declare const self: ServiceWorkerGlobalScope
 clientsClaim()
 precacheAndRoute(self.__WB_MANIFEST)
 
+self.addEventListener('message', (event: ExtendableMessageEvent) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
+})
+
 self.addEventListener('push', (event: PushEvent) => {
   if (!event.data) return
   const data = event.data.json() as { title: string; body: string }
