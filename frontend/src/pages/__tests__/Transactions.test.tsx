@@ -696,15 +696,15 @@ describe('Transactions page', () => {
     it('shows Clear button when docs filter is active', async () => {
       render(<Transactions />, { initialEntries: ['/?docs=missing'] })
       await waitFor(() => {
-        expect(screen.getByText('Clear')).toBeInTheDocument()
+        expect(screen.getByText('Clear filters')).toBeInTheDocument()
       })
     })
 
     it('clears docs filter from URL when Clear is clicked', async () => {
       render(<Transactions />, { initialEntries: ['/?tab=hsa&docs=missing'] })
-      await waitFor(() => screen.getByText('Clear'))
+      await waitFor(() => screen.getByText('Clear filters'))
 
-      fireEvent.click(screen.getByText('Clear'))
+      fireEvent.click(screen.getByText('Clear filters'))
 
       await waitFor(() => {
         expect(bankService.listAllTransactions).toHaveBeenCalledWith(
@@ -762,11 +762,11 @@ describe('Transactions page', () => {
       render(<Transactions />)
       await waitFor(() => screen.getByPlaceholderText(/search description/i))
 
-      expect(screen.queryByText('Clear')).not.toBeInTheDocument()
+      expect(screen.queryByText('Clear filters')).not.toBeInTheDocument()
 
       fireEvent.change(screen.getByPlaceholderText(/search description/i), { target: { value: 'cvs' } })
 
-      expect(screen.getByText('Clear')).toBeInTheDocument()
+      expect(screen.getByText('Clear filters')).toBeInTheDocument()
     })
 
     it('resets filters and reloads when Clear is clicked', async () => {
@@ -774,9 +774,9 @@ describe('Transactions page', () => {
       await waitFor(() => screen.getByPlaceholderText(/search description/i))
 
       fireEvent.change(screen.getByPlaceholderText(/search description/i), { target: { value: 'cvs' } })
-      await waitFor(() => screen.getByText('Clear'))
+      await waitFor(() => screen.getByText('Clear filters'))
 
-      fireEvent.click(screen.getByText('Clear'))
+      fireEvent.click(screen.getByText('Clear filters'))
 
       expect((screen.getByPlaceholderText(/search description/i) as HTMLInputElement).value).toBe('')
     })
