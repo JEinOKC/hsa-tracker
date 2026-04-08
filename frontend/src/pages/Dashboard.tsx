@@ -85,12 +85,12 @@ export default function Dashboard() {
   return (
     <div className="container mx-auto px-4 py-8 max-w-5xl">
       <header className="mb-6">
-        <h1 className="text-4xl font-bold text-gray-900 mb-1">HSA Tracker</h1>
+        <h1 className="text-2xl sm:text-4xl font-bold text-gray-900 mb-1">HSA Tracker</h1>
         <p className="text-gray-500">Your self-hosted HSA expense tracker</p>
       </header>
 
-      {/* Range selector */}
-      <div className="flex gap-1 mb-6 border-b border-gray-200 pb-3 flex-wrap">
+      {/* Range selector — horizontally scrollable on mobile */}
+      <div className="flex gap-1 mb-6 border-b border-gray-200 pb-3 overflow-x-auto">
         {RANGES.map(r => (
           <button
             key={r}
