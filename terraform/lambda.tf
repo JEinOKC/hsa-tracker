@@ -42,6 +42,37 @@ resource "aws_iam_role_policy" "lambda_s3" {
   })
 }
 
+# ── Teller credentials in Secrets Manager ─────────────────────────────────────
+# Cert and private key are too large for Lambda env vars (5 KB limit).
+
+resource "aws_secretsmanager_secret" "teller_credentials" {
+  name        = "hsa-tracker/teller-credentials"
+  description = "Teller TLS certificate and private key for HSA Tracker"
+}
+
+resource "aws_secretsmanager_secret_version" "teller_credentials" {
+  secret_id = aws_secretsmanager_secret.teller_credentials.id
+  secret_string = jsonencode({
+    teller_cert_b64        = var.teller_cert_b64
+    teller_private_key_b64 = var.teller_private_key_b64
+  })
+}
+
+# Allow Lambda to read the Teller secret
+resource "aws_iam_role_policy" "lambda_secrets" {
+  name = "hsa-tracker-lambda-secrets"
+  role = aws_iam_role.lambda_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["secretsmanager:GetSecretValue"]
+      Resource = [aws_secretsmanager_secret.teller_credentials.arn]
+    }]
+  })
+}
+
 # ── CloudWatch log group ───────────────────────────────────────────────────────
 
 resource "aws_cloudwatch_log_group" "lambda" {
@@ -81,8 +112,7 @@ resource "aws_lambda_function" "backend" {
       VAPID_PUBLIC_KEY                 = var.vapid_public_key
       VAPID_PRIVATE_KEY                = var.vapid_private_key
       VAPID_CLAIMS_EMAIL               = var.vapid_claims_email
-      TELLER_CERT_B64                  = var.teller_cert_b64
-      TELLER_PRIVATE_KEY_B64           = var.teller_private_key_b64
+      TELLER_SECRET_ARN                = aws_secretsmanager_secret.teller_credentials.arn
       TELLER_ENV                       = var.teller_env
     }
   }
