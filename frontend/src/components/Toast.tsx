@@ -2,27 +2,33 @@ import { createContext, useContext, useState, useCallback, useRef } from 'react'
 
 export type ToastType = 'success' | 'error'
 
+export interface ToastAction {
+  label: string
+  onClick: () => void
+}
+
 interface ToastItem {
   id: number
   message: string
   type: ToastType
+  action?: ToastAction
 }
 
 interface ToastContextValue {
-  toast: (message: string, type?: ToastType) => void
+  toast: (message: string, type?: ToastType, action?: ToastAction) => void
 }
 
 const ToastContext = createContext<ToastContextValue>({ toast: () => {} })
 
-const DISMISS_MS = 4000
+const DISMISS_MS = 6000
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const nextId = useRef(0)
 
-  const toast = useCallback((message: string, type: ToastType = 'success') => {
+  const toast = useCallback((message: string, type: ToastType = 'success', action?: ToastAction) => {
     const id = ++nextId.current
-    setToasts(prev => [...prev, { id, message, type }])
+    setToasts(prev => [...prev, { id, message, type, action }])
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), DISMISS_MS)
   }, [])
 
@@ -46,7 +52,17 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               t.type === 'error' ? 'bg-red-600 text-white' : 'bg-gray-900 text-white'
             }`}
           >
-            <span className="flex-1">{t.message}</span>
+            <span className="flex-1">
+              {t.message}
+              {t.action && (
+                <button
+                  onClick={() => { t.action!.onClick(); dismiss(t.id) }}
+                  className="block mt-1 underline opacity-90 hover:opacity-100 text-left"
+                >
+                  {t.action.label}
+                </button>
+              )}
+            </span>
             <button
               onClick={() => dismiss(t.id)}
               aria-label="Dismiss"
