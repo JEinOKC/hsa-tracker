@@ -3,11 +3,11 @@ import PasskeyRegisterForm from '../components/auth/PasskeyRegisterForm'
 
 export default function Register() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
       <div className="max-w-md w-full">
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Create Account</h1>
+        <div className="bg-white rounded-lg shadow-lg p-4 sm:p-8">
+          <div className="text-center mb-6 sm:mb-8">
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Create Account</h1>
             <p className="text-gray-600">Secure, passwordless authentication</p>
           </div>
 

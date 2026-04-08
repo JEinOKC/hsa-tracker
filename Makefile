@@ -216,6 +216,9 @@ tf-ecr-bootstrap: ## Create ECR repository (one-time, before first deploy)
 		TF_VAR_api_custom_domain="$$API_CUSTOM_DOMAIN" \
 		TF_VAR_github_repo="$$GITHUB_REPO" \
 		TF_VAR_teller_app_id="$$TELLER_APP_ID" \
+		TF_VAR_teller_cert_b64="$$TELLER_CERT_B64" \
+		TF_VAR_teller_private_key_b64="$$TELLER_PRIVATE_KEY_B64" \
+		TF_VAR_teller_env="$$TELLER_ENV" \
 		TF_VAR_require_invite="$${REQUIRE_INVITE:-true}" \
 		terraform -chdir=terraform apply \
 			-target=aws_ecr_repository.backend \
@@ -263,7 +266,7 @@ frontend-deploy: ## Build and deploy frontend to Cloudflare Pages (manual — do
 		VITE_VAPID_PUBLIC_KEY="$$VAPID_PUBLIC_KEY" \
 		VITE_WEBAUTHN_RP_ID="$$WEBAUTHN_RP_ID" \
 		VITE_TELLER_APP_ID="$$TELLER_APP_ID" \
-		VITE_TELLER_ENV="development" \
+		VITE_TELLER_ENV="$$TELLER_ENV" \
 		npm run build && \
 		npx wrangler pages deploy dist \
 			--project-name hsa-tracker \
@@ -300,6 +303,9 @@ tf-plan: ## Plan Terraform changes
 		TF_VAR_api_custom_domain="$$API_CUSTOM_DOMAIN" \
 		TF_VAR_github_repo="$$GITHUB_REPO" \
 		TF_VAR_teller_app_id="$$TELLER_APP_ID" \
+		TF_VAR_teller_cert_b64="$$TELLER_CERT_B64" \
+		TF_VAR_teller_private_key_b64="$$TELLER_PRIVATE_KEY_B64" \
+		TF_VAR_teller_env="$$TELLER_ENV" \
 		TF_VAR_require_invite="$${REQUIRE_INVITE:-true}" \
 		terraform -chdir=terraform plan'
 
@@ -324,6 +330,9 @@ tf-apply: ## Apply Terraform changes (create AWS infrastructure)
 		TF_VAR_api_custom_domain="$$API_CUSTOM_DOMAIN" \
 		TF_VAR_github_repo="$$GITHUB_REPO" \
 		TF_VAR_teller_app_id="$$TELLER_APP_ID" \
+		TF_VAR_teller_cert_b64="$$TELLER_CERT_B64" \
+		TF_VAR_teller_private_key_b64="$$TELLER_PRIVATE_KEY_B64" \
+		TF_VAR_teller_env="$$TELLER_ENV" \
 		TF_VAR_require_invite="$${REQUIRE_INVITE:-true}" \
 		terraform -chdir=terraform apply'
 	@echo "$(GREEN)✓ AWS infrastructure created$(NC)"

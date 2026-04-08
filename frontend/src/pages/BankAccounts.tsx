@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { bankService, BankAccount, BankTransaction } from '../services/bank'
+import { useToast } from '../components/Toast'
 
 // Teller Connect is loaded as a global from the CDN script in index.html
 declare global {
@@ -38,6 +39,7 @@ export default function BankAccounts() {
   const [connecting, setConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [txLoading, setTxLoading] = useState(false)
+  const { toast } = useToast()
 
   const loadAccounts = useCallback(async () => {
     try {
@@ -77,7 +79,7 @@ export default function BankAccounts() {
     setError(null)
     try {
       const result = await bankService.syncAccount(accountId)
-      alert(`Sync complete: ${result.added} new, ${result.skipped} already stored.`)
+      toast(`Sync complete: ${result.added} new, ${result.skipped} already stored.`)
       await loadAccounts()
       if (selectedAccount?.id === accountId) {
         const updated = accounts.find(a => a.id === accountId)
@@ -113,7 +115,7 @@ export default function BankAccounts() {
             const fresh = newAccounts.filter(a => !existingIds.has(a.id))
             return [...prev, ...fresh]
           })
-          alert(`Connected! ${newAccounts.length} account(s) linked.`)
+          toast(`Connected! ${newAccounts.length} account(s) linked.`)
         } catch {
           setError('Connection failed. Try again.')
         } finally {
@@ -150,15 +152,15 @@ export default function BankAccounts() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-start justify-between gap-3 mb-6 flex-wrap">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Bank Accounts</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Bank Accounts</h1>
           <p className="text-gray-500 mt-1">Connect your bank to import transactions automatically.</p>
         </div>
         <button
           onClick={handleConnect}
           disabled={connecting || !tellerConfigured}
-          className="bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white font-medium px-5 py-2 rounded-lg"
+          className="bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white font-medium px-5 py-2 rounded-lg shrink-0"
           title={!tellerConfigured ? 'Teller is not configured on this server.' : undefined}
         >
           {connecting ? 'Connecting…' : '+ Connect Bank'}

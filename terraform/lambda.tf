@@ -81,6 +81,9 @@ resource "aws_lambda_function" "backend" {
       VAPID_PUBLIC_KEY                 = var.vapid_public_key
       VAPID_PRIVATE_KEY                = var.vapid_private_key
       VAPID_CLAIMS_EMAIL               = var.vapid_claims_email
+      TELLER_CERT_B64                  = var.teller_cert_b64
+      TELLER_PRIVATE_KEY_B64           = var.teller_private_key_b64
+      TELLER_ENV                       = var.teller_env
     }
   }
 

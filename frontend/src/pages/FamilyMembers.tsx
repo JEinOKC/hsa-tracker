@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useToast } from '../components/Toast'
 import { useSearchParams } from 'react-router-dom'
 import { familyService, FamilyMember, EligibilityPeriod, FamilyMemberCreate } from '../services/family'
 import familyInvitesService, { FamilyInvite } from '../services/familyInvites'
@@ -284,7 +285,7 @@ function EligibilityManager({ member, onUpdated }: EligibilityManagerProps) {
 
       {adding && (
         <form onSubmit={handleAdd} className="mt-3 space-y-2 bg-gray-50 p-3 rounded-lg">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Start Date *</label>
               <input
@@ -341,6 +342,7 @@ interface MemberCardProps {
 }
 
 function MemberCard({ member, currentUserId, viewerRelationship, householdMember, householdRoles, initialInvite, onUpdated, onDeactivated, autoExpand }: MemberCardProps) {
+  const { toast } = useToast()
   const [expanded, setExpanded] = useState(autoExpand ?? false)
   const [pendingInvite, setPendingInvite] = useState<FamilyInvite | null>(initialInvite ?? null)
   const [showInviteForm, setShowInviteForm] = useState(false)
@@ -362,7 +364,7 @@ function MemberCard({ member, currentUserId, viewerRelationship, householdMember
       setPendingInvite(invite)
       setShowInviteForm(false)
     } catch {
-      alert('Failed to generate invite link.')
+      toast('Failed to generate invite link.', 'error')
     } finally {
       setInviting(false)
     }
@@ -374,7 +376,7 @@ function MemberCard({ member, currentUserId, viewerRelationship, householdMember
       await familyInvitesService.revoke(pendingInvite.token)
       setPendingInvite(null)
     } catch {
-      alert('Failed to revoke invite.')
+      toast('Failed to revoke invite.', 'error')
     }
   }
 
@@ -396,7 +398,7 @@ function MemberCard({ member, currentUserId, viewerRelationship, householdMember
       onUpdated(updated)
       setEditing(false)
     } catch {
-      alert('Failed to save changes.')
+      toast('Failed to save changes.', 'error')
     } finally {
       setSaving(false)
     }
@@ -408,15 +410,16 @@ function MemberCard({ member, currentUserId, viewerRelationship, householdMember
       await familyService.deactivate(member.id)
       onDeactivated(member.id)
     } catch {
-      alert('Failed to remove family member.')
+      toast('Failed to remove family member.', 'error')
     }
   }
 
   return (
     <div className="bg-white rounded-lg shadow p-5">
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-2">
+      {/* Member info */}
+      <div className="flex items-start gap-2 flex-wrap">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-semibold text-gray-900">{member.name}</h3>
             <span className="text-xs text-gray-500 capitalize bg-gray-100 px-2 py-0.5 rounded">
               {isSelf ? 'Self' : (member.member_relationship === 'self' && viewerRelationship) ? viewerRelationship : member.member_relationship}
@@ -426,7 +429,7 @@ function MemberCard({ member, currentUserId, viewerRelationship, householdMember
             )}
           </div>
           {householdMember && (
-            <div className="flex items-center gap-2 mt-0.5">
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
               <span className="text-xs text-gray-400">@{householdMember.username}</span>
               <span className="text-xs text-sky-600 bg-sky-50 px-1.5 py-0.5 rounded">
                 {householdMember.is_admin && !householdMember.role.name.toLowerCase().includes('admin')
@@ -435,43 +438,44 @@ function MemberCard({ member, currentUserId, viewerRelationship, householdMember
               </span>
             </div>
           )}
-          <div className="flex items-center gap-3 mt-1">
+          <div className="flex items-center gap-3 mt-1 flex-wrap">
             {member.date_of_birth && (
               <p className="text-sm text-gray-500">DOB: {formatDate(member.date_of_birth)}</p>
             )}
             <EligibilityBadge periods={member.eligibility_periods} />
           </div>
         </div>
-        <div className="flex gap-2 items-center flex-wrap justify-end">
-          {canInvite && !pendingInvite && !showInviteForm && (
-            <button
-              onClick={() => setShowInviteForm(true)}
-              className="text-sm text-sky-600 hover:text-sky-800 border border-sky-200 px-2 py-0.5 rounded"
-            >
-              Invite to account
-            </button>
-          )}
+      </div>
+      {/* Action buttons — own row below info */}
+      <div className="flex gap-3 items-center mt-3 pt-3 border-t border-gray-100 flex-wrap">
+        {canInvite && !pendingInvite && !showInviteForm && (
           <button
-            onClick={() => { setEditing(e => !e); setExpanded(false) }}
+            onClick={() => setShowInviteForm(true)}
+            className="text-sm text-sky-600 hover:text-sky-800 border border-sky-200 px-2 py-0.5 rounded"
+          >
+            Invite to account
+          </button>
+        )}
+        <button
+          onClick={() => { setEditing(e => !e); setExpanded(false) }}
+          className="text-sm text-sky-600 hover:text-sky-800"
+        >
+          {editing ? 'Cancel' : 'Edit'}
+        </button>
+        {!editing && (
+          <button
+            onClick={() => setExpanded(!expanded)}
             className="text-sm text-sky-600 hover:text-sky-800"
           >
-            {editing ? 'Cancel' : 'Edit'}
+            {expanded ? 'Hide Eligibility' : 'Eligibility'}
           </button>
-          {!editing && (
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="text-sm text-sky-600 hover:text-sky-800"
-            >
-              {expanded ? 'Hide' : 'Eligibility'}
-            </button>
-          )}
-          <button
-            onClick={handleDeactivate}
-            className="text-sm text-red-400 hover:text-red-600"
-          >
-            Remove
-          </button>
-        </div>
+        )}
+        <button
+          onClick={handleDeactivate}
+          className="text-sm text-red-400 hover:text-red-600 ml-auto"
+        >
+          Remove
+        </button>
       </div>
 
       {editing && (
@@ -556,6 +560,7 @@ function MemberCard({ member, currentUserId, viewerRelationship, householdMember
 
 
 function ActiveInvitesList() {
+  const { toast } = useToast()
   const [invites, setInvites] = useState<FamilyInvite[]>([])
 
   useEffect(() => {
@@ -568,7 +573,7 @@ function ActiveInvitesList() {
       await familyInvitesService.revoke(token)
       setInvites(prev => prev.filter(i => i.token !== token))
     } catch {
-      alert('Failed to revoke invite.')
+      toast('Failed to revoke invite.', 'error')
     }
   }
 
@@ -586,13 +591,14 @@ function ActiveInvitesList() {
     <div className="border-t border-gray-100 pt-4 space-y-2">
       <p className="text-sm font-medium text-gray-700">Active Invites</p>
       {invites.map(invite => (
-        <div key={invite.token} className="flex items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-2">
-          <div>
-            <span className="font-mono text-gray-700">{invite.token}</span>
-            {invite.label && <span className="text-gray-400 ml-2">— {invite.label}</span>}
-            <span className="text-xs text-gray-400 ml-2">({formatExpiry(invite.expires_at)})</span>
+        <div key={invite.token} className="flex items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-2 gap-2">
+          <div className="min-w-0">
+            <span className="font-mono text-gray-700 truncate block">{invite.token}</span>
+            <span className="text-xs text-gray-400">
+              {invite.label ? `${invite.label} · ` : ''}{formatExpiry(invite.expires_at)}
+            </span>
           </div>
-          <button onClick={() => handleRevoke(invite.token)} className="text-xs text-red-400 hover:text-red-600 ml-4">Revoke</button>
+          <button onClick={() => handleRevoke(invite.token)} className="text-xs text-red-400 hover:text-red-600 shrink-0">Revoke</button>
         </div>
       ))}
     </div>
@@ -706,6 +712,7 @@ function HouseholdSection({
   household: HouseholdDetailOut
   onHouseholdChange: (detail: HouseholdDetailOut) => void
 }) {
+  const { toast } = useToast()
   const [showRoleForm, setShowRoleForm] = useState(false)
   const [editingRole, setEditingRole] = useState<HouseholdRoleOut | null>(null)
   const [pin, setPin] = useState<string | null>(null)
@@ -737,7 +744,7 @@ function HouseholdSection({
       onHouseholdChange({ ...household, roles: household.roles.filter(r => r.id !== roleId) })
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      alert(msg || 'Failed to delete role.')
+      toast(msg || 'Failed to delete role.', 'error')
     }
   }
 
@@ -781,15 +788,17 @@ function HouseholdSection({
                 )
               }
               return (
-                <div key={role.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
-                  <div>
-                    <span className="text-sm font-medium text-gray-800">{role.name}</span>
-                    {usedByAdmin && <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded ml-2">Admin role</span>}
-                    <span className="text-xs text-gray-400 ml-2">
+                <div key={role.id} className="flex items-start justify-between bg-gray-50 rounded-lg px-3 py-2 gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-gray-800">{role.name}</span>
+                      {usedByAdmin && <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Admin role</span>}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-0.5">
                       {HH_RESOURCES.filter(r => role[`can_read_${r}` as keyof HouseholdRoleOut]).map(r => HH_RESOURCE_LABELS[r]).join(', ') || 'No read access'}
-                    </span>
+                    </p>
                   </div>
-                  <div className="flex items-center gap-3 ml-4">
+                  <div className="flex items-center gap-3 shrink-0">
                     <button onClick={() => setEditingRole(role)} className="text-xs text-sky-500 hover:text-sky-700">Edit</button>
                     {!usedByAdmin && (
                       <button onClick={() => handleDeleteRole(role.id)} className="text-xs text-red-400 hover:text-red-600">Delete</button>
@@ -803,7 +812,7 @@ function HouseholdSection({
       </div>
 
       {/* Family PIN */}
-      <div className="border-t border-gray-100 pt-4 flex items-center justify-between">
+      <div className="border-t border-gray-100 pt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-gray-700 mb-1">Family PIN</p>
           <p className="text-xs text-gray-400 mb-2">Each account has its own PIN. When you send an invite with PIN protection, the recipient needs <em>your</em> PIN to accept it.</p>
@@ -909,7 +918,7 @@ export default function FamilyMembers() {
     <div className="container mx-auto px-4 py-8 max-w-3xl">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-3xl font-bold text-gray-900">Family Members</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Family Members</h1>
           {!householdLoading && household && (
             <p className="text-gray-500 mt-1">{household.household.name}</p>
           )}

@@ -234,13 +234,20 @@ function TxnRow({ txn, members, tab, onChange }: TxnRowProps) {
   return (
     <div className="border-b border-gray-50 last:border-0">
       <div className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50">
-        {/* Date */}
-        <span className="text-xs text-gray-400 w-24 shrink-0">{formatDate(txn.transaction_date)}</span>
+        {/* Date — hidden on mobile, shown inline on sm+ */}
+        <span className="hidden sm:inline text-xs text-gray-400 w-24 shrink-0">{formatDate(txn.transaction_date)}</span>
 
-        {/* Description + account */}
+        {/* Description + account (includes date on mobile) */}
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-gray-900 truncate">{txn.description || '(no description)'}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm text-gray-900 truncate">{txn.description || '(no description)'}</p>
+            {showNoReceiptBadge && (
+              <span title="No receipt attached" className="text-xs font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-600 shrink-0">!</span>
+            )}
+          </div>
+          {/* Account info on sm+; date + account on mobile */}
           <p className="text-xs text-gray-400 truncate">
+            <span className="sm:hidden">{formatDate(txn.transaction_date)} · </span>
             {txn.institution_name || txn.account_name || ''}
             {txn.account_name && txn.institution_name ? ` · ${txn.account_name}` : ''}
             {txn.owner_display_name && (
@@ -254,41 +261,13 @@ function TxnRow({ txn, members, tab, onChange }: TxnRowProps) {
           {formatAmount(txn.amount)}
         </span>
 
-        {/* No-receipt warning badge */}
-        {showNoReceiptBadge && (
-          <span
-            title="No receipt attached"
-            className="text-xs font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-600 shrink-0"
-          >
-            !
-          </span>
-        )}
-
-        {/* HSA toggle (not shown on reimbursed tab) */}
-        {tab !== 'reimbursed' && (
-          <div className="shrink-0">
-            <HsaToggle txn={txn} onChange={onChange} />
-          </div>
-        )}
-
-        {/* Person picker */}
-        <div className="shrink-0">
+        {/* Annotation controls — desktop only; shown in expanded panel on mobile */}
+        <div className="hidden sm:flex items-center gap-2 shrink-0">
+          {tab !== 'reimbursed' && <HsaToggle txn={txn} onChange={onChange} />}
           <MemberPicker txn={txn} members={members} onChange={onChange} />
+          {(tab === 'hsa' || tab === 'reimbursed') && <CategoryPicker txn={txn} onChange={onChange} />}
+          {(tab === 'hsa' || tab === 'reimbursed') && <ReimburseToggle txn={txn} onChange={onChange} />}
         </div>
-
-        {/* Category (HSA + reimbursed tabs) */}
-        {(tab === 'hsa' || tab === 'reimbursed') && (
-          <div className="shrink-0">
-            <CategoryPicker txn={txn} onChange={onChange} />
-          </div>
-        )}
-
-        {/* Reimburse toggle (HSA + reimbursed tabs) */}
-        {(tab === 'hsa' || tab === 'reimbursed') && (
-          <div className="shrink-0">
-            <ReimburseToggle txn={txn} onChange={onChange} />
-          </div>
-        )}
 
         {/* Attachment toggle */}
         <button
@@ -306,9 +285,16 @@ function TxnRow({ txn, members, tab, onChange }: TxnRowProps) {
         </button>
       </div>
 
-      {/* Expandable document panel */}
+      {/* Expandable panel */}
       {expanded && (
         <div className="px-4 pb-3">
+          {/* Annotation controls — mobile only */}
+          <div className="sm:hidden flex flex-wrap gap-2 mb-3 pb-3 border-b border-gray-100">
+            {tab !== 'reimbursed' && <HsaToggle txn={txn} onChange={onChange} />}
+            <MemberPicker txn={txn} members={members} onChange={onChange} />
+            {(tab === 'hsa' || tab === 'reimbursed') && <CategoryPicker txn={txn} onChange={onChange} />}
+            {(tab === 'hsa' || tab === 'reimbursed') && <ReimburseToggle txn={txn} onChange={onChange} />}
+          </div>
           <DocumentUpload
             transactionId={txn.id}
             onCountChange={handleDocCountChange}
@@ -462,13 +448,13 @@ export default function Transactions() {
     <>
     <div className="container mx-auto px-4 py-8 max-w-5xl">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-start justify-between gap-3 mb-6 flex-wrap">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Transactions</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Transactions</h1>
           <p className="text-gray-500 mt-1">Review and tag transactions as HSA-eligible.</p>
         </div>
         {tabTotal !== null && (
-          <div className="text-right">
+          <div className="text-right shrink-0">
             <p className="text-xs text-gray-400">
               {tab === 'reimbursed' ? 'Reimbursed total' : 'HSA total'}
               {hasMore ? ' (partial)' : ''}
@@ -498,56 +484,60 @@ export default function Transactions() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 mb-4">
         <input
           type="text"
           placeholder="Search description…"
           value={search}
           onChange={e => handleSearchChange(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-sky-500"
+          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-full sm:w-52 focus:outline-none focus:ring-2 focus:ring-sky-500"
         />
-        <select
-          value={filterMember}
-          onChange={e => setFilterMember(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-        >
-          <option value="">All people</option>
-          {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </select>
-        <input
-          type="date"
-          value={startDate}
-          onChange={e => setStartDate(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-        />
-        <span className="self-center text-gray-400 text-sm">to</span>
-        <input
-          type="date"
-          value={endDate}
-          onChange={e => setEndDate(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-        />
-        <select
-          value={filterDocs}
-          onChange={e => setDocsFilter(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-        >
-          <option value="">Any docs</option>
-          <option value="missing">Missing receipts</option>
-          <option value="attached">Has receipts</option>
-        </select>
-        {hasFilters && (
-          <button
-            onClick={clearFilters}
-            className="text-xs text-gray-400 hover:text-gray-600 px-2"
+        <div className="flex gap-2 flex-wrap">
+          <select
+            value={filterMember}
+            onChange={e => setFilterMember(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
           >
-            Clear
-          </button>
-        )}
+            <option value="">All people</option>
+            {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+          <div className="flex items-center gap-1">
+            <input
+              type="date"
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
+            <span className="text-gray-400 text-sm">–</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
+          </div>
+          <select
+            value={filterDocs}
+            onChange={e => setDocsFilter(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+          >
+            <option value="">Any docs</option>
+            <option value="missing">Missing receipts</option>
+            <option value="attached">Has receipts</option>
+          </select>
+          {hasFilters && (
+            <button
+              onClick={clearFilters}
+              className="text-xs text-gray-400 hover:text-gray-600 px-2"
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Column headers */}
-      <div className="flex items-center gap-3 px-4 py-2 text-xs font-medium text-gray-400 uppercase tracking-wide">
+      {/* Column headers — desktop only */}
+      <div className="hidden sm:flex items-center gap-3 px-4 py-2 text-xs font-medium text-gray-400 uppercase tracking-wide">
         <span className="w-24 shrink-0">Date</span>
         <span className="flex-1">Description</span>
         <span className="w-20 text-right shrink-0">Amount</span>
@@ -617,7 +607,7 @@ export default function Transactions() {
     {showBackToTop && (
       <button
         onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-        className="fixed bottom-6 right-6 z-50 bg-white border border-gray-200 shadow-md rounded-full px-4 py-2 text-sm text-gray-600 hover:text-sky-600 hover:border-sky-300 transition-colors"
+        className="fixed bottom-20 md:bottom-6 right-6 z-40 bg-white border border-gray-200 shadow-md rounded-full px-4 py-2 text-sm text-gray-600 hover:text-sky-600 hover:border-sky-300 transition-colors"
       >
         ↑ Back to top
       </button>
