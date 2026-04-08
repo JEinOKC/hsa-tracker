@@ -59,8 +59,9 @@ class Settings(BaseSettings):
 
     # Teller.io bank integration (optional, per-install)
     teller_app_id: Optional[str] = None
-    teller_cert_b64: Optional[str] = None
-    teller_private_key_b64: Optional[str] = None
+    teller_cert_b64: Optional[str] = None          # direct env var (local dev)
+    teller_private_key_b64: Optional[str] = None   # direct env var (local dev)
+    teller_secret_arn: Optional[str] = None        # Secrets Manager ARN (production)
     teller_env: str = "sandbox"  # "sandbox" or "production"
 
     # File Upload
