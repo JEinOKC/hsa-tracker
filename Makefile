@@ -1,4 +1,4 @@
-.PHONY: help setup-wizard dev-build dev-up dev-rebuild dev-down dev-logs prod-up prod-down prod-logs tf-init tf-plan tf-apply tf-destroy tf-ecr-bootstrap db-init db-migrate db-migrate-prod db-upgrade db-downgrade db-reset test-backend test-frontend test-all clean format lint push-test generate-vapid generate-invite lambda-build lambda-push lambda-deploy frontend-deploy deploy
+.PHONY: help setup-wizard dev-build dev-up dev-rebuild dev-down dev-logs prod-up prod-down prod-logs tf-init tf-plan tf-apply tf-destroy tf-ecr-bootstrap db-init db-migrate db-migrate-prod db-upgrade db-downgrade db-reset test-backend test-frontend test-all clean format lint push-test generate-vapid generate-invite lambda-build lambda-push lambda-deploy frontend-deploy deploy deploy-with-migrations
 
 # Default target
 .DEFAULT_GOAL := help
@@ -164,9 +164,11 @@ db-migrate-prod: ## Run Alembic migrations against production database (via Dopp
 	@echo "$(BLUE)Running production migrations...$(NC)"
 	doppler run --config prd -- sh -c '\
 		docker run --rm \
+			--platform linux/amd64 \
+			--entrypoint alembic \
 			-e DATABASE_URL \
 			$(shell terraform -chdir=terraform output -raw ecr_repository_url 2>/dev/null):latest \
-			alembic upgrade head'
+			upgrade head'
 	@echo "$(GREEN)✓ Production migrations complete$(NC)"
 
 db-downgrade: ## Downgrade database by one version
@@ -256,7 +258,9 @@ lambda-push: ## Authenticate to ECR, push the Lambda image, and force Lambda to 
 
 lambda-deploy: lambda-build lambda-push ## Build and push Lambda image (run tf-ecr-bootstrap first if ECR doesn't exist)
 
-deploy: lambda-deploy db-migrate-prod frontend-deploy ## Full production deploy: build + push Lambda, run migrations, deploy frontend
+deploy: lambda-deploy frontend-deploy ## Deploy Lambda and frontend (use for most deploys)
+
+deploy-with-migrations: lambda-deploy db-migrate-prod frontend-deploy ## Deploy Lambda, run DB migrations, deploy frontend (only when schema changed)
 
 frontend-deploy: ## Build and deploy frontend to Cloudflare Pages (manual — does not auto-deploy on git push)
 	@echo "$(BLUE)Building frontend...$(NC)"
