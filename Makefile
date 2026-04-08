@@ -407,9 +407,12 @@ generate-vapid: ## Generate VAPID keys for Web Push (run once, add output to .en
 	@echo "$(BLUE)Generating VAPID keys...$(NC)"
 	$(RUN_CMD) docker-compose -f docker-compose.dev.yml exec backend python scripts/generate_vapid_keys.py
 
-push-test: ## Send a test push notification to all subscribed users
+push-test: ## Send a test push notification. Usage: make push-test USER=username [TITLE="Title"] [MSG="Body"]
 	@echo "$(BLUE)Sending test push notification...$(NC)"
-	$(RUN_CMD) docker-compose -f docker-compose.dev.yml exec backend python scripts/send_test_push.py
+	doppler run --config prd -- python backend/scripts/send_test_push.py \
+		"$${TITLE:-Test Message}" \
+		"$${MSG:-Test push notification}" \
+		$(if $(USER),--user $(USER),)
 
 doppler-login: ## Login to Doppler
 	@doppler login
