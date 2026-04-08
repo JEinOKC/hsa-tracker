@@ -40,7 +40,7 @@ def send_push_to_user(user_id, title: str, body: str, db: Session) -> int:
                 },
                 data=payload,
                 vapid_private_key=settings.vapid_private_key,
-                vapid_claims={"sub": settings.vapid_claims_email},
+                vapid_claims={"sub": settings.vapid_claims_email if settings.vapid_claims_email.startswith("mailto:") else f"mailto:{settings.vapid_claims_email}"},
             )
             sent += 1
         except WebPushException as exc:
