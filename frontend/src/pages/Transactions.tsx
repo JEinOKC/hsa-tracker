@@ -446,12 +446,12 @@ export default function Transactions() {
 
   return (
     <>
-    <div className="container mx-auto px-4 py-8 max-w-5xl">
+    <div className="container mx-auto px-4 py-4 sm:py-8 max-w-5xl">
       {/* Header */}
-      <div className="flex items-start justify-between gap-3 mb-6 flex-wrap">
+      <div className="flex items-start justify-between gap-3 mb-4 sm:mb-6 flex-wrap">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Transactions</h1>
-          <p className="text-gray-500 mt-1">Review and tag transactions as HSA-eligible.</p>
+          <p className="text-gray-500 mt-1 text-sm sm:text-base">Review and tag transactions as HSA-eligible.</p>
         </div>
         {tabTotal !== null && (
           <div className="text-right shrink-0">
@@ -467,24 +467,30 @@ export default function Transactions() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-4 border-b border-gray-200">
-        {(['all', 'hsa', 'reimbursed'] as Tab[]).map(t => (
-          <button
-            key={t}
-            onClick={() => switchTab(t)}
-            className={`px-5 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t
-                ? 'border-sky-600 text-sky-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {t === 'all' ? 'All Transactions' : t === 'hsa' ? 'HSA Transactions' : 'Reimbursed'}
-          </button>
-        ))}
+      <div className="flex mb-4 border-b border-gray-200">
+        {(['all', 'hsa', 'reimbursed'] as Tab[]).map(t => {
+          const fullLabel = t === 'all' ? 'All Transactions' : t === 'hsa' ? 'HSA Transactions' : 'Reimbursed'
+          const shortLabel = t === 'all' ? 'All' : t === 'hsa' ? 'HSA' : 'Reimbursed'
+          return (
+            <button
+              key={t}
+              aria-label={fullLabel}
+              onClick={() => switchTab(t)}
+              className={`px-3 sm:px-5 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                tab === t
+                  ? 'border-sky-600 text-sky-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <span className="sm:hidden" aria-hidden="true">{shortLabel}</span>
+              <span className="hidden sm:inline" aria-hidden="true">{fullLabel}</span>
+            </button>
+          )
+        })}
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 mb-4">
+      <div className="flex flex-col gap-2 mb-4">
         <input
           type="text"
           placeholder="Search description…"
@@ -492,45 +498,46 @@ export default function Transactions() {
           onChange={e => handleSearchChange(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-full sm:w-52 focus:outline-none focus:ring-2 focus:ring-sky-500"
         />
-        <div className="flex gap-2 flex-wrap">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
           <select
             value={filterMember}
             onChange={e => setFilterMember(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
           >
             <option value="">All people</option>
             {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
-          <div className="flex items-center gap-1">
-            <input
-              type="date"
-              value={startDate}
-              onChange={e => setStartDate(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-            />
-            <span className="text-gray-400 text-sm">–</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={e => setEndDate(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-            />
-          </div>
           <select
             value={filterDocs}
             onChange={e => setDocsFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
           >
             <option value="">Any docs</option>
             <option value="missing">Missing receipts</option>
             <option value="attached">Has receipts</option>
           </select>
+          <div className="min-w-0">
+            <input
+              type="date"
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+              className="w-full max-w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
+          </div>
+          <div className="min-w-0">
+            <input
+              type="date"
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+              className="w-full max-w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
+          </div>
           {hasFilters && (
             <button
               onClick={clearFilters}
-              className="text-xs text-gray-400 hover:text-gray-600 px-2"
+              className="col-span-2 sm:col-span-1 text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 border border-gray-200 rounded-lg sm:border-0"
             >
-              Clear
+              Clear filters
             </button>
           )}
         </div>
