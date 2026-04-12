@@ -73,9 +73,10 @@ export default function PasskeyRegisterForm({ inviteToken: propInviteToken, requ
     }
   }
 
-  // Show invite token field when: app requires it OR a token was passed as a prop
-  const showInviteField = requireInvite || propInviteToken !== undefined
-  const inviteFieldReadOnly = propInviteToken !== undefined
+  // Show invite token field only in standalone registration when app requires it.
+  // When arriving via an invite URL the token is already captured in state and submitted
+  // silently — no need to show or ask the family member to enter anything.
+  const showInviteField = requireInvite && propInviteToken === undefined
 
   return (
     <div className="space-y-6">
@@ -99,16 +100,11 @@ export default function PasskeyRegisterForm({ inviteToken: propInviteToken, requ
               value={inviteToken}
               onChange={(e) => setInviteToken(e.target.value.trim())}
               required
-              disabled={isLoading || inviteFieldReadOnly}
-              readOnly={inviteFieldReadOnly}
-              className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 font-mono ${
-                inviteFieldReadOnly ? 'bg-gray-50 text-gray-500 cursor-default' : 'disabled:opacity-50'
-              }`}
+              disabled={isLoading}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 font-mono disabled:opacity-50"
               placeholder="word-word-word"
             />
-            {!inviteFieldReadOnly && (
-              <p className="mt-1 text-sm text-gray-500">Enter the invite token you were given</p>
-            )}
+            <p className="mt-1 text-sm text-gray-500">Enter the invite token you were given</p>
           </div>
         )}
 

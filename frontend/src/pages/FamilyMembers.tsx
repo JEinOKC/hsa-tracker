@@ -536,18 +536,38 @@ function MemberCard({ member, currentUserId, viewerRelationship, householdMember
       )}
 
       {pendingInvite && (
-        <div className="mt-3 border border-sky-200 bg-sky-50 rounded-lg p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold text-sky-900">Invite link ready — share this with {member.name}:</p>
-            <button onClick={handleRevokeInvite} className="text-xs text-red-400 hover:text-red-600">Revoke</button>
+        <div className="mt-3 border border-sky-200 bg-sky-50 rounded-xl overflow-hidden">
+          <div className="px-4 pt-4 pb-3 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-sky-900">Invite ready for {member.name}</p>
+              <p className="text-xs text-sky-600 mt-0.5">Single-use · expires in 72h · they'll also need your Family PIN</p>
+            </div>
+            <button onClick={handleRevokeInvite} className="text-xs text-red-400 hover:text-red-600 shrink-0 ml-3">Revoke</button>
           </div>
-          <div className="flex items-center gap-2">
-            <input readOnly value={pendingInvite.invite_url} className="flex-1 font-mono text-xs bg-white border border-sky-200 rounded px-2 py-1.5 text-gray-700" />
-            <button onClick={() => handleCopy(pendingInvite.invite_url)} className="text-xs bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded shrink-0">
-              {copied ? 'Copied!' : 'Copy'}
+
+          {pendingInvite.qr_code_data_url && (
+            <div className="flex justify-center bg-white border-y border-sky-100 py-5">
+              <img
+                src={pendingInvite.qr_code_data_url}
+                alt="QR code for invite link"
+                className="w-40 h-40 rounded-lg shadow-sm"
+              />
+            </div>
+          )}
+
+          <div className="px-4 py-3 flex items-center gap-2">
+            <input
+              readOnly
+              value={pendingInvite.invite_url}
+              className="flex-1 font-mono text-xs bg-white border border-sky-200 rounded-lg px-2.5 py-2 text-gray-600 min-w-0"
+            />
+            <button
+              onClick={() => handleCopy(pendingInvite.invite_url)}
+              className="text-xs bg-sky-600 hover:bg-sky-700 text-white px-3 py-2 rounded-lg shrink-0 font-medium transition-colors"
+            >
+              {copied ? 'Copied!' : 'Copy link'}
             </button>
           </div>
-          <p className="text-xs text-sky-600">Single-use · expires in 72h · they'll also need your Family PIN</p>
         </div>
       )}
 
