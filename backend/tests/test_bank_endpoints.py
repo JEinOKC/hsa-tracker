@@ -46,15 +46,23 @@ def _make_external_txn(txn_id="txn_001", amount="-50.00", status="posted"):
     )
 
 
-def _make_connection(db_session, user_id=None, provider_account_id="acct_001", token="tok_abc"):
+def _make_connection(
+    db_session,
+    user_id=None,
+    provider_account_id="acct_001",
+    token="tok_abc",
+    account_type="depository",
+    account_subtype="hsa",
+    account_name="HSA Checking",
+):
     conn = BankConnection(
         id=uuid.uuid4(),
         user_id=user_id,
         provider="teller",
         provider_account_id=provider_account_id,
-        account_name="HSA Checking",
-        account_type="depository",
-        account_subtype="hsa",
+        account_name=account_name,
+        account_type=account_type,
+        account_subtype=account_subtype,
         institution_name="First National Bank",
         last_four="1234",
         currency="USD",
@@ -372,6 +380,81 @@ class TestSyncAccount:
             client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
 
         mock_factory.assert_called_once_with(access_token="my_secret_token")
+
+    # ------------------------------------------------------------------
+    # Amount sign normalisation — regression for Teller credit accounts
+    # ------------------------------------------------------------------
+
+    def test_sync_depository_amount_stored_as_is(self, client, auth_headers, db_session, test_user):
+        """Depository accounts: Teller sign convention matches ours (negative = debit)."""
+        conn = _make_connection(db_session, user_id=test_user.id, account_type="depository")
+
+        mock_provider = MagicMock()
+        # Teller sends a debit as negative on depository accounts
+        mock_provider.list_transactions.return_value = [
+            _make_external_txn("txn_dep_debit", amount="-42.00"),
+        ]
+
+        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider):
+            client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
+
+        txn = db_session.query(BankTransaction).filter(
+            BankTransaction.connection_id == conn.id
+        ).one()
+        assert txn.amount == Decimal("-42.00")
+
+    def test_sync_credit_account_purchase_stored_as_negative(self, client, auth_headers, db_session, test_user):
+        """Credit accounts: Teller sends purchases as positive; we must negate so they show as expenses."""
+        conn = _make_connection(
+            db_session,
+            user_id=test_user.id,
+            account_type="credit",
+            account_subtype="credit_card",
+            account_name="Chase Sapphire",
+        )
+
+        mock_provider = MagicMock()
+        # Teller sends a credit-card purchase as +26.04 (increases balance owed)
+        mock_provider.list_transactions.return_value = [
+            _make_external_txn("txn_cc_purchase", amount="26.04"),
+        ]
+
+        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider):
+            client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
+
+        txn = db_session.query(BankTransaction).filter(
+            BankTransaction.connection_id == conn.id
+        ).one()
+        # Must be stored as negative so the UI renders it as an expense (red)
+        assert txn.amount == Decimal("-26.04")
+
+    def test_sync_credit_account_payment_stored_as_positive(self, client, auth_headers, db_session, test_user):
+        """Credit accounts: Teller sends card payments as negative; we negate so they show as credits."""
+        conn = _make_connection(
+            db_session,
+            user_id=test_user.id,
+            account_type="credit",
+            account_subtype="credit_card",
+            account_name="Chase Sapphire",
+        )
+
+        mock_provider = MagicMock()
+        # Teller sends a payment to the card as -200.00 (decreases balance owed)
+        mock_provider.list_transactions.return_value = [
+            _make_external_txn("txn_cc_payment", amount="-200.00"),
+        ]
+
+        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider):
+            client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
+
+        txn = db_session.query(BankTransaction).filter(
+            BankTransaction.connection_id == conn.id
+        ).one()
+        # Must be stored as positive so the UI renders it as a credit (green)
+        assert txn.amount == Decimal("200.00")
 
 
 # ---------------------------------------------------------------------------

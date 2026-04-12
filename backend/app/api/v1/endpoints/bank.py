@@ -557,13 +557,19 @@ async def sync_account_transactions(
             skipped += 1
             continue
 
+        # Teller uses accounting sign convention for credit accounts: purchases
+        # are positive (balance increases) and payments are negative.  Our
+        # internal convention is negative = expense, positive = credit/refund,
+        # which matches depository accounts directly.  Negate for credit accounts.
+        amount = -txn.amount if connection.account_type == "credit" else txn.amount
+
         db.add(BankTransaction(
             connection_id=connection.id,
             provider=txn.provider,
             provider_transaction_id=txn.id,
             transaction_date=txn.date,
             description=txn.description,
-            amount=txn.amount,
+            amount=amount,
             transaction_type=txn.type,
             status=txn.status,
             details=txn.details,

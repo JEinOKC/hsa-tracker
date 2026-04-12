@@ -279,6 +279,44 @@ describe('FamilyMembers page', () => {
     })
   })
 
+  it('displays QR code image after invite is created', async () => {
+    ;(householdsService.getMine as any).mockResolvedValue(mockHouseholdDetail)
+    ;(familyService.create as any).mockResolvedValue(mockMember)
+    ;(familyInvitesService.create as any).mockResolvedValue({
+      token: 'abc-def-ghi',
+      label: null,
+      invite_url: 'http://localhost/invite/abc-def-ghi',
+      qr_code_data_url: 'data:image/png;base64,abc',
+      expires_at: new Date(Date.now() + 72 * 3600000).toISOString(),
+      require_pin: true,
+      is_used: false,
+    })
+
+    render(<FamilyMembers />)
+    await waitFor(() => screen.getByText('England Family'))
+
+    fireEvent.click(screen.getByRole('button', { name: /\+ add member/i }))
+    await waitFor(() => screen.getByText(/send an invite link/i))
+
+    fireEvent.change(screen.getByPlaceholderText('Full name'), { target: { value: 'Jane Doe' } })
+
+    const radios = screen.getAllByRole('radio')
+    const inviteRadio = radios.find(r => (r as HTMLInputElement).value === 'invite')!
+    fireEvent.click(inviteRadio)
+
+    await waitFor(() => screen.getByRole('option', { name: 'Select a household role…' }))
+    const roleOption = screen.getByRole('option', { name: 'Select a household role…' })
+    fireEvent.change(roleOption.closest('select')!, { target: { value: 'hh-role-uuid-1' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /^add member$/i }))
+
+    await waitFor(() => {
+      const qr = screen.getByAltText(/qr code for invite link/i)
+      expect(qr).toBeInTheDocument()
+      expect(qr).toHaveAttribute('src', 'data:image/png;base64,abc')
+    })
+  })
+
   it('hides add form after cancel', async () => {
     render(<FamilyMembers />)
     await waitFor(() => screen.getByRole('button', { name: /\+ add member/i }))

@@ -120,12 +120,30 @@ describe('PasskeyRegisterForm', () => {
     })
   })
 
-  it('pre-fills invite token from prop (read-only) and does not fetch config', async () => {
+  it('hides invite token field when token is provided via prop (invite URL flow)', () => {
     render(<PasskeyRegisterForm inviteToken="pre-filled-token" />)
-    const tokenInput = screen.getByLabelText(/invite token/i)
-    expect(tokenInput).toHaveValue('pre-filled-token')
-    expect(tokenInput).toHaveAttribute('readonly')
+    // Field is not shown — token is captured silently from the URL
+    expect(screen.queryByLabelText(/invite token/i)).not.toBeInTheDocument()
+    // Config fetch is skipped too
     expect(mockGetAppConfig).not.toHaveBeenCalled()
+  })
+
+  it('submits with token from prop even when field is hidden', async () => {
+    ;(passkeyService.register as any).mockResolvedValue({ id: '1', username: 'inviteuser' })
+    ;(passkeyService.login as any).mockResolvedValue({ access_token: 'at' })
+
+    const user = userEvent.setup()
+    render(<PasskeyRegisterForm inviteToken="pre-filled-token" />)
+
+    await user.type(screen.getByLabelText(/username/i), 'inviteuser')
+    await user.type(screen.getByLabelText(/full name/i), 'Invite User')
+    await user.click(screen.getByRole('button', { name: /create account with passkey/i }))
+
+    await waitFor(() => {
+      expect(passkeyService.register).toHaveBeenCalledWith(
+        'inviteuser', 'Invite User', undefined, 'pre-filled-token', undefined
+      )
+    })
   })
 
   it('shows family PIN field when requirePin prop is true', () => {
