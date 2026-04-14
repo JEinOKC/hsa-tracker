@@ -15,6 +15,7 @@ from app.api.v1.endpoints import (
     roles,
     households,
     push,
+    rules,
 )
 
 api_router = APIRouter()
@@ -32,3 +33,4 @@ api_router.include_router(documents.router, prefix="/bank", tags=["Documents"])
 api_router.include_router(roles.router, prefix="/roles", tags=["Roles & Access"])
 api_router.include_router(households.router, prefix="/households", tags=["Households"])
 api_router.include_router(push.router, prefix="/push", tags=["Push Notifications"])
+api_router.include_router(rules.router, prefix="/bank", tags=["HSA Rules Engine"])

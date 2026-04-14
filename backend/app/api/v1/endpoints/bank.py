@@ -31,6 +31,7 @@ from app.models.household import HouseholdMembership
 from app.models.user import User
 from app.providers import get_teller_provider, is_teller_configured
 from app.utils.access import get_readable_owner_ids, check_permission
+from app.services.rules_engine import apply_auto_flag, apply_rules_to_transaction, get_active_rules_for_user
 
 router = APIRouter()
 
@@ -100,6 +101,9 @@ class BankTransactionResponse(BaseModel):
     reimbursed_at: Optional[datetime] = None
     # Set for transactions from shared accounts
     owner_display_name: Optional[str] = None
+    # Rules engine fields
+    auto_flag: Optional[str] = None
+    rule_id: Optional[UUID] = None
 
     class Config:
         from_attributes = True
@@ -338,6 +342,8 @@ async def list_all_transactions(
     reimbursement_status: Optional[str] = Query(None, description="Filter by reimbursement status (e.g. 'reimbursed', 'null' for unset)"),
     has_documents: Optional[bool] = Query(None, description="Filter by documentation status (true = has receipts, false = missing receipts)"),
     search: Optional[str] = Query(None, description="Case-insensitive substring match on description"),
+    show_hidden: bool = Query(False, description="Include transactions flagged as hidden (default: excluded)"),
+    auto_flag_filter: Optional[str] = Query(None, alias="auto_flag", description="Filter to transactions with this auto_flag value"),
     limit: int = Query(50, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -380,6 +386,12 @@ async def list_all_transactions(
             query = query.filter(~BankTransaction.id.in_(confirmed_doc_subq))
     if search:
         query = query.filter(BankTransaction.description.ilike(f"%{search}%"))
+    if not show_hidden:
+        query = query.filter(
+            (BankTransaction.auto_flag != "hidden") | BankTransaction.auto_flag.is_(None)
+        )
+    if auto_flag_filter is not None:
+        query = query.filter(BankTransaction.auto_flag == auto_flag_filter)
 
     txns = (
         query
@@ -544,6 +556,7 @@ async def sync_account_transactions(
 
     added = 0
     skipped = 0
+    new_txns = []
     for txn in external_txns:
         exists = (
             db.query(BankTransaction)
@@ -563,7 +576,7 @@ async def sync_account_transactions(
         # which matches depository accounts directly.  Negate for credit accounts.
         amount = -txn.amount if connection.account_type == "credit" else txn.amount
 
-        db.add(BankTransaction(
+        new_txn = BankTransaction(
             connection_id=connection.id,
             provider=txn.provider,
             provider_transaction_id=txn.id,
@@ -573,8 +586,17 @@ async def sync_account_transactions(
             transaction_type=txn.type,
             status=txn.status,
             details=txn.details,
-        ))
+        )
+        db.add(new_txn)
+        new_txns.append(new_txn)
         added += 1
+
+    if new_txns:
+        db.flush()  # assign IDs before running rules
+        rules = get_active_rules_for_user(current_user.id, db)
+        for new_txn in new_txns:
+            apply_auto_flag(new_txn)
+            apply_rules_to_transaction(new_txn, rules)
 
     connection.last_synced_at = datetime.utcnow()
     db.commit()
