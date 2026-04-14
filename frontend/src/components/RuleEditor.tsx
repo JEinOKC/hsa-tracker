@@ -157,7 +157,9 @@ export default function RuleEditor({ rule, members, onSave, onClose }: RuleEdito
         <div className="px-6 py-5 space-y-6">
           {/* Name + active */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Rule name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Rule name <span className="text-red-500">*</span>
+            </label>
             <input
               type="text"
               value={name}
@@ -211,7 +213,7 @@ export default function RuleEditor({ rule, members, onSave, onClose }: RuleEdito
           {/* Conditions */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold text-gray-700">Conditions <span className="text-gray-400 font-normal">(ALL must match)</span></h3>
+              <h3 className="text-sm font-semibold text-gray-700">Conditions <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">(ALL must match)</span></h3>
               <button
                 type="button"
                 onClick={addCondition}
@@ -273,7 +275,7 @@ export default function RuleEditor({ rule, members, onSave, onClose }: RuleEdito
           {/* Actions */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold text-gray-700">Actions</h3>
+              <h3 className="text-sm font-semibold text-gray-700">Actions <span className="text-red-500">*</span></h3>
               <button
                 type="button"
                 onClick={addAction}
@@ -323,6 +325,8 @@ export default function RuleEditor({ rule, members, onSave, onClose }: RuleEdito
               ))}
             </div>
           </div>
+
+          <p className="text-xs text-gray-400"><span className="text-red-500">*</span> Required</p>
 
           {error && (
             <p className="text-sm text-red-600">{error}</p>
