@@ -10,6 +10,7 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import InvitePage from './pages/InvitePage'
 import Settings from './pages/Settings'
+import Rules from './pages/Rules'
 import ProtectedRoute from './components/ProtectedRoute'
 
 function Nav() {
@@ -121,6 +122,7 @@ function App() {
         <Route path="/family" element={<ProtectedLayout><FamilyMembers /></ProtectedLayout>} />
         <Route path="/transactions" element={<ProtectedLayout><Transactions /></ProtectedLayout>} />
         <Route path="/settings" element={<ProtectedLayout><Settings /></ProtectedLayout>} />
+        <Route path="/settings/rules" element={<ProtectedLayout><Rules /></ProtectedLayout>} />
       </Routes>
     </div>
     </ToastProvider>

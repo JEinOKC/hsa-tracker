@@ -250,6 +250,9 @@ function TxnRow({ txn, members, tab, onChange }: TxnRowProps) {
             {showNoReceiptBadge && (
               <span title="No receipt attached" className="text-xs font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-600 shrink-0">!</span>
             )}
+            {txn.auto_flag === 'potential_hsa' && txn.is_hsa_eligible === null && (
+              <span title="Potential HSA expense" className="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-600 shrink-0">Potential HSA</span>
+            )}
           </div>
           {/* Account info on sm+; date + account on mobile */}
           <p className="text-xs text-gray-400 truncate">
@@ -347,6 +350,8 @@ export default function Transactions() {
   const [filterMember, setFilterMember] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [showHidden, setShowHidden] = useState(false)
+  const [filterAutoFlag, setFilterAutoFlag] = useState('')
 
   // Debounce search so we don't fire on every keystroke
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -367,9 +372,11 @@ export default function Transactions() {
     family_member_id: filterMember || undefined,
     start_date: startDate || undefined,
     end_date: endDate || undefined,
+    show_hidden: showHidden || undefined,
+    auto_flag: filterAutoFlag || undefined,
     limit: PAGE_SIZE,
     offset,
-  }), [tab, filterDocs, debouncedSearch, filterMember, startDate, endDate])
+  }), [tab, filterDocs, debouncedSearch, filterMember, startDate, endDate, showHidden, filterAutoFlag])
 
   // Initial / filter-change load — resets the list
   const load = useCallback(async () => {
@@ -431,6 +438,8 @@ export default function Transactions() {
     setFilterMember('')
     setStartDate('')
     setEndDate('')
+    setShowHidden(false)
+    setFilterAutoFlag('')
   }
 
   const setDocsFilter = (val: string) => {
@@ -446,6 +455,8 @@ export default function Transactions() {
     setFilterMember('')
     setStartDate('')
     setEndDate('')
+    setShowHidden(false)
+    setFilterAutoFlag('')
     setSearchParams(tab !== 'all' ? { tab } : {})
   }
 
@@ -453,7 +464,7 @@ export default function Transactions() {
     ? transactions.reduce((sum, t) => sum + parseFloat(t.amount), 0)
     : null
 
-  const hasFilters = !!(search || filterMember || startDate || endDate || filterDocs)
+  const hasFilters = !!(search || filterMember || startDate || endDate || filterDocs || showHidden || filterAutoFlag)
 
   return (
     <>
@@ -527,6 +538,23 @@ export default function Transactions() {
             <option value="missing">Missing receipts</option>
             <option value="attached">Has receipts</option>
           </select>
+          <select
+            value={filterAutoFlag}
+            onChange={e => setFilterAutoFlag(e.target.value)}
+            className="min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+          >
+            <option value="">All flags</option>
+            <option value="potential_hsa">Potential HSA only</option>
+          </select>
+          <label className="flex items-center gap-2 cursor-pointer min-w-0 px-1">
+            <input
+              type="checkbox"
+              checked={showHidden}
+              onChange={e => setShowHidden(e.target.checked)}
+              className="rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+            />
+            <span className="text-sm text-gray-600 whitespace-nowrap">Show hidden</span>
+          </label>
           <div className="col-span-2 sm:col-span-1 min-w-0">
             <label className="block text-xs text-gray-400 mb-1 pl-1">From</label>
             <input

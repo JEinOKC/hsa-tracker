@@ -51,6 +51,8 @@ const makeTxn = (overrides = {}) => ({
   account_name: 'HSA Checking',
   institution_name: 'First Bank',
   document_count: 0,
+  auto_flag: null,
+  rule_id: null,
   ...overrides,
 })
 
@@ -813,6 +815,132 @@ describe('Transactions page', () => {
       fireEvent.click(screen.getByText('Clear filters'))
 
       expect((screen.getByPlaceholderText(/search description/i) as HTMLInputElement).value).toBe('')
+    })
+  })
+
+  describe('Potential HSA badge', () => {
+    it('shows Potential HSA badge when auto_flag is potential_hsa and is_hsa_eligible is null', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ auto_flag: 'potential_hsa', is_hsa_eligible: null }),
+      ])
+      render(<Transactions />)
+      await waitFor(() => {
+        expect(screen.getByTitle('Potential HSA expense')).toBeInTheDocument()
+        expect(screen.getByText('Potential HSA')).toBeInTheDocument()
+      })
+    })
+
+    it('does not show Potential HSA badge when is_hsa_eligible is true', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ auto_flag: 'potential_hsa', is_hsa_eligible: true }),
+      ])
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+      expect(screen.queryByTitle('Potential HSA expense')).not.toBeInTheDocument()
+    })
+
+    it('does not show Potential HSA badge when auto_flag is null', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ auto_flag: null, is_hsa_eligible: null }),
+      ])
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+      expect(screen.queryByTitle('Potential HSA expense')).not.toBeInTheDocument()
+    })
+
+    it('does not show Potential HSA badge when auto_flag is hidden', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ auto_flag: 'hidden', is_hsa_eligible: null }),
+      ])
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+      expect(screen.queryByTitle('Potential HSA expense')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('show hidden filter', () => {
+    it('renders the Show hidden checkbox', async () => {
+      render(<Transactions />)
+      await waitFor(() => {
+        expect(screen.getByLabelText(/show hidden/i)).toBeInTheDocument()
+      })
+    })
+
+    it('sends show_hidden=true when checkbox is checked', async () => {
+      render(<Transactions />)
+      await waitFor(() => screen.getByLabelText(/show hidden/i))
+
+      fireEvent.click(screen.getByLabelText(/show hidden/i))
+
+      await waitFor(() => {
+        expect(bankService.listAllTransactions).toHaveBeenCalledWith(
+          expect.objectContaining({ show_hidden: true })
+        )
+      })
+    })
+
+    it('does not send show_hidden when unchecked', async () => {
+      render(<Transactions />)
+      await waitFor(() => {
+        expect(bankService.listAllTransactions).toHaveBeenCalledWith(
+          expect.objectContaining({ show_hidden: undefined })
+        )
+      })
+    })
+
+    it('shows Clear filters when show_hidden is checked', async () => {
+      render(<Transactions />)
+      await waitFor(() => screen.getByLabelText(/show hidden/i))
+
+      fireEvent.click(screen.getByLabelText(/show hidden/i))
+
+      await waitFor(() => {
+        expect(screen.getByText('Clear filters')).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('Potential HSA only filter', () => {
+    it('renders the All flags dropdown', async () => {
+      render(<Transactions />)
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('All flags')).toBeInTheDocument()
+      })
+    })
+
+    it('sends auto_flag=potential_hsa when Potential HSA only is selected', async () => {
+      render(<Transactions />)
+      await waitFor(() => screen.getByDisplayValue('All flags'))
+
+      fireEvent.change(screen.getByDisplayValue('All flags'), {
+        target: { value: 'potential_hsa' },
+      })
+
+      await waitFor(() => {
+        expect(bankService.listAllTransactions).toHaveBeenCalledWith(
+          expect.objectContaining({ auto_flag: 'potential_hsa' })
+        )
+      })
+    })
+
+    it('does not send auto_flag when All flags is selected', async () => {
+      render(<Transactions />)
+      await waitFor(() => screen.getByDisplayValue('All flags'))
+
+      fireEvent.change(screen.getByDisplayValue('All flags'), {
+        target: { value: 'potential_hsa' },
+      })
+      await waitFor(() => screen.getByDisplayValue('Potential HSA only'))
+
+      fireEvent.change(screen.getByDisplayValue('Potential HSA only'), {
+        target: { value: '' },
+      })
+
+      await waitFor(() => {
+        const calls = (bankService.listAllTransactions as any).mock.calls
+        const lastCall = calls[calls.length - 1][0]
+        expect(lastCall.auto_flag).toBeUndefined()
+      })
     })
   })
 })
