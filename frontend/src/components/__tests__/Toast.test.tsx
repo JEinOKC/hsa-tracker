@@ -25,11 +25,11 @@ describe('Toast', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Sync complete')
   })
 
-  it('dismisses automatically after 4 seconds', () => {
+  it('dismisses automatically after 6 seconds', () => {
     renderWithProvider('Auto dismiss')
     fireEvent.click(screen.getByText('Show Toast'))
     expect(screen.getByRole('alert')).toBeInTheDocument()
-    act(() => vi.advanceTimersByTime(4000))
+    act(() => vi.advanceTimersByTime(6000))
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
