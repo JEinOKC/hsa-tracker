@@ -285,17 +285,29 @@ export default function RuleEditor({ rule, members, onSave, onClose }: RuleEdito
               </button>
             </div>
             <div className="space-y-2">
-              {actions.map((action, i) => (
+              {actions.map((action, i) => {
+                const otherTypes = actions.filter((_, j) => j !== i).map(a => a.action_type)
+                // Flag actions are mutually exclusive — disable the ones already used elsewhere
+                const FLAG_ACTIONS: ActionType[] = ['mark_hsa', 'mark_potential', 'hide']
+                const usedFlags = otherTypes.filter(t => FLAG_ACTIONS.includes(t))
+                const isDisabled = (type: ActionType) =>
+                  // Can't pick a flag action already used in another row
+                  (FLAG_ACTIONS.includes(type) && usedFlags.includes(type)) ||
+                  // Can't add a second assign_member
+                  (type === 'assign_member' && otherTypes.includes('assign_member') && action.action_type !== 'assign_member') ||
+                  // Can't pick a conflicting flag (all three are mutually exclusive)
+                  (FLAG_ACTIONS.includes(type) && usedFlags.some(f => FLAG_ACTIONS.includes(f)) && type !== action.action_type)
+                return (
                 <div key={i} className="flex flex-wrap gap-2 items-center">
                   <select
                     value={action.action_type}
                     onChange={e => updateAction(i, { action_type: e.target.value as ActionType })}
                     className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500"
                   >
-                    <option value="mark_hsa">Mark as HSA eligible</option>
-                    <option value="mark_potential">Flag as potential HSA</option>
-                    <option value="hide">Hide transaction</option>
-                    <option value="assign_member">Assign to family member</option>
+                    <option value="mark_hsa" disabled={isDisabled('mark_hsa')}>Mark as HSA eligible</option>
+                    <option value="mark_potential" disabled={isDisabled('mark_potential')}>Flag as potential HSA</option>
+                    <option value="hide" disabled={isDisabled('hide')}>Hide transaction</option>
+                    <option value="assign_member" disabled={isDisabled('assign_member')}>Assign to family member</option>
                   </select>
 
                   {action.action_type === 'assign_member' && (
@@ -322,7 +334,7 @@ export default function RuleEditor({ rule, members, onSave, onClose }: RuleEdito
                     </button>
                   )}
                 </div>
-              ))}
+              )})}
             </div>
           </div>
 
