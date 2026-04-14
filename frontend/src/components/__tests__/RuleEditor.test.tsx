@@ -187,6 +187,42 @@ describe('RuleEditor', () => {
     expect(screen.queryByDisplayValue('— select member —')).not.toBeInTheDocument()
   })
 
+  it('shows placement toggle for new rules', () => {
+    render(<RuleEditor rule={null} members={[]} onSave={noop} onClose={noop} />)
+    expect(screen.getByText('Apply before existing rules')).toBeInTheDocument()
+    expect(screen.getByText('Apply after existing rules')).toBeInTheDocument()
+  })
+
+  it('does not show placement toggle when editing an existing rule', () => {
+    render(<RuleEditor rule={mockRule} members={[]} onSave={noop} onClose={noop} />)
+    expect(screen.queryByText('Apply before existing rules')).not.toBeInTheDocument()
+    expect(screen.queryByText('Apply after existing rules')).not.toBeInTheDocument()
+  })
+
+  it('sends placement=first when "Apply before existing rules" is selected', async () => {
+    ;(rulesService.create as any).mockResolvedValue({ ...mockRule, id: 'new-1' })
+    render(<RuleEditor rule={null} members={[]} onSave={noop} onClose={noop} />)
+    fireEvent.change(screen.getByPlaceholderText('e.g. Flag pharmacy transactions'), { target: { value: 'Test Rule' } })
+    fireEvent.change(screen.getByPlaceholderText('value…'), { target: { value: 'CVS' } })
+    fireEvent.click(screen.getByText('Apply before existing rules'))
+    fireEvent.click(screen.getByText('Save Rule'))
+    await waitFor(() => {
+      expect(rulesService.create).toHaveBeenCalledWith(expect.objectContaining({ placement: 'first' }))
+    })
+  })
+
+  it('sends placement=last when "Apply after existing rules" is selected', async () => {
+    ;(rulesService.create as any).mockResolvedValue({ ...mockRule, id: 'new-1' })
+    render(<RuleEditor rule={null} members={[]} onSave={noop} onClose={noop} />)
+    fireEvent.change(screen.getByPlaceholderText('e.g. Flag pharmacy transactions'), { target: { value: 'Test Rule' } })
+    fireEvent.change(screen.getByPlaceholderText('value…'), { target: { value: 'CVS' } })
+    fireEvent.click(screen.getByText('Apply after existing rules'))
+    fireEvent.click(screen.getByText('Save Rule'))
+    await waitFor(() => {
+      expect(rulesService.create).toHaveBeenCalledWith(expect.objectContaining({ placement: 'last' }))
+    })
+  })
+
   it('active toggle is on by default', () => {
     render(<RuleEditor rule={null} members={[]} onSave={noop} onClose={noop} />)
     expect(screen.getByRole('button', { name: '' })).toBeInTheDocument()

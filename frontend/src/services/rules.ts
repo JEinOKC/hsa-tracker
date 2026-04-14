@@ -32,6 +32,7 @@ export interface HsaRule {
 export interface HsaRuleInput {
   name: string
   priority: number
+  placement?: 'first' | 'last'
   is_active: boolean
   conditions: Omit<RuleCondition, 'id' | 'rule_id' | 'created_at'>[]
   actions: Omit<RuleAction, 'id' | 'rule_id' | 'created_at'>[]

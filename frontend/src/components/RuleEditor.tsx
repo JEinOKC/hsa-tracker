@@ -71,6 +71,7 @@ export default function RuleEditor({ rule, members, onSave, onClose }: RuleEdito
   const [actions, setActions] = useState<Omit<RuleAction, 'id' | 'rule_id' | 'created_at'>[]>(
     rule?.actions?.map(a => ({ action_type: a.action_type, member_id: a.member_id ?? null })) ?? [blankAction()]
   )
+  const [placement, setPlacement] = useState<'first' | 'last'>('first')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -119,7 +120,14 @@ export default function RuleEditor({ rule, members, onSave, onClose }: RuleEdito
     if (actions.length === 0) { setError('At least one action is required.'); return }
     if (conditions.some(c => !c.value.trim())) { setError('All condition values must be filled in.'); return }
 
-    const payload: HsaRuleInput = { name: name.trim(), priority: rule?.priority ?? 0, is_active: isActive, conditions, actions }
+    const payload: HsaRuleInput = {
+      name: name.trim(),
+      priority: rule?.priority ?? 0,
+      placement: rule ? undefined : placement,
+      is_active: isActive,
+      conditions,
+      actions,
+    }
     setSaving(true)
     try {
       const saved = rule ? await rulesService.update(rule.id, payload) : await rulesService.create(payload)
@@ -158,6 +166,29 @@ export default function RuleEditor({ rule, members, onSave, onClose }: RuleEdito
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
             />
           </div>
+
+          {/* Placement — only for new rules; drag handles existing */}
+          {!rule && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
+              <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden text-sm">
+                <button
+                  type="button"
+                  onClick={() => setPlacement('first')}
+                  className={`px-4 py-2 ${placement === 'first' ? 'bg-sky-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                >
+                  Apply before existing rules
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPlacement('last')}
+                  className={`px-4 py-2 border-l border-gray-300 ${placement === 'last' ? 'bg-sky-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                >
+                  Apply after existing rules
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center gap-3">
             <button

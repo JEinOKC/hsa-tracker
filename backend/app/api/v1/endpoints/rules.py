@@ -17,6 +17,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, field_validator
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
@@ -52,6 +53,7 @@ class RuleActionIn(BaseModel):
 class HsaRuleIn(BaseModel):
     name: str
     priority: int = 0
+    placement: Optional[Literal["first", "last"]] = None  # only used on create
     is_active: bool = True
     conditions: list[RuleConditionIn]
     actions: list[RuleActionIn]
@@ -184,11 +186,23 @@ async def create_rule(
 ):
     """Create a new HSA rule with conditions and actions."""
     now = datetime.utcnow()
+    if payload.placement == "first":
+        min_priority = db.query(func.min(HsaRule.priority)).filter(
+            HsaRule.user_id == current_user.id
+        ).scalar()
+        priority = (min_priority - 1) if min_priority is not None else 0
+    elif payload.placement == "last":
+        max_priority = db.query(func.max(HsaRule.priority)).filter(
+            HsaRule.user_id == current_user.id
+        ).scalar()
+        priority = (max_priority + 1) if max_priority is not None else 0
+    else:
+        priority = payload.priority
     rule = HsaRule(
         id=uuid_module.uuid4(),
         user_id=current_user.id,
         name=payload.name,
-        priority=payload.priority,
+        priority=priority,
         is_active=payload.is_active,
         created_at=now,
         updated_at=now,
