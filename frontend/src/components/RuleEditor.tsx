@@ -64,7 +64,6 @@ function blankAction(): Omit<RuleAction, 'id' | 'rule_id' | 'created_at'> {
 
 export default function RuleEditor({ rule, members, onSave, onClose }: RuleEditorProps) {
   const [name, setName] = useState(rule?.name ?? '')
-  const [priority, setPriority] = useState(rule?.priority ?? 0)
   const [isActive, setIsActive] = useState(rule?.is_active ?? true)
   const [conditions, setConditions] = useState<Omit<RuleCondition, 'id' | 'rule_id' | 'created_at'>[]>(
     rule?.conditions?.map(c => ({ field: c.field, operator: c.operator, value: c.value })) ?? [blankCondition()]
@@ -120,7 +119,7 @@ export default function RuleEditor({ rule, members, onSave, onClose }: RuleEdito
     if (actions.length === 0) { setError('At least one action is required.'); return }
     if (conditions.some(c => !c.value.trim())) { setError('All condition values must be filled in.'); return }
 
-    const payload: HsaRuleInput = { name: name.trim(), priority, is_active: isActive, conditions, actions }
+    const payload: HsaRuleInput = { name: name.trim(), priority: rule?.priority ?? 0, is_active: isActive, conditions, actions }
     setSaving(true)
     try {
       const saved = rule ? await rulesService.update(rule.id, payload) : await rulesService.create(payload)
@@ -148,27 +147,16 @@ export default function RuleEditor({ rule, members, onSave, onClose }: RuleEdito
         </div>
 
         <div className="px-6 py-5 space-y-6">
-          {/* Name + priority + active */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="sm:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Rule name</label>
-              <input
-                type="text"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="e.g. Flag pharmacy transactions"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-              <input
-                type="number"
-                value={priority}
-                onChange={e => setPriority(parseInt(e.target.value) || 0)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-              />
-            </div>
+          {/* Name + active */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Rule name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="e.g. Flag pharmacy transactions"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
           </div>
 
           <div className="flex items-center gap-3">
