@@ -5,6 +5,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
     Date,
     DateTime,
@@ -97,10 +98,20 @@ class BankTransaction(Base):
     reimbursed_at = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
 
+    # Rules engine fields — set by auto-flag logic or user rules
+    auto_flag = Column(String(20), nullable=True, index=True)  # 'potential_hsa' | 'hidden'
+    rule_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("hsa_rules.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     connection = relationship("BankConnection", back_populates="transactions")
     family_member = relationship("FamilyMember", foreign_keys=[family_member_id])
+    rule = relationship("HsaRule", foreign_keys=[rule_id])
     documents = relationship(
         "TransactionDocument",
         back_populates="transaction",
@@ -113,6 +124,10 @@ class BankTransaction(Base):
             "connection_id",
             "provider_transaction_id",
             name="uq_bank_txn_connection_provider_id",
+        ),
+        CheckConstraint(
+            "auto_flag IN ('potential_hsa', 'hidden') OR auto_flag IS NULL",
+            name="ck_bank_txn_auto_flag",
         ),
     )
 
