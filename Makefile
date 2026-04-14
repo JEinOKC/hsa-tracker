@@ -15,15 +15,21 @@ HAS_DOPPLER := $(shell command -v doppler 2>/dev/null)
 DOPPLER_PROJECT := $(shell doppler configure get project --plain 2>/dev/null)
 ifneq ($(HAS_DOPPLER),)
 ifneq ($(DOPPLER_PROJECT),)
-	DOCKER_COMPOSE_CMD := doppler run -- docker-compose
-	RUN_CMD := doppler run --
+	DOCKER_COMPOSE_CMD := doppler run --config dev -- docker-compose
+	RUN_CMD := doppler run --config dev --
+	DOCKER_COMPOSE_CMD_PRD := doppler run --config prd -- docker-compose
+	RUN_CMD_PRD := doppler run --config prd --
 else
 	DOCKER_COMPOSE_CMD := docker-compose
 	RUN_CMD :=
+	DOCKER_COMPOSE_CMD_PRD := docker-compose
+	RUN_CMD_PRD :=
 endif
 else
 	DOCKER_COMPOSE_CMD := docker-compose
 	RUN_CMD :=
+	DOCKER_COMPOSE_CMD_PRD := docker-compose
+	RUN_CMD_PRD :=
 endif
 
 help: ## Show this help message
@@ -127,17 +133,17 @@ dev-shell-frontend: ## Open shell in frontend container
 
 prod-up: ## Start production environment
 	@echo "$(BLUE)Starting production environment...$(NC)"
-	$(DOCKER_COMPOSE_CMD) up -d
+	$(DOCKER_COMPOSE_CMD_PRD) up -d
 	@echo "$(GREEN)✓ Production environment started$(NC)"
 	@echo "Application: http://localhost:3000"
 
 prod-down: ## Stop production environment
 	@echo "$(BLUE)Stopping production environment...$(NC)"
-	$(DOCKER_COMPOSE_CMD) down
+	$(DOCKER_COMPOSE_CMD_PRD) down
 	@echo "$(GREEN)✓ Production environment stopped$(NC)"
 
 prod-logs: ## View production logs
-	$(DOCKER_COMPOSE_CMD) logs -f
+	$(DOCKER_COMPOSE_CMD_PRD) logs -f
 
 # ==========================================
 # Database Commands

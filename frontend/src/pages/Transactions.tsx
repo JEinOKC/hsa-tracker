@@ -187,19 +187,21 @@ function ReimburseToggle({ txn, onChange }: ReimburseToggleProps) {
 
   if (pickingDate)
     return (
-      <span className="flex items-center gap-1">
+      <span className="flex flex-wrap items-center gap-1">
         <input
           type="date"
           value={reimburseDate}
           onChange={e => setReimburseDate(e.target.value)}
-          className="text-xs border border-gray-300 rounded px-1 py-0.5"
+          className="text-xs border border-gray-300 rounded px-1 py-0.5 min-w-0"
         />
-        <button onClick={confirm} className="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-600 text-white hover:bg-purple-700">
-          Save
-        </button>
-        <button onClick={() => setPickingDate(false)} className="text-xs text-gray-400 hover:text-gray-600">
-          ✕
-        </button>
+        <span className="flex items-center gap-1">
+          <button onClick={confirm} className="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-600 text-white hover:bg-purple-700">
+            Save
+          </button>
+          <button onClick={() => setPickingDate(false)} className="text-xs text-gray-400 hover:text-gray-600">
+            ✕
+          </button>
+        </span>
       </span>
     )
 
@@ -233,7 +235,11 @@ function TxnRow({ txn, members, tab, onChange }: TxnRowProps) {
 
   return (
     <div className="border-b border-gray-50 last:border-0">
-      <div className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50">
+      {/* Whole row is tappable on mobile to reveal annotation controls */}
+      <div
+        className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer sm:cursor-default"
+        onClick={() => setExpanded(prev => !prev)}
+      >
         {/* Date — hidden on mobile, shown inline on sm+ */}
         <span className="hidden sm:inline text-xs text-gray-400 w-24 shrink-0">{formatDate(txn.transaction_date)}</span>
 
@@ -262,16 +268,21 @@ function TxnRow({ txn, members, tab, onChange }: TxnRowProps) {
         </span>
 
         {/* Annotation controls — desktop only; shown in expanded panel on mobile */}
-        <div className="hidden sm:flex items-center gap-2 shrink-0">
+        <div className="hidden sm:flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
           {tab !== 'reimbursed' && <HsaToggle txn={txn} onChange={onChange} />}
           <MemberPicker txn={txn} members={members} onChange={onChange} />
           {(tab === 'hsa' || tab === 'reimbursed') && <CategoryPicker txn={txn} onChange={onChange} />}
           {(tab === 'hsa' || tab === 'reimbursed') && <ReimburseToggle txn={txn} onChange={onChange} />}
         </div>
 
-        {/* Attachment toggle */}
+        {/* Expand chevron — mobile only hint */}
+        <span className="sm:hidden text-gray-300 text-xs shrink-0 select-none">
+          {expanded ? '▾' : '›'}
+        </span>
+
+        {/* Attachment toggle — stopPropagation so row click doesn't double-toggle */}
         <button
-          onClick={() => setExpanded(e => !e)}
+          onClick={(e) => { e.stopPropagation(); setExpanded(prev => !prev) }}
           title={expanded ? 'Hide receipts' : 'Attach receipts'}
           className={`shrink-0 text-sm px-1.5 py-0.5 rounded transition-colors ${
             expanded
@@ -516,20 +527,22 @@ export default function Transactions() {
             <option value="missing">Missing receipts</option>
             <option value="attached">Has receipts</option>
           </select>
-          <div className="min-w-0">
+          <div className="col-span-2 sm:col-span-1 min-w-0">
+            <label className="block text-xs text-gray-400 mb-1 pl-1">From</label>
             <input
               type="date"
               value={startDate}
               onChange={e => setStartDate(e.target.value)}
-              className="w-full max-w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
             />
           </div>
-          <div className="min-w-0">
+          <div className="col-span-2 sm:col-span-1 min-w-0">
+            <label className="block text-xs text-gray-400 mb-1 pl-1">To</label>
             <input
               type="date"
               value={endDate}
               onChange={e => setEndDate(e.target.value)}
-              className="w-full max-w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
             />
           </div>
           {hasFilters && (

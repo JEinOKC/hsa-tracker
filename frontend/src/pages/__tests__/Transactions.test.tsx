@@ -632,6 +632,40 @@ describe('Transactions page', () => {
         expect(screen.queryByText(/no receipts attached yet/i)).not.toBeInTheDocument()
       })
     })
+
+    it('expands annotation controls when the transaction row itself is clicked', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      ;(familyService.list as any).mockResolvedValue([mockMember])
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+
+      // Before expanding, mobile annotation controls are not visible
+      expect(screen.queryByText(/no receipts attached yet/i)).not.toBeInTheDocument()
+
+      // Click the row div itself (not the paperclip)
+      fireEvent.click(screen.getByText('CVS Pharmacy'))
+
+      await waitFor(() => {
+        expect(screen.getByText(/no receipts attached yet/i)).toBeInTheDocument()
+      })
+    })
+
+    it('shows mobile annotation controls (HSA toggle + person picker) in expanded section', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      ;(familyService.list as any).mockResolvedValue([mockMember])
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+
+      fireEvent.click(screen.getByText('CVS Pharmacy'))
+
+      await waitFor(() => {
+        // HsaToggle and MemberPicker both render in the mobile expandable section
+        const markButtons = screen.getAllByRole('button', { name: 'Mark' })
+        expect(markButtons.length).toBeGreaterThan(0)
+        const personPickers = screen.getAllByDisplayValue('— person —')
+        expect(personPickers.length).toBeGreaterThan(0)
+      })
+    })
   })
 
   describe('docs filter', () => {
