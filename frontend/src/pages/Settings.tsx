@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   isPushSupported,
   getExistingSubscription,
@@ -79,6 +80,19 @@ export default function Settings() {
   return (
     <div className="container mx-auto px-4 py-8 max-w-2xl">
       <h1 className="text-2xl font-bold text-gray-900 mb-8">Settings</h1>
+
+      <div className="bg-white rounded-lg border border-gray-200 p-6 mb-4">
+        <h2 className="text-lg font-semibold text-gray-900 mb-1">Transaction Rules</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Automatically flag or annotate transactions based on matching conditions.
+        </p>
+        <Link
+          to="/settings/rules"
+          className="inline-block px-4 py-2 bg-sky-600 text-white text-sm font-medium rounded-md hover:bg-sky-700"
+        >
+          Manage Rules
+        </Link>
+      </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-1">Push Notifications</h2>

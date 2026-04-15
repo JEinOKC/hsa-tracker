@@ -47,6 +47,9 @@ export interface BankTransaction {
   institution_name: string | null
   document_count: number
   owner_display_name?: string | null
+  // Rules engine fields
+  auto_flag: 'potential_hsa' | 'hidden' | null
+  rule_id: string | null
 }
 
 export interface BankTransactionAnnotation {
@@ -67,6 +70,8 @@ export interface AllTransactionsParams {
   reimbursement_status?: string
   has_documents?: boolean
   search?: string
+  show_hidden?: boolean
+  auto_flag?: string
   limit?: number
   offset?: number
 }
