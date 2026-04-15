@@ -534,3 +534,79 @@ class TestTransactionFilters:
         data = resp.json()[0]
         assert data["auto_flag"] == "potential_hsa"
         assert data["rule_id"] == str(rule.id)
+
+
+# ---------------------------------------------------------------------------
+# Preview rule
+# ---------------------------------------------------------------------------
+
+
+_PREVIEW_PAYLOAD = {
+    "rule": {
+        "conditions": [{"field": "description", "operator": "contains", "value": "CVS"}],
+        "actions": [{"action_type": "mark_hsa"}],
+    }
+}
+
+
+class TestPreviewRule:
+    def test_preview_requires_auth(self, client):
+        assert client.post("/api/v1/bank/rules/preview", json=_PREVIEW_PAYLOAD).status_code == 403
+
+    def test_preview_returns_matching_transactions(self, client, auth_headers, db_session, test_user):
+        conn = _make_connection(db_session, test_user.id)
+        _make_transaction(db_session, conn.id, description="CVS Pharmacy")
+        _make_transaction(db_session, conn.id, description="Starbucks")
+
+        resp = client.post("/api/v1/bank/rules/preview", json=_PREVIEW_PAYLOAD, headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["transactions"][0]["description"] == "CVS Pharmacy"
+        assert data["capped"] is False
+
+    def test_preview_returns_zero_when_no_match(self, client, auth_headers, db_session, test_user):
+        conn = _make_connection(db_session, test_user.id)
+        _make_transaction(db_session, conn.id, description="Starbucks")
+
+        resp = client.post("/api/v1/bank/rules/preview", json=_PREVIEW_PAYLOAD, headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json()["count"] == 0
+
+    def test_preview_respects_priority_placement_last(self, client, auth_headers, db_session, test_user):
+        """A higher-priority existing rule claims the transaction; placement=last should miss it."""
+        conn = _make_connection(db_session, test_user.id)
+        _make_transaction(db_session, conn.id, description="CVS Pharmacy")
+        # Existing rule (priority=0) also matches CVS
+        _make_rule(db_session, test_user.id, priority=0)
+
+        payload = {**_PREVIEW_PAYLOAD, "rule": {**_PREVIEW_PAYLOAD["rule"], "placement": "last"}}
+        resp = client.post("/api/v1/bank/rules/preview", json=payload, headers=auth_headers)
+        assert resp.status_code == 200
+        # The higher-priority rule claims the transaction first, so preview count = 0
+        assert resp.json()["count"] == 0
+
+    def test_preview_placement_first_wins_over_existing(self, client, auth_headers, db_session, test_user):
+        """placement=first should see the transaction even though an existing rule also matches."""
+        conn = _make_connection(db_session, test_user.id)
+        _make_transaction(db_session, conn.id, description="CVS Pharmacy")
+        _make_rule(db_session, test_user.id, priority=0)
+
+        payload = {**_PREVIEW_PAYLOAD, "rule": {**_PREVIEW_PAYLOAD["rule"], "placement": "first"}}
+        resp = client.post("/api/v1/bank/rules/preview", json=payload, headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json()["count"] == 1
+
+    def test_preview_excludes_transactions_from_other_users(self, client, auth_headers, db_session, test_user):
+        other = _make_other_user(db_session)
+        other_conn = _make_connection(db_session, other.id)
+        _make_transaction(db_session, other_conn.id, description="CVS Pharmacy")
+
+        resp = client.post("/api/v1/bank/rules/preview", json=_PREVIEW_PAYLOAD, headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json()["count"] == 0
+
+    def test_preview_requires_at_least_one_condition(self, client, auth_headers):
+        payload = {"rule": {"conditions": [], "actions": [{"action_type": "mark_hsa"}]}}
+        resp = client.post("/api/v1/bank/rules/preview", json=payload, headers=auth_headers)
+        assert resp.status_code == 422

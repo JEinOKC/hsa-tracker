@@ -40,6 +40,21 @@ def apply_rules_to_transaction(txn: BankTransaction, rules: list[HsaRule]) -> No
             return
 
 
+def would_rule_apply(
+    txn: BankTransaction,
+    test_rule: HsaRule,
+    higher_priority_rules: list[HsaRule],
+) -> bool:
+    """Return True if *test_rule* would be the first matching rule for *txn*.
+
+    Checks that no rule in *higher_priority_rules* already claims the transaction.
+    """
+    for rule in higher_priority_rules:
+        if _rule_matches(txn, rule):
+            return False
+    return _rule_matches(txn, test_rule)
+
+
 def get_active_rules_for_user(user_id: UUID, db: Session) -> list[HsaRule]:
     """Return active rules for *user_id* ordered by priority ASC."""
     return (

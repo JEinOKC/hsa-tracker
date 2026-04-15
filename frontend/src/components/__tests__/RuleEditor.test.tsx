@@ -6,6 +6,7 @@ vi.mock('../../services/rules', () => ({
   rulesService: {
     create: vi.fn(),
     update: vi.fn(),
+    preview: vi.fn(),
   },
 }))
 
@@ -236,5 +237,69 @@ describe('RuleEditor', () => {
     expect(screen.getByText('Active')).toBeInTheDocument()
     fireEvent.click(toggle)
     expect(screen.getByText('Inactive')).toBeInTheDocument()
+  })
+
+  it('shows "Test this rule" button', () => {
+    render(<RuleEditor rule={null} members={[]} onSave={noop} onClose={noop} />)
+    expect(screen.getByRole('button', { name: 'Test this rule' })).toBeInTheDocument()
+  })
+
+  it('"Test this rule" is disabled when condition value is empty', () => {
+    render(<RuleEditor rule={null} members={[]} onSave={noop} onClose={noop} />)
+    expect(screen.getByRole('button', { name: 'Test this rule' })).toBeDisabled()
+  })
+
+  it('"Test this rule" is enabled when condition value is filled', () => {
+    render(<RuleEditor rule={null} members={[]} onSave={noop} onClose={noop} />)
+    fireEvent.change(screen.getByPlaceholderText('value…'), { target: { value: 'CVS' } })
+    expect(screen.getByRole('button', { name: 'Test this rule' })).toBeEnabled()
+  })
+
+  it('shows matching count after successful preview', async () => {
+    ;(rulesService.preview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      count: 3,
+      transactions: [
+        { id: 't1', date: '2026-03-01', description: 'CVS Pharmacy', amount: '-42.00', counterparty_name: 'CVS', is_hsa_eligible: null, auto_flag: null },
+      ],
+      capped: false,
+    })
+    render(<RuleEditor rule={mockRule} members={[]} onSave={noop} onClose={noop} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Test this rule' }))
+    await waitFor(() => {
+      expect(screen.getByText('3 transactions would be affected')).toBeInTheDocument()
+    })
+  })
+
+  it('shows "No transactions" message when preview returns 0', async () => {
+    ;(rulesService.preview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      count: 0, transactions: [], capped: false,
+    })
+    render(<RuleEditor rule={mockRule} members={[]} onSave={noop} onClose={noop} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Test this rule' }))
+    await waitFor(() => {
+      expect(screen.getByText('No transactions would be affected')).toBeInTheDocument()
+    })
+  })
+
+  it('shows error when preview call fails', async () => {
+    ;(rulesService.preview as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('fail'))
+    render(<RuleEditor rule={mockRule} members={[]} onSave={noop} onClose={noop} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Test this rule' }))
+    await waitFor(() => {
+      expect(screen.getByText(/failed to test rule/i)).toBeInTheDocument()
+    })
+  })
+
+  it('clears preview results when a condition is changed', async () => {
+    ;(rulesService.preview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      count: 2, transactions: [], capped: false,
+    })
+    render(<RuleEditor rule={mockRule} members={[]} onSave={noop} onClose={noop} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Test this rule' }))
+    await waitFor(() => expect(screen.getByText('2 transactions would be affected')).toBeInTheDocument())
+
+    // Changing a condition value clears the results
+    fireEvent.change(screen.getByDisplayValue('CVS'), { target: { value: 'Walgreens' } })
+    expect(screen.queryByText('2 transactions would be affected')).not.toBeInTheDocument()
   })
 })

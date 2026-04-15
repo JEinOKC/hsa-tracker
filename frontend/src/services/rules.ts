@@ -47,6 +47,27 @@ export interface ApplyResult {
   updated: number
 }
 
+export interface PreviewTransaction {
+  id: string
+  date: string
+  description: string
+  amount: string
+  counterparty_name: string | null
+  is_hsa_eligible: boolean | null
+  auto_flag: string | null
+}
+
+export interface PreviewResult {
+  count: number
+  transactions: PreviewTransaction[]
+  capped: boolean
+}
+
+export interface PreviewInput {
+  rule: HsaRuleInput
+  rule_id?: string
+}
+
 export const rulesService = {
   list: (): Promise<HsaRule[]> =>
     api.get<HsaRule[]>('/bank/rules').then(r => r.data),
@@ -68,4 +89,7 @@ export const rulesService = {
 
   applyAll: (): Promise<ApplyResult> =>
     api.post<ApplyResult>('/bank/rules/apply').then(r => r.data),
+
+  preview: (input: PreviewInput): Promise<PreviewResult> =>
+    api.post<PreviewResult>('/bank/rules/preview', input).then(r => r.data),
 }

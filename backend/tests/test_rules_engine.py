@@ -13,6 +13,7 @@ import pytest
 from app.services.rules_engine import (
     apply_auto_flag,
     apply_rules_to_transaction,
+    would_rule_apply,
     _evaluate_condition,
 )
 
@@ -414,3 +415,40 @@ class TestApplyRulesToTransaction:
 
         apply_rules_to_transaction(txn, [rule])
         assert txn.rule_id == rule_id
+
+
+# ---------------------------------------------------------------------------
+# would_rule_apply
+# ---------------------------------------------------------------------------
+
+
+class TestWouldRuleApply:
+    def _cvs_rule(self):
+        return _make_rule(
+            conditions=[_make_condition("description", "contains", "CVS")],
+            actions=[_make_action("mark_hsa")],
+        )
+
+    def test_applies_when_no_higher_priority_rules(self):
+        txn = _make_txn(description="CVS Pharmacy")
+        assert would_rule_apply(txn, self._cvs_rule(), []) is True
+
+    def test_does_not_apply_when_condition_not_met(self):
+        txn = _make_txn(description="Starbucks")
+        assert would_rule_apply(txn, self._cvs_rule(), []) is False
+
+    def test_does_not_apply_when_higher_priority_rule_matches(self):
+        txn = _make_txn(description="CVS Pharmacy")
+        higher = _make_rule(
+            conditions=[_make_condition("description", "contains", "CVS")],
+            actions=[_make_action("mark_hsa")],
+        )
+        assert would_rule_apply(txn, self._cvs_rule(), [higher]) is False
+
+    def test_applies_when_higher_priority_rule_does_not_match(self):
+        txn = _make_txn(description="CVS Pharmacy")
+        higher = _make_rule(
+            conditions=[_make_condition("description", "contains", "Walgreens")],
+            actions=[_make_action("mark_hsa")],
+        )
+        assert would_rule_apply(txn, self._cvs_rule(), [higher]) is True

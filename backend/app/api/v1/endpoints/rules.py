@@ -29,6 +29,7 @@ from app.services.rules_engine import (
     apply_auto_flag,
     apply_rules_to_transaction,
     get_active_rules_for_user,
+    would_rule_apply,
 )
 
 router = APIRouter()
@@ -118,6 +119,43 @@ class ReorderItem(BaseModel):
 
 class ApplyResult(BaseModel):
     updated: int
+
+
+class PreviewRuleIn(BaseModel):
+    name: str = ""
+    priority: int = 0
+    placement: Optional[Literal["first", "last"]] = None
+    is_active: bool = True
+    conditions: list[RuleConditionIn]
+    actions: list[RuleActionIn]
+
+    @field_validator("conditions")
+    @classmethod
+    def at_least_one_condition(cls, v):
+        if len(v) < 1:
+            raise ValueError("At least one condition is required.")
+        return v
+
+
+class PreviewInput(BaseModel):
+    rule: PreviewRuleIn
+    rule_id: Optional[UUID] = None
+
+
+class PreviewTransaction(BaseModel):
+    id: UUID
+    date: str
+    description: str
+    amount: str
+    counterparty_name: Optional[str] = None
+    is_hsa_eligible: Optional[bool] = None
+    auto_flag: Optional[str] = None
+
+
+class PreviewResult(BaseModel):
+    count: int
+    transactions: list[PreviewTransaction]
+    capped: bool
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +257,105 @@ async def create_rule(
 async def _placeholder():  # pragma: no cover
     """Placeholder — prevents /rules/{rule_id} from matching the path 'reorder'."""
     pass  # never reached; PATCH overrides
+
+
+_MAX_PREVIEW = 50
+
+
+@router.post("/rules/preview", response_model=PreviewResult)
+async def preview_rule(
+    payload: PreviewInput,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Simulate a rule without saving it; return transactions it would affect."""
+    now = datetime.utcnow()
+
+    # Existing active rules, excluding the one being edited
+    existing = get_active_rules_for_user(current_user.id, db)
+    if payload.rule_id:
+        existing = [r for r in existing if r.id != payload.rule_id]
+
+    # Determine the test rule's effective priority
+    if payload.rule.placement == "first":
+        test_priority = (min(r.priority for r in existing) - 1) if existing else 0
+    elif payload.rule.placement == "last":
+        test_priority = (max(r.priority for r in existing) + 1) if existing else 0
+    elif payload.rule_id:
+        orig = db.query(HsaRule).filter(
+            HsaRule.id == payload.rule_id,
+            HsaRule.user_id == current_user.id,
+        ).first()
+        test_priority = orig.priority if orig else 0
+    else:
+        test_priority = payload.rule.priority
+
+    # Build in-memory rule (not persisted)
+    test_id = uuid_module.uuid4()
+    test_rule = HsaRule(
+        id=test_id,
+        user_id=current_user.id,
+        name=payload.rule.name,
+        priority=test_priority,
+        is_active=True,
+        created_at=now,
+        updated_at=now,
+    )
+    test_rule.conditions = [
+        HsaRuleCondition(
+            id=uuid_module.uuid4(), rule_id=test_id,
+            field=c.field, operator=c.operator, value=c.value, created_at=now,
+        )
+        for c in payload.rule.conditions
+    ]
+    test_rule.actions = [
+        HsaRuleAction(
+            id=uuid_module.uuid4(), rule_id=test_id,
+            action_type=a.action_type, member_id=a.member_id, created_at=now,
+        )
+        for a in payload.rule.actions
+    ]
+
+    # Rules that would run before the test rule
+    higher_priority = [
+        r for r in existing
+        if r.priority < test_priority
+        or (r.priority == test_priority and r.created_at < now)
+    ]
+
+    # Fetch all user transactions
+    user_connection_ids = (
+        db.query(BankConnection.id)
+        .filter(BankConnection.user_id == current_user.id, BankConnection.is_active == True)  # noqa: E712
+        .subquery()
+    )
+    txns = (
+        db.query(BankTransaction)
+        .filter(BankTransaction.connection_id.in_(user_connection_ids))
+        .all()
+    )
+
+    matched: list[PreviewTransaction] = []
+    for txn in txns:
+        if would_rule_apply(txn, test_rule, higher_priority):
+            try:
+                details = txn.details or {}
+                cp = details.get("counterparty") or {}
+                counterparty = cp.get("name") if isinstance(cp, dict) else None
+            except Exception:
+                counterparty = None
+            matched.append(PreviewTransaction(
+                id=txn.id,
+                date=str(txn.transaction_date or ""),
+                description=txn.description or "",
+                amount=str(txn.amount or ""),
+                counterparty_name=counterparty or None,
+                is_hsa_eligible=txn.is_hsa_eligible,
+                auto_flag=txn.auto_flag,
+            ))
+
+    total = len(matched)
+    return PreviewResult(count=total, transactions=matched[:_MAX_PREVIEW], capped=total > _MAX_PREVIEW)
 
 
 @router.get("/rules/{rule_id}", response_model=HsaRuleResponse)

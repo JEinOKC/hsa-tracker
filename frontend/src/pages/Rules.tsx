@@ -187,8 +187,8 @@ export default function Rules() {
                 ⠿
               </span>
 
-              {/* Priority badge */}
-              <span className="text-xs text-gray-400 w-8 shrink-0">#{rule.priority}</span>
+              {/* Position badge */}
+              <span className="text-xs text-gray-400 w-8 shrink-0">#{index + 1}</span>
 
               {/* Name + summary */}
               <div className="flex-1 min-w-0">

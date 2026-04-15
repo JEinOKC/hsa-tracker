@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { HsaRule, HsaRuleInput, RuleCondition, RuleAction } from '../services/rules'
+import { HsaRule, HsaRuleInput, RuleCondition, RuleAction, PreviewResult } from '../services/rules'
 import { FamilyMember } from '../services/family'
 import { rulesService } from '../services/rules'
 
@@ -74,10 +74,12 @@ export default function RuleEditor({ rule, members, onSave, onClose }: RuleEdito
   const [placement, setPlacement] = useState<'first' | 'last'>('first')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [preview, setPreview] = useState<PreviewResult | 'loading' | null>(null)
 
   // ── Conditions helpers ───────────────────────────────────────────────────
 
   const updateCondition = (index: number, patch: Partial<typeof conditions[0]>) => {
+    setPreview(null)
     setConditions(prev => prev.map((c, i) => {
       if (i !== index) return c
       const updated = { ...c, ...patch }
@@ -89,9 +91,11 @@ export default function RuleEditor({ rule, members, onSave, onClose }: RuleEdito
     }))
   }
 
-  const addCondition = () => setConditions(prev => [...prev, blankCondition()])
-  const removeCondition = (index: number) =>
+  const addCondition = () => { setPreview(null); setConditions(prev => [...prev, blankCondition()]) }
+  const removeCondition = (index: number) => {
+    setPreview(null)
     setConditions(prev => prev.filter((_, i) => i !== index))
+  }
 
   // ── Actions helpers ───────────────────────────────────────────────────────
 
@@ -110,6 +114,30 @@ export default function RuleEditor({ rule, members, onSave, onClose }: RuleEdito
   const addAction = () => setActions(prev => [...prev, blankAction()])
   const removeAction = (index: number) =>
     setActions(prev => prev.filter((_, i) => i !== index))
+
+  // ── Preview ───────────────────────────────────────────────────────────────
+
+  const handlePreview = async () => {
+    setPreview('loading')
+    setError(null)
+    try {
+      const result = await rulesService.preview({
+        rule: {
+          name: name.trim() || 'Preview',
+          priority: rule?.priority ?? 0,
+          placement: rule ? undefined : placement,
+          is_active: isActive,
+          conditions,
+          actions,
+        },
+        rule_id: rule?.id,
+      })
+      setPreview(result)
+    } catch {
+      setPreview(null)
+      setError('Failed to test rule. Check that all condition values are filled in.')
+    }
+  }
 
   // ── Save ──────────────────────────────────────────────────────────────────
 
@@ -233,7 +261,7 @@ export default function RuleEditor({ rule, members, onSave, onClose }: RuleEdito
                       className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500"
                     >
                       <option value="description">Description</option>
-                      <option value="counterparty_name">Counterparty name</option>
+                      <option value="counterparty_name">Merchant</option>
                       <option value="amount">Amount</option>
                       <option value="date">Date</option>
                     </select>
@@ -336,6 +364,59 @@ export default function RuleEditor({ rule, members, onSave, onClose }: RuleEdito
                 </div>
               )})}
             </div>
+          </div>
+
+          {/* Test this rule */}
+          <div>
+            <button
+              type="button"
+              onClick={handlePreview}
+              disabled={preview === 'loading' || conditions.some(c => !c.value.trim())}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {preview === 'loading' ? 'Testing…' : 'Test this rule'}
+            </button>
+
+            {preview && preview !== 'loading' && (
+              <div className="mt-3 border border-gray-200 rounded-lg overflow-hidden">
+                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-sm font-medium text-gray-700">
+                  {preview.count === 0
+                    ? 'No transactions would be affected'
+                    : `${preview.count} transaction${preview.count !== 1 ? 's' : ''} would be affected${preview.capped ? ` (showing first 50)` : ''}`
+                  }
+                </div>
+                {preview.transactions.length > 0 && (
+                  <div className="divide-y divide-gray-100 max-h-48 overflow-y-auto">
+                    {preview.transactions.map(txn => {
+                      const amount = parseFloat(txn.amount)
+                      const formatted = isNaN(amount)
+                        ? txn.amount
+                        : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
+                      return (
+                        <div key={txn.id} className="flex items-center gap-3 px-4 py-2 text-sm">
+                          <span className="text-gray-400 shrink-0 w-24">{txn.date}</span>
+                          <span className="flex-1 truncate text-gray-800">
+                            {txn.counterparty_name || txn.description}
+                          </span>
+                          <span className={`shrink-0 font-medium tabular-nums ${amount < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                            {formatted}
+                          </span>
+                          {txn.is_hsa_eligible === true && (
+                            <span className="shrink-0 text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700">HSA</span>
+                          )}
+                          {txn.is_hsa_eligible === false && (
+                            <span className="shrink-0 text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-600">Non-HSA</span>
+                          )}
+                          {txn.is_hsa_eligible === null && txn.auto_flag === 'potential_hsa' && (
+                            <span className="shrink-0 text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">Potential</span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <p className="text-xs text-gray-400"><span className="text-red-500">*</span> Required</p>
