@@ -33,7 +33,7 @@ export default function Rules() {
 
   useEffect(() => { load() }, [load])
 
-  const handleSave = (saved: HsaRule) => {
+  const handleSave = async (saved: HsaRule) => {
     setRules(prev => {
       const idx = prev.findIndex(r => r.id === saved.id)
       if (idx >= 0) {
@@ -44,6 +44,13 @@ export default function Rules() {
       return [...prev, saved].sort((a, b) => a.priority - b.priority || a.created_at.localeCompare(b.created_at))
     })
     setEditingRule(undefined)
+    // Auto-apply all rules after save so existing transactions reflect the change immediately
+    try {
+      const result = await rulesService.applyAll()
+      setApplyResult(`Rule saved — updated ${result.updated} transaction${result.updated !== 1 ? 's' : ''}.`)
+    } catch {
+      // Don't block the save UI on apply failure; the rule was saved successfully
+    }
   }
 
   const handleDelete = async (rule: HsaRule) => {
