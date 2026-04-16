@@ -180,7 +180,7 @@ db-migrate-prod: ## Run Alembic migrations against production database (via Dopp
 			-v "$(CURDIR)/backend:/app" \
 			-w /app \
 			python:3.11-slim \
-			sh -c "pip install -q -r requirements.txt && alembic stamp f6a7b8c9d0e1 && alembic upgrade head"'
+			sh -c "pip install -q -r requirements.txt && alembic upgrade head"'
 	@echo "$(GREEN)✓ Production migrations complete$(NC)"
 
 db-downgrade: ## Downgrade database by one version
