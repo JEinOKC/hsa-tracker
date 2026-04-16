@@ -171,10 +171,16 @@ db-migrate-prod: ## Run Alembic migrations against production database (via Dopp
 	doppler run --config prd -- sh -c '\
 		docker run --rm \
 			--platform linux/amd64 \
-			--entrypoint alembic \
 			-e DATABASE_URL \
-			$(shell terraform -chdir=terraform output -raw ecr_repository_url 2>/dev/null):latest \
-			upgrade head'
+			-e SECRET_KEY \
+			-e JWT_SECRET_KEY \
+			-e AWS_ACCESS_KEY_ID \
+			-e AWS_SECRET_ACCESS_KEY \
+			-e AWS_S3_BUCKET \
+			-v "$(CURDIR)/backend:/app" \
+			-w /app \
+			python:3.11-slim \
+			sh -c "pip install -q -r requirements.txt && alembic stamp f6a7b8c9d0e1 && alembic upgrade head"'
 	@echo "$(GREEN)✓ Production migrations complete$(NC)"
 
 db-downgrade: ## Downgrade database by one version
@@ -264,9 +270,7 @@ lambda-push: ## Authenticate to ECR, push the Lambda image, and force Lambda to 
 
 lambda-deploy: lambda-build lambda-push ## Build and push Lambda image (run tf-ecr-bootstrap first if ECR doesn't exist)
 
-deploy: lambda-deploy frontend-deploy ## Deploy Lambda and frontend (use for most deploys)
-
-deploy-with-migrations: lambda-deploy db-migrate-prod frontend-deploy ## Deploy Lambda, run DB migrations, deploy frontend (only when schema changed)
+deploy: lambda-deploy db-migrate-prod frontend-deploy ## Deploy Lambda, run migrations, and deploy frontend
 
 frontend-deploy: ## Build and deploy frontend to Cloudflare Pages (manual — does not auto-deploy on git push)
 	@echo "$(BLUE)Building frontend...$(NC)"

@@ -26,8 +26,12 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Set the database URL from settings
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Set the database URL from settings.
+# Strip pgbouncer=true if present — PgBouncer pooling is incompatible with migrations.
+_db_url = settings.database_url
+for _param in ("?pgbouncer=true", "&pgbouncer=true"):
+    _db_url = _db_url.replace(_param, "")
+config.set_main_option("sqlalchemy.url", _db_url)
 
 # Add your model's MetaData object here for 'autogenerate' support
 target_metadata = Base.metadata
