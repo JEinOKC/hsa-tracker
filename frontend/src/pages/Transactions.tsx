@@ -19,50 +19,14 @@ function formatDate(dateStr: string): string {
   })
 }
 
-// ─── Inline HSA toggle ───────────────────────────────────────────────────────
+// ─── HSA status badge (read-only) ────────────────────────────────────────────
 
-interface HsaToggleProps {
-  txn: BankTransaction
-  onChange: (updated: BankTransaction) => void
-}
-
-function HsaToggle({ txn, onChange }: HsaToggleProps) {
-  const [saving, setSaving] = useState(false)
-
-  const toggle = async () => {
-    // cycle: null → true → false → null
-    const next =
-      txn.is_hsa_eligible === null ? true :
-      txn.is_hsa_eligible === true ? false : null
-
-    setSaving(true)
-    try {
-      const updated = await bankService.annotateTransaction(txn.id, { is_hsa_eligible: next })
-      onChange(updated)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  if (saving) return <span className="text-xs text-gray-400 w-16 inline-block text-center">…</span>
-
+function HsaStatusBadge({ txn }: { txn: BankTransaction }) {
   if (txn.is_hsa_eligible === true)
-    return (
-      <button onClick={toggle} className="text-xs font-medium px-2 py-0.5 rounded bg-green-100 text-green-700 hover:bg-green-200 w-16">
-        HSA
-      </button>
-    )
+    return <span data-testid="hsa-badge" className="text-xs font-medium px-2 py-0.5 rounded bg-green-100 text-green-700 shrink-0">HSA</span>
   if (txn.is_hsa_eligible === false)
-    return (
-      <button onClick={toggle} className="text-xs font-medium px-2 py-0.5 rounded bg-red-50 text-red-500 hover:bg-red-100 w-16">
-        Not HSA
-      </button>
-    )
-  return (
-    <button onClick={toggle} className="text-xs font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-400 hover:bg-gray-200 w-16">
-      Mark
-    </button>
-  )
+    return <span data-testid="not-hsa-badge" className="text-xs font-medium px-2 py-0.5 rounded bg-red-50 text-red-500 shrink-0">Not HSA</span>
+  return null
 }
 
 // ─── Inline member picker ─────────────────────────────────────────────────────
@@ -226,16 +190,102 @@ function ReimburseToggle({ txn, onChange }: ReimburseToggleProps) {
   )
 }
 
-// ─── Hide dialog ──────────────────────────────────────────────────────────────
+// ─── Eligible amount editor ───────────────────────────────────────────────────
 
-interface HideDialogProps {
+interface EligibleAmountEditorProps {
   txn: BankTransaction
+  onChange: (updated: BankTransaction) => void
+}
+
+function EligibleAmountEditor({ txn, onChange }: EligibleAmountEditorProps) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const fullAmount = Math.abs(parseFloat(txn.amount)).toFixed(2)
+  const current = txn.eligible_amount ? Math.abs(parseFloat(txn.eligible_amount)).toFixed(2) : null
+
+  const save = async () => {
+    const parsed = parseFloat(value)
+    if (isNaN(parsed) || parsed <= 0) return
+    setSaving(true)
+    try {
+      // Apply same sign as the original amount (expenses are negative)
+      const txnAmount = parseFloat(txn.amount)
+      const signed = txnAmount < 0 ? -parsed : parsed
+      const updated = await bankService.annotateTransaction(txn.id, {
+        eligible_amount: signed.toFixed(2),
+      })
+      onChange(updated)
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const clear = async () => {
+    setSaving(true)
+    try {
+      const updated = await bankService.annotateTransaction(txn.id, { eligible_amount: null })
+      onChange(updated)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (saving) return <span className="text-xs text-gray-400">…</span>
+
+  if (editing) {
+    return (
+      <span className="flex items-center gap-1 flex-wrap">
+        <span className="text-xs text-gray-500">Eligible $</span>
+        <input
+          type="number"
+          step="0.01"
+          min="0.01"
+          max={fullAmount}
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          className="text-xs border border-gray-300 rounded px-1 py-0.5 w-20"
+          autoFocus
+        />
+        <button onClick={save} className="text-xs font-medium px-1.5 py-0.5 rounded bg-green-600 text-white hover:bg-green-700">Save</button>
+        <button onClick={() => setEditing(false)} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+      </span>
+    )
+  }
+
+  return (
+    <span className="flex items-center gap-1">
+      <span className="text-xs text-gray-500">
+        Eligible: {current ? `$${current}` : `$${fullAmount} (full)`}
+      </span>
+      <button
+        onClick={() => { setValue(current ?? fullAmount); setEditing(true) }}
+        className="text-xs text-sky-500 hover:text-sky-700"
+      >
+        edit
+      </button>
+      {current && (
+        <button onClick={clear} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+      )}
+    </span>
+  )
+}
+
+// ─── Tag dialog ───────────────────────────────────────────────────────────────
+
+interface TagDialogProps {
+  txn: BankTransaction
+  onMarkHsa: () => void
+  onMarkNotHsa: () => void
+  onCreateHsaRule: () => void
   onHideOne: () => void
-  onCreateRule: () => void
+  onCreateHideRule: () => void
   onClose: () => void
 }
 
-function HideDialog({ txn, onHideOne, onCreateRule, onClose }: HideDialogProps) {
+function TagDialog({ txn, onMarkHsa, onMarkNotHsa, onCreateHsaRule, onHideOne, onCreateHideRule, onClose }: TagDialogProps) {
   const amount = parseFloat(txn.amount)
   return (
     <div
@@ -244,7 +294,7 @@ function HideDialog({ txn, onHideOne, onCreateRule, onClose }: HideDialogProps) 
     >
       <div className="bg-white rounded-xl shadow-xl w-full max-w-sm">
         <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-900">Hide transaction</h2>
+          <h2 className="text-base font-semibold text-gray-900">Tag transaction</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
         </div>
         <div className="px-5 py-4">
@@ -254,18 +304,39 @@ function HideDialog({ txn, onHideOne, onCreateRule, onClose }: HideDialogProps) 
           </p>
           <div className="mt-4 space-y-2">
             <button
-              onClick={onHideOne}
-              className="w-full px-4 py-2.5 text-sm font-medium text-white bg-gray-700 rounded-lg hover:bg-gray-800 text-left"
+              onClick={onMarkHsa}
+              className="w-full px-4 py-2.5 text-sm font-medium text-green-700 bg-green-50 rounded-lg hover:bg-green-100 text-left"
             >
-              Hide just this transaction
-              <span className="block text-xs font-normal text-gray-300 mt-0.5">This transaction won't appear in your list.</span>
+              Mark as HSA eligible
+              <span className="block text-xs font-normal text-green-500 mt-0.5">Count this charge toward your HSA spending.</span>
             </button>
             <button
-              onClick={onCreateRule}
+              onClick={onMarkNotHsa}
+              className="w-full px-4 py-2.5 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 text-left"
+            >
+              Mark as Not HSA
+              <span className="block text-xs font-normal text-red-400 mt-0.5">Exclude this charge from HSA tracking.</span>
+            </button>
+            <button
+              onClick={onCreateHsaRule}
               className="w-full px-4 py-2.5 text-sm font-medium text-sky-700 bg-sky-50 rounded-lg hover:bg-sky-100 text-left"
             >
-              Create a hide rule
-              <span className="block text-xs font-normal text-sky-500 mt-0.5">Auto-hide similar transactions in the future.</span>
+              Create HSA rule
+              <span className="block text-xs font-normal text-sky-500 mt-0.5">Auto-mark similar transactions as HSA eligible.</span>
+            </button>
+            <button
+              onClick={onHideOne}
+              className="w-full px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 text-left"
+            >
+              Hide this transaction
+              <span className="block text-xs font-normal text-gray-400 mt-0.5">Remove it from your list.</span>
+            </button>
+            <button
+              onClick={onCreateHideRule}
+              className="w-full px-4 py-2.5 text-sm font-medium text-gray-500 bg-gray-50 rounded-lg hover:bg-gray-100 text-left"
+            >
+              Create hide rule
+              <span className="block text-xs font-normal text-gray-400 mt-0.5">Auto-hide similar transactions in the future.</span>
             </button>
           </div>
           <button onClick={onClose} className="mt-3 w-full text-xs text-center text-gray-400 hover:text-gray-600 py-1">
@@ -284,10 +355,10 @@ interface TxnRowProps {
   members: FamilyMember[]
   tab: Tab
   onChange: (updated: BankTransaction) => void
-  onHide?: (txn: BankTransaction) => void
+  onTag?: (txn: BankTransaction) => void
 }
 
-function TxnRow({ txn, members, tab, onChange, onHide }: TxnRowProps) {
+function TxnRow({ txn, members, tab, onChange, onTag }: TxnRowProps) {
   const amount = parseFloat(txn.amount)
   const [expanded, setExpanded] = useState(false)
   const [docCount, setDocCount] = useState(txn.document_count ?? 0)
@@ -311,15 +382,7 @@ function TxnRow({ txn, members, tab, onChange, onHide }: TxnRowProps) {
 
         {/* Description + account (includes date on mobile) */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <p className="text-sm text-gray-900 truncate">{txn.description || '(no description)'}</p>
-            {showNoReceiptBadge && (
-              <span title="No receipt attached" className="text-xs font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-600 shrink-0">!</span>
-            )}
-            {txn.auto_flag === 'potential_hsa' && txn.is_hsa_eligible === null && (
-              <span title="Potential HSA expense" className="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-600 shrink-0">Potential HSA</span>
-            )}
-          </div>
+          <p className="text-sm text-gray-900 truncate">{txn.description || '(no description)'}</p>
           {/* Account info on sm+; date + account on mobile */}
           <p className="text-xs text-gray-400 truncate">
             <span className="sm:hidden">{formatDate(txn.transaction_date)} · </span>
@@ -329,16 +392,32 @@ function TxnRow({ txn, members, tab, onChange, onHide }: TxnRowProps) {
               <span className="ml-1.5 text-amber-600">· From: {txn.owner_display_name}</span>
             )}
           </p>
+          {/* Badges on their own line so they never truncate the merchant name */}
+          {(showNoReceiptBadge || (txn.auto_flag === 'potential_hsa' && txn.is_hsa_eligible === null)) && (
+            <div className="flex flex-wrap gap-1 mt-0.5">
+              {showNoReceiptBadge && (
+                <span title="No receipt attached" className="text-xs font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-600">!</span>
+              )}
+              {txn.auto_flag === 'potential_hsa' && txn.is_hsa_eligible === null && (
+                <span title="Potential HSA expense" className="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-600">Potential HSA</span>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Amount */}
-        <span className={`text-sm font-semibold w-20 text-right shrink-0 ${amount < 0 ? 'text-gray-900' : 'text-green-600'}`}>
-          {formatAmount(txn.amount)}
-        </span>
+        {/* Amount (+ eligible sub-note when partial) */}
+        <div className="w-20 shrink-0 text-right">
+          <span className={`text-sm font-semibold ${amount < 0 ? 'text-gray-900' : 'text-green-600'}`}>
+            {formatAmount(txn.amount)}
+          </span>
+          {txn.eligible_amount && txn.eligible_amount !== txn.amount && (
+            <p className="text-xs text-green-600">${Math.abs(parseFloat(txn.eligible_amount)).toFixed(2)} elig.</p>
+          )}
+        </div>
 
         {/* Annotation controls — desktop only; shown in expanded panel on mobile */}
         <div className="hidden sm:flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-          {tab !== 'reimbursed' && <HsaToggle txn={txn} onChange={onChange} />}
+          <HsaStatusBadge txn={txn} />
           <MemberPicker txn={txn} members={members} onChange={onChange} />
           {(tab === 'hsa' || tab === 'reimbursed') && <CategoryPicker txn={txn} onChange={onChange} />}
           {(tab === 'hsa' || tab === 'reimbursed') && <ReimburseToggle txn={txn} onChange={onChange} />}
@@ -364,14 +443,14 @@ function TxnRow({ txn, members, tab, onChange, onHide }: TxnRowProps) {
           📎{docCount > 0 ? ` ${docCount}` : ''}
         </button>
 
-        {/* Hide button — All tab only */}
-        {tab === 'all' && onHide && txn.auto_flag !== 'hidden' && (
+        {/* Tag button */}
+        {onTag && txn.auto_flag !== 'hidden' && (
           <button
-            onClick={(e) => { e.stopPropagation(); onHide(txn) }}
-            title="Hide this transaction"
+            onClick={(e) => { e.stopPropagation(); onTag(txn) }}
+            title="Tag this transaction"
             className="shrink-0 text-xs text-gray-300 hover:text-gray-500 px-1 py-0.5 rounded transition-colors"
           >
-            Hide
+            Tag
           </button>
         )}
       </div>
@@ -381,11 +460,24 @@ function TxnRow({ txn, members, tab, onChange, onHide }: TxnRowProps) {
         <div className="px-4 pb-3">
           {/* Annotation controls — mobile only */}
           <div className="sm:hidden flex flex-wrap gap-2 mb-3 pb-3 border-b border-gray-100">
-            {tab !== 'reimbursed' && <HsaToggle txn={txn} onChange={onChange} />}
+            <HsaStatusBadge txn={txn} />
             <MemberPicker txn={txn} members={members} onChange={onChange} />
             {(tab === 'hsa' || tab === 'reimbursed') && <CategoryPicker txn={txn} onChange={onChange} />}
             {(tab === 'hsa' || tab === 'reimbursed') && <ReimburseToggle txn={txn} onChange={onChange} />}
+            {onTag && txn.auto_flag !== 'hidden' && (
+              <button
+                onClick={() => onTag(txn)}
+                className="text-xs font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-500 hover:bg-gray-200"
+              >
+                Tag
+              </button>
+            )}
           </div>
+          {txn.is_hsa_eligible === true && (
+            <div className="mb-3">
+              <EligibleAmountEditor txn={txn} onChange={onChange} />
+            </div>
+          )}
           <DocumentUpload
             transactionId={txn.id}
             onCountChange={handleDocCountChange}
@@ -430,6 +522,8 @@ export default function Transactions() {
   const [endDate, setEndDate] = useState('')
   const [showHidden, setShowHidden] = useState(false)
   const [filterAutoFlag, setFilterAutoFlag] = useState('')
+  const [filterCategory, setFilterCategory] = useState('')
+  const [availableCategories, setAvailableCategories] = useState<string[]>([])
 
   // Debounce search so we don't fire on every keystroke
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -452,23 +546,26 @@ export default function Transactions() {
     end_date: endDate || undefined,
     show_hidden: showHidden || undefined,
     auto_flag: filterAutoFlag || undefined,
+    teller_category: filterCategory || undefined,
     limit: PAGE_SIZE,
     offset,
-  }), [tab, filterDocs, debouncedSearch, filterMember, startDate, endDate, showHidden, filterAutoFlag])
+  }), [tab, filterDocs, debouncedSearch, filterMember, startDate, endDate, showHidden, filterAutoFlag, filterCategory])
 
   // Initial / filter-change load — resets the list
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [txns, fam, hh] = await Promise.all([
+      const [txns, fam, hh, cats] = await Promise.all([
         bankService.listAllTransactions(buildParams(0)),
         familyService.list(),
         householdService.getMine(),
+        bankService.listTransactionCategories(),
       ])
       setTransactions(txns)
       setMembers(fam)
       setHousehold(hh)
+      setAvailableCategories(cats)
       setHasMore(txns.length === PAGE_SIZE)
     } catch {
       setError('Failed to load transactions.')
@@ -511,15 +608,28 @@ export default function Transactions() {
     setTransactions(prev => prev.map(t => t.id === updated.id ? updated : t))
   }, [])
 
-  // ── Hide flow ────────────────────────────────────────────────────────────
-  const [hidePromptTxn, setHidePromptTxn] = useState<BankTransaction | null>(null)
+  // ── Tag flow ──────────────────────────────────────────────────────────────
+  const [tagPromptTxn, setTagPromptTxn] = useState<BankTransaction | null>(null)
   const [ruleEditorTxn, setRuleEditorTxn] = useState<BankTransaction | null>(null)
+  const [ruleEditorAction, setRuleEditorAction] = useState<'hide' | 'mark_hsa'>('hide')
   const [ruleSuccessMsg, setRuleSuccessMsg] = useState<string | null>(null)
+
+  const handleTagMarkHsa = async (txn: BankTransaction) => {
+    const updated = await bankService.annotateTransaction(txn.id, { is_hsa_eligible: true })
+    handleChange(updated)
+    setTagPromptTxn(null)
+  }
+
+  const handleTagMarkNotHsa = async (txn: BankTransaction) => {
+    const updated = await bankService.annotateTransaction(txn.id, { is_hsa_eligible: false })
+    handleChange(updated)
+    setTagPromptTxn(null)
+  }
 
   const handleHideOne = async (txn: BankTransaction) => {
     await bankService.annotateTransaction(txn.id, { auto_flag: 'hidden' })
     setTransactions(prev => prev.filter(t => t.id !== txn.id))
-    setHidePromptTxn(null)
+    setTagPromptTxn(null)
   }
 
   const handleRuleSave = async (rule: HsaRule) => {
@@ -546,6 +656,7 @@ export default function Transactions() {
     setEndDate('')
     setShowHidden(false)
     setFilterAutoFlag('')
+    setFilterCategory('')
   }
 
   const setDocsFilter = (val: string) => {
@@ -563,6 +674,7 @@ export default function Transactions() {
     setEndDate('')
     setShowHidden(false)
     setFilterAutoFlag('')
+    setFilterCategory('')
     setSearchParams(tab !== 'all' ? { tab } : {})
   }
 
@@ -573,28 +685,32 @@ export default function Transactions() {
         .reduce((sum, t) => sum + parseFloat(t.amount), 0)
     : null
 
-  const hasFilters = !!(search || filterMember || startDate || endDate || filterDocs || showHidden || filterAutoFlag)
+  const hasFilters = !!(search || filterMember || startDate || endDate || filterDocs || showHidden || filterAutoFlag || filterCategory)
 
   return (
     <>
-    {/* Hide prompt dialog */}
-    {hidePromptTxn && (
-      <HideDialog
-        txn={hidePromptTxn}
-        onHideOne={() => handleHideOne(hidePromptTxn)}
-        onCreateRule={() => { setRuleEditorTxn(hidePromptTxn); setHidePromptTxn(null) }}
-        onClose={() => setHidePromptTxn(null)}
+    {/* Tag dialog */}
+    {tagPromptTxn && (
+      <TagDialog
+        txn={tagPromptTxn}
+        onMarkHsa={() => handleTagMarkHsa(tagPromptTxn)}
+        onMarkNotHsa={() => handleTagMarkNotHsa(tagPromptTxn)}
+        onCreateHsaRule={() => { setRuleEditorAction('mark_hsa'); setRuleEditorTxn(tagPromptTxn); setTagPromptTxn(null) }}
+        onHideOne={() => handleHideOne(tagPromptTxn)}
+        onCreateHideRule={() => { setRuleEditorAction('hide'); setRuleEditorTxn(tagPromptTxn); setTagPromptTxn(null) }}
+        onClose={() => setTagPromptTxn(null)}
       />
     )}
 
-    {/* Quick hide rule editor */}
+    {/* Quick rule editor */}
     {ruleEditorTxn && (
       <RuleEditor
         rule={null}
         members={members}
-        initialName={`Hide: ${ruleEditorTxn.description || 'transaction'}`}
+        availableCategories={availableCategories}
+        initialName={`${ruleEditorAction === 'mark_hsa' ? 'HSA' : 'Hide'}: ${ruleEditorTxn.description || 'transaction'}`}
         initialConditions={[{ field: 'description', operator: 'is', value: ruleEditorTxn.description || '' }]}
-        initialActions={[{ action_type: 'hide', member_id: null }]}
+        initialActions={[{ action_type: ruleEditorAction, member_id: null }]}
         onSave={handleRuleSave}
         onClose={() => setRuleEditorTxn(null)}
       />
@@ -679,6 +795,18 @@ export default function Transactions() {
             <option value="">All flags</option>
             <option value="potential_hsa">Potential HSA only</option>
           </select>
+          {availableCategories.length > 0 && (
+            <select
+              value={filterCategory}
+              onChange={e => setFilterCategory(e.target.value)}
+              className="min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            >
+              <option value="">All categories</option>
+              {availableCategories.map(c => (
+                <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>
+              ))}
+            </select>
+          )}
           <label className="flex items-center gap-2 cursor-pointer min-w-0 px-1">
             <input
               type="checkbox"
@@ -762,7 +890,7 @@ export default function Transactions() {
               members={members}
               tab={tab}
               onChange={handleChange}
-              onHide={tab === 'all' ? setHidePromptTxn : undefined}
+              onTag={setTagPromptTxn}
             />
           ))
         )}

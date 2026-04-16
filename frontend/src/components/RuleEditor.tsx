@@ -46,6 +46,7 @@ function defaultOperatorForField(field: ConditionField): ConditionOperator {
 interface RuleEditorProps {
   rule: HsaRule | null
   members: FamilyMember[]
+  availableCategories?: string[]
   onSave: (rule: HsaRule) => void
   onClose: () => void
   initialName?: string
@@ -65,7 +66,15 @@ function blankAction(): Omit<RuleAction, 'id' | 'rule_id' | 'created_at'> {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function RuleEditor({ rule, members, onSave, onClose, initialName, initialConditions, initialActions }: RuleEditorProps) {
+// Known Teller categories shown in the dropdown when no live data is available
+const KNOWN_TELLER_CATEGORIES = [
+  'health', 'personal_care', 'mental_health', 'fitness',
+  'food_and_drink', 'shopping', 'travel', 'entertainment',
+  'transportation', 'utilities', 'other',
+]
+
+export default function RuleEditor({ rule, members, availableCategories, onSave, onClose, initialName, initialConditions, initialActions }: RuleEditorProps) {
+  const categoryOptions = availableCategories && availableCategories.length > 0 ? availableCategories : KNOWN_TELLER_CATEGORIES
   const [name, setName] = useState(rule?.name ?? initialName ?? '')
   const [isActive, setIsActive] = useState(rule?.is_active ?? true)
   const [conditions, setConditions] = useState<Omit<RuleCondition, 'id' | 'rule_id' | 'created_at'>[]>(
@@ -267,6 +276,7 @@ export default function RuleEditor({ rule, members, onSave, onClose, initialName
                       <option value="counterparty_name">Merchant</option>
                       <option value="amount">Amount</option>
                       <option value="date">Date</option>
+                      <option value="teller_category">Category</option>
                     </select>
 
                     <select
@@ -279,13 +289,26 @@ export default function RuleEditor({ rule, members, onSave, onClose, initialName
                       ))}
                     </select>
 
-                    <input
-                      type={cond.field === 'date' ? 'date' : cond.field === 'amount' ? 'number' : 'text'}
-                      value={cond.value}
-                      onChange={e => updateCondition(i, { value: e.target.value })}
-                      placeholder={cond.field === 'amount' ? '-42.00' : cond.field === 'date' ? '' : 'value…'}
-                      className="flex-1 min-w-[100px] border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500"
-                    />
+                    {cond.field === 'teller_category' ? (
+                      <select
+                        value={cond.value}
+                        onChange={e => updateCondition(i, { value: e.target.value })}
+                        className="flex-1 min-w-[100px] border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500"
+                      >
+                        <option value="">— select category —</option>
+                        {categoryOptions.map(cat => (
+                          <option key={cat} value={cat}>{cat.replace(/_/g, ' ')}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type={cond.field === 'date' ? 'date' : cond.field === 'amount' ? 'number' : 'text'}
+                        value={cond.value}
+                        onChange={e => updateCondition(i, { value: e.target.value })}
+                        placeholder={cond.field === 'amount' ? '-42.00' : cond.field === 'date' ? '' : 'value…'}
+                        className="flex-1 min-w-[100px] border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500"
+                      />
+                    )}
 
                     {conditions.length > 1 && (
                       <button

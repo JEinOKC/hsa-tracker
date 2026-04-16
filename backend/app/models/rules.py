@@ -65,7 +65,7 @@ class HsaRuleCondition(Base):
         nullable=False,
         index=True,
     )
-    # field: counterparty_name | description | amount | date
+    # field: counterparty_name | description | amount | date | teller_category
     field = Column(String(50), nullable=False)
     # operator: is | contains | does_not_contain | is_not | eq | gt | lt | before | after
     operator = Column(String(30), nullable=False)
@@ -76,7 +76,7 @@ class HsaRuleCondition(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "field IN ('counterparty_name', 'description', 'amount', 'date')",
+            "field IN ('counterparty_name', 'description', 'amount', 'date', 'teller_category')",
             name="ck_hsa_rule_condition_field",
         ),
         CheckConstraint(

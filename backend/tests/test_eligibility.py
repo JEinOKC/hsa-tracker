@@ -240,6 +240,22 @@ class TestStrictDashboard:
         assert r.status_code == 200
         assert r.json()["hsa_spending"] == pytest.approx(-50.0)
 
+    def test_eligible_amount_overrides_full_amount_in_summary(self, client, auth_headers, db_session, test_user, test_user_household):
+        """When eligible_amount is set, only the partial amount counts toward hsa_spending."""
+        test_user_household.strict_eligibility = False
+        conn, _ = self._setup(db_session, test_user, test_user_household)
+        from decimal import Decimal
+        _make_transaction(db_session, conn.id, amount="-100.00")
+        # Second txn with partial eligible amount (stored with same sign as amount)
+        txn = _make_transaction(db_session, conn.id, amount="-80.00")
+        txn.eligible_amount = Decimal("-20.00")
+        db_session.commit()
+
+        r = client.get("/api/v1/bank/summary", headers=auth_headers)
+        assert r.status_code == 200
+        # Full -100 + eligible -20 = -120 (not -180)
+        assert r.json()["hsa_spending"] == pytest.approx(-120.0)
+
 
 # ── PATCH /households/mine ──────────────────────────────────────────────────────
 

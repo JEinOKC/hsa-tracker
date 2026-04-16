@@ -452,3 +452,100 @@ class TestWouldRuleApply:
             actions=[_make_action("mark_hsa")],
         )
         assert would_rule_apply(txn, self._cvs_rule(), [higher]) is True
+
+
+# ---------------------------------------------------------------------------
+# apply_auto_flag — POTENTIAL_HSA_CATEGORIES dictionary
+# ---------------------------------------------------------------------------
+
+
+class TestApplyAutoFlagCategories:
+    """Verify all members of POTENTIAL_HSA_CATEGORIES trigger potential_hsa."""
+
+    @pytest.mark.parametrize("category", ["health", "personal_care", "mental_health", "fitness"])
+    def test_potential_hsa_categories_trigger_flag(self, category):
+        txn = _make_txn(details={"category": category}, is_hsa_eligible=None)
+        apply_auto_flag(txn)
+        assert txn.auto_flag == "potential_hsa", f"Expected potential_hsa for category={category!r}"
+
+    @pytest.mark.parametrize("category", ["food_and_drink", "shopping", "travel", "entertainment"])
+    def test_non_hsa_categories_do_not_trigger_flag(self, category):
+        txn = _make_txn(details={"category": category}, is_hsa_eligible=None)
+        apply_auto_flag(txn)
+        assert txn.auto_flag is None, f"Expected no flag for category={category!r}"
+
+
+# ---------------------------------------------------------------------------
+# _evaluate_condition — teller_category field
+# ---------------------------------------------------------------------------
+
+
+class TestEvaluateConditionTellerCategory:
+    def test_teller_category_is_exact_match(self):
+        txn = _make_txn(details={"category": "health"})
+        cond = _make_condition("teller_category", "is", "health")
+        assert _evaluate_condition(txn, cond) is True
+
+    def test_teller_category_is_case_insensitive(self):
+        txn = _make_txn(details={"category": "Health"})
+        cond = _make_condition("teller_category", "is", "health")
+        assert _evaluate_condition(txn, cond) is True
+
+    def test_teller_category_is_not(self):
+        txn = _make_txn(details={"category": "shopping"})
+        cond = _make_condition("teller_category", "is_not", "health")
+        assert _evaluate_condition(txn, cond) is True
+
+    def test_teller_category_is_not_fails_when_equal(self):
+        txn = _make_txn(details={"category": "health"})
+        cond = _make_condition("teller_category", "is_not", "health")
+        assert _evaluate_condition(txn, cond) is False
+
+    def test_teller_category_contains(self):
+        txn = _make_txn(details={"category": "personal_care"})
+        cond = _make_condition("teller_category", "contains", "care")
+        assert _evaluate_condition(txn, cond) is True
+
+    def test_teller_category_does_not_contain(self):
+        txn = _make_txn(details={"category": "shopping"})
+        cond = _make_condition("teller_category", "does_not_contain", "health")
+        assert _evaluate_condition(txn, cond) is True
+
+    def test_teller_category_missing_details_returns_false_for_is(self):
+        txn = _make_txn(details=None)
+        cond = _make_condition("teller_category", "is", "health")
+        assert _evaluate_condition(txn, cond) is False
+
+    def test_teller_category_missing_category_key_returns_false(self):
+        txn = _make_txn(details={"counterparty": {"name": "CVS"}})
+        cond = _make_condition("teller_category", "is", "health")
+        assert _evaluate_condition(txn, cond) is False
+
+    def test_teller_category_missing_does_not_contain_returns_true(self):
+        """Empty string does not contain 'health' → condition passes."""
+        txn = _make_txn(details=None)
+        cond = _make_condition("teller_category", "does_not_contain", "health")
+        assert _evaluate_condition(txn, cond) is True
+
+    def test_teller_category_rule_fires_on_matching_category(self):
+        """End-to-end: a hide rule on food_and_drink hides matching transactions."""
+        txn = _make_txn(details={"category": "food_and_drink"}, is_hsa_eligible=None)
+
+        rule = _make_rule(
+            conditions=[_make_condition("teller_category", "is", "food_and_drink")],
+            actions=[_make_action("hide")],
+        )
+
+        apply_rules_to_transaction(txn, [rule])
+        assert txn.auto_flag == "hidden"
+
+    def test_teller_category_rule_does_not_fire_on_different_category(self):
+        txn = _make_txn(details={"category": "health"}, is_hsa_eligible=None)
+
+        rule = _make_rule(
+            conditions=[_make_condition("teller_category", "is", "food_and_drink")],
+            actions=[_make_action("hide")],
+        )
+
+        apply_rules_to_transaction(txn, [rule])
+        assert txn.auto_flag is None
