@@ -224,3 +224,30 @@ class TestAnnotateTransaction:
             headers=auth_headers,
         )
         assert r.status_code == 404
+
+    def test_set_eligible_amount(self, client, db_session, test_user, auth_headers):
+        conn = _make_connection(db_session, test_user.id)
+        txn = _make_txn(db_session, conn.id, amount=Decimal("-100.00"), is_hsa_eligible=True)
+        db_session.commit()
+
+        r = client.patch(
+            f"/api/v1/bank/transactions/{txn.id}",
+            json={"eligible_amount": "20.00"},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["eligible_amount"] == "20.00"
+
+    def test_clear_eligible_amount(self, client, db_session, test_user, auth_headers):
+        conn = _make_connection(db_session, test_user.id)
+        txn = _make_txn(db_session, conn.id, amount=Decimal("-100.00"), eligible_amount=Decimal("20.00"))
+        db_session.commit()
+
+        r = client.patch(
+            f"/api/v1/bank/transactions/{txn.id}",
+            json={"eligible_amount": None},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        assert r.json()["eligible_amount"] is None

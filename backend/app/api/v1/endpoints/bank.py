@@ -90,6 +90,7 @@ class BankTransactionResponse(BaseModel):
     is_hsa_eligible: Optional[bool]
     family_member_id: Optional[UUID]
     hsa_category: Optional[str]
+    eligible_amount: Optional[Decimal] = None
     reimbursement_status: Optional[str]
     notes: Optional[str]
     # Denormalised for display
@@ -106,6 +107,8 @@ class BankTransactionResponse(BaseModel):
     rule_id: Optional[UUID] = None
     # Coverage window
     eligibility_warning: bool = False
+    # Teller-provided category (extracted from details JSON for convenience)
+    teller_category: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -116,6 +119,7 @@ class BankTransactionAnnotation(BaseModel):
     is_hsa_eligible: Optional[bool] = None
     family_member_id: Optional[UUID] = None
     hsa_category: Optional[str] = None
+    eligible_amount: Optional[Decimal] = None
     reimbursement_status: Optional[str] = None
     reimbursed_at: Optional[datetime] = None
     notes: Optional[str] = None
@@ -155,6 +159,8 @@ def _txn_to_response(
     data.document_count = document_count
     data.owner_display_name = owner_display_name
     data.eligibility_warning = eligibility_warning
+    if txn.details and isinstance(txn.details, dict):
+        data.teller_category = txn.details.get("category")
     return data
 
 
@@ -352,14 +358,17 @@ async def get_dashboard_summary(
             f.append(eligible_exists)
         return f
 
+    # Use eligible_amount when set (partial charges), otherwise fall back to full amount
+    _effective_amount = func.coalesce(BankTransaction.eligible_amount, BankTransaction.amount)
+
     hsa_spending = (
-        db.query(func.sum(BankTransaction.amount))
+        db.query(func.sum(_effective_amount))
         .filter(*date_filters())
         .scalar() or 0
     )
 
     pending = (
-        db.query(func.sum(BankTransaction.amount))
+        db.query(func.sum(_effective_amount))
         .filter(*date_filters(), BankTransaction.reimbursement_status.is_(None))
         .scalar() or 0
     )
@@ -405,6 +414,30 @@ async def get_dashboard_summary(
     )
 
 
+@router.get("/transactions/categories", response_model=list[str])
+async def list_transaction_categories(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return distinct Teller category values present in the user's transactions."""
+    readable_owner_ids = get_readable_owner_ids(current_user, db, resource="transactions")
+    user_connection_ids = (
+        db.query(BankConnection.id)
+        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active == True)
+        .subquery()
+    )
+    rows = (
+        db.query(BankTransaction.details["category"].astext)
+        .filter(
+            BankTransaction.connection_id.in_(user_connection_ids),
+            BankTransaction.details["category"].astext.isnot(None),
+        )
+        .distinct()
+        .all()
+    )
+    return sorted(r[0] for r in rows if r[0])
+
+
 @router.get("/transactions", response_model=list[BankTransactionResponse])
 async def list_all_transactions(
     start_date: Optional[date] = Query(None),
@@ -417,6 +450,7 @@ async def list_all_transactions(
     search: Optional[str] = Query(None, description="Case-insensitive substring match on description"),
     show_hidden: bool = Query(False, description="Include transactions flagged as hidden (default: excluded)"),
     auto_flag_filter: Optional[str] = Query(None, alias="auto_flag", description="Filter to transactions with this auto_flag value"),
+    teller_category: Optional[str] = Query(None, description="Filter by Teller-provided category (e.g. 'health', 'food_and_drink')"),
     limit: int = Query(50, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -465,6 +499,10 @@ async def list_all_transactions(
         )
     if auto_flag_filter is not None:
         query = query.filter(BankTransaction.auto_flag == auto_flag_filter)
+    if teller_category is not None:
+        query = query.filter(
+            BankTransaction.details["category"].astext == teller_category
+        )
 
     txns = (
         query

@@ -39,6 +39,7 @@ export interface BankTransaction {
   is_hsa_eligible: boolean | null
   family_member_id: string | null
   hsa_category: string | null
+  eligible_amount: string | null
   reimbursement_status: string | null
   reimbursed_at: string | null
   notes: string | null
@@ -52,12 +53,15 @@ export interface BankTransaction {
   rule_id: string | null
   // Coverage window
   eligibility_warning: boolean
+  // Teller-provided category
+  teller_category: string | null
 }
 
 export interface BankTransactionAnnotation {
   is_hsa_eligible?: boolean | null
   family_member_id?: string | null
   hsa_category?: string | null
+  eligible_amount?: string | null
   reimbursement_status?: string | null
   reimbursed_at?: string | null
   notes?: string | null
@@ -75,6 +79,7 @@ export interface AllTransactionsParams {
   search?: string
   show_hidden?: boolean
   auto_flag?: string
+  teller_category?: string
   limit?: number
   offset?: number
 }
@@ -120,6 +125,9 @@ export const bankService = {
 
   listAllTransactions: (params?: AllTransactionsParams) =>
     api.get<BankTransaction[]>('/bank/transactions', { params }).then(r => r.data),
+
+  listTransactionCategories: () =>
+    api.get<string[]>('/bank/transactions/categories').then(r => r.data),
 
   annotateTransaction: (id: string, annotation: BankTransactionAnnotation) =>
     api.patch<BankTransaction>(`/bank/transactions/${id}`, annotation).then(r => r.data),

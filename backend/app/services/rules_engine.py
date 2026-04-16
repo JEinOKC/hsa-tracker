@@ -13,17 +13,31 @@ from app.models.rules import HsaRule, HsaRuleCondition, HsaRuleAction
 
 
 # ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+# Teller category values that suggest potential HSA eligibility.
+# Expand this list as more patterns are discovered.
+POTENTIAL_HSA_CATEGORIES: frozenset[str] = frozenset({
+    "health",         # Teller's primary medical/pharmacy category
+    "personal_care",  # pharmacies, vision, hearing aids
+    "mental_health",  # therapy, counseling
+    "fitness",        # gym memberships (sometimes HSA-eligible)
+})
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 
 def apply_auto_flag(txn: BankTransaction) -> None:
-    """If the transaction has category=='health' and is_hsa_eligible is None,
-    set auto_flag='potential_hsa'.  No-op otherwise."""
+    """Set auto_flag='potential_hsa' if the category suggests HSA eligibility
+    and the user hasn't reviewed the transaction yet. No-op otherwise."""
     if txn.is_hsa_eligible is not None:
         return
     category = _safe_details_category(txn)
-    if category == "health":
+    if category in POTENTIAL_HSA_CATEGORIES:
         txn.auto_flag = "potential_hsa"
 
 
@@ -128,6 +142,9 @@ def _evaluate_condition(txn: BankTransaction, condition: HsaRuleCondition) -> bo
 
         if field == "description":
             return _eval_text(txn.description or "", operator, value)
+
+        if field == "teller_category":
+            return _eval_text(_safe_details_category(txn) or "", operator, value)
 
         if field == "amount":
             try:

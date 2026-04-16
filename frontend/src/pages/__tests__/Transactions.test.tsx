@@ -6,6 +6,7 @@ vi.mock('../../services/bank', () => ({
   bankService: {
     listAllTransactions: vi.fn(),
     annotateTransaction: vi.fn(),
+    listTransactionCategories: vi.fn(),
   },
   HSA_CATEGORIES: [
     { value: 'medical', label: 'Medical Care' },
@@ -70,6 +71,8 @@ const makeTxn = (overrides = {}) => ({
   auto_flag: null,
   rule_id: null,
   eligibility_warning: false,
+  teller_category: null,
+  eligible_amount: null,
   ...overrides,
 })
 
@@ -92,6 +95,7 @@ const mockHousehold = {
 beforeEach(() => {
   vi.clearAllMocks()
   ;(bankService.listAllTransactions as any).mockResolvedValue([])
+  ;(bankService.listTransactionCategories as any).mockResolvedValue([])
   ;(familyService.list as any).mockResolvedValue([])
   ;(documentService.list as any).mockResolvedValue([])
   ;(householdService.getMine as any).mockResolvedValue(mockHousehold)
@@ -294,87 +298,156 @@ describe('Transactions page', () => {
     })
   })
 
-  describe('HsaToggle', () => {
-    it('shows Mark button for unreviewed transaction (null)', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn({ is_hsa_eligible: null })])
-      render(<Transactions />)
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Mark' })).toBeInTheDocument()
-      })
-    })
-
-    it('shows HSA button for eligible transaction', async () => {
+  describe('HsaStatusBadge', () => {
+    it('shows HSA badge (read-only) for eligible transaction', async () => {
       ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn({ is_hsa_eligible: true })])
       render(<Transactions />)
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'HSA' })).toBeInTheDocument()
+        expect(screen.getByTestId('hsa-badge')).toBeInTheDocument()
       })
     })
 
-    it('shows Not HSA button for ineligible transaction', async () => {
+    it('shows Not HSA badge (read-only) for ineligible transaction', async () => {
       ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn({ is_hsa_eligible: false })])
       render(<Transactions />)
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Not HSA' })).toBeInTheDocument()
+        expect(screen.getByTestId('not-hsa-badge')).toBeInTheDocument()
       })
     })
 
-    it('calls annotateTransaction with true when Mark is clicked', async () => {
+    it('shows no HSA badge for unreviewed transaction', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn({ is_hsa_eligible: null })])
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+      expect(screen.queryByTestId('hsa-badge')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('not-hsa-badge')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('TagDialog', () => {
+    it('clicking Tag opens the dialog with all options', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      render(<Transactions />)
+      await waitFor(() => screen.getByTitle('Tag this transaction'))
+      fireEvent.click(screen.getByTitle('Tag this transaction'))
+      await waitFor(() => {
+        expect(screen.getByText('Tag transaction')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /mark as hsa eligible/i })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /mark as not hsa/i })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /create hsa rule/i })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /hide this transaction/i })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /create hide rule/i })).toBeInTheDocument()
+      })
+    })
+
+    it('"Mark as HSA eligible" calls annotateTransaction with true and updates row', async () => {
       ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn({ is_hsa_eligible: null })])
       ;(bankService.annotateTransaction as any).mockResolvedValue(makeTxn({ is_hsa_eligible: true }))
 
       render(<Transactions />)
-      await waitFor(() => screen.getByRole('button', { name: 'Mark' }))
-
-      fireEvent.click(screen.getByRole('button', { name: 'Mark' }))
+      await waitFor(() => screen.getByTitle('Tag this transaction'))
+      fireEvent.click(screen.getByTitle('Tag this transaction'))
+      await waitFor(() => screen.getByRole('button', { name: /mark as hsa eligible/i }))
+      fireEvent.click(screen.getByRole('button', { name: /mark as hsa eligible/i }))
 
       await waitFor(() => {
         expect(bankService.annotateTransaction).toHaveBeenCalledWith('txn-1', { is_hsa_eligible: true })
+        expect(screen.queryByText('Tag transaction')).not.toBeInTheDocument()
       })
+      expect(bankService.listAllTransactions).toHaveBeenCalledTimes(1)
     })
 
-    it('calls annotateTransaction with false when HSA button is clicked', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn({ is_hsa_eligible: true })])
+    it('"Mark as Not HSA" calls annotateTransaction with false', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn({ is_hsa_eligible: null })])
       ;(bankService.annotateTransaction as any).mockResolvedValue(makeTxn({ is_hsa_eligible: false }))
 
       render(<Transactions />)
-      await waitFor(() => screen.getByRole('button', { name: 'HSA' }))
-
-      fireEvent.click(screen.getByRole('button', { name: 'HSA' }))
+      await waitFor(() => screen.getByTitle('Tag this transaction'))
+      fireEvent.click(screen.getByTitle('Tag this transaction'))
+      await waitFor(() => screen.getByRole('button', { name: /mark as not hsa/i }))
+      fireEvent.click(screen.getByRole('button', { name: /mark as not hsa/i }))
 
       await waitFor(() => {
         expect(bankService.annotateTransaction).toHaveBeenCalledWith('txn-1', { is_hsa_eligible: false })
       })
     })
 
-    it('calls annotateTransaction with null when Not HSA button is clicked', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn({ is_hsa_eligible: false })])
-      ;(bankService.annotateTransaction as any).mockResolvedValue(makeTxn({ is_hsa_eligible: null }))
-
+    it('"Create HSA rule" opens RuleEditor pre-filled with mark_hsa action', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
       render(<Transactions />)
-      await waitFor(() => screen.getByRole('button', { name: 'Not HSA' }))
-
-      fireEvent.click(screen.getByRole('button', { name: 'Not HSA' }))
-
+      await waitFor(() => screen.getByTitle('Tag this transaction'))
+      fireEvent.click(screen.getByTitle('Tag this transaction'))
+      await waitFor(() => screen.getByRole('button', { name: /create hsa rule/i }))
+      fireEvent.click(screen.getByRole('button', { name: /create hsa rule/i }))
       await waitFor(() => {
-        expect(bankService.annotateTransaction).toHaveBeenCalledWith('txn-1', { is_hsa_eligible: null })
+        expect(screen.getByDisplayValue('HSA: CVS Pharmacy')).toBeInTheDocument()
+        expect(screen.getByDisplayValue('CVS Pharmacy')).toBeInTheDocument()
       })
     })
 
-    it('updates row state after annotation without full reload', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn({ is_hsa_eligible: null })])
-      ;(bankService.annotateTransaction as any).mockResolvedValue(makeTxn({ is_hsa_eligible: true }))
-
+    it('"Hide this transaction" hides it and removes from list', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      ;(bankService.annotateTransaction as any).mockResolvedValue(makeTxn({ auto_flag: 'hidden' }))
       render(<Transactions />)
-      await waitFor(() => screen.getByRole('button', { name: 'Mark' }))
-
-      fireEvent.click(screen.getByRole('button', { name: 'Mark' }))
-
+      await waitFor(() => screen.getByTitle('Tag this transaction'))
+      fireEvent.click(screen.getByTitle('Tag this transaction'))
+      await waitFor(() => screen.getByRole('button', { name: /hide this transaction/i }))
+      fireEvent.click(screen.getByRole('button', { name: /hide this transaction/i }))
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'HSA' })).toBeInTheDocument()
+        expect(bankService.annotateTransaction).toHaveBeenCalledWith('txn-1', { auto_flag: 'hidden' })
+        expect(screen.queryByText('CVS Pharmacy')).not.toBeInTheDocument()
       })
-      // listAllTransactions should only have been called once (on mount)
-      expect(bankService.listAllTransactions).toHaveBeenCalledTimes(1)
+    })
+
+    it('"Create hide rule" opens RuleEditor pre-filled with hide action', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      render(<Transactions />)
+      await waitFor(() => screen.getByTitle('Tag this transaction'))
+      fireEvent.click(screen.getByTitle('Tag this transaction'))
+      await waitFor(() => screen.getByRole('button', { name: /create hide rule/i }))
+      fireEvent.click(screen.getByRole('button', { name: /create hide rule/i }))
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Hide: CVS Pharmacy')).toBeInTheDocument()
+        expect(screen.getByDisplayValue('CVS Pharmacy')).toBeInTheDocument()
+      })
+    })
+
+    it('Cancel button closes the dialog', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      render(<Transactions />)
+      await waitFor(() => screen.getByTitle('Tag this transaction'))
+      fireEvent.click(screen.getByTitle('Tag this transaction'))
+      await waitFor(() => screen.getByText('Tag transaction'))
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      await waitFor(() => {
+        expect(screen.queryByText('Tag transaction')).not.toBeInTheDocument()
+      })
+    })
+
+    it('does not show Tag button when transaction is already hidden', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn({ auto_flag: 'hidden' })])
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+      expect(screen.queryByTitle('Tag this transaction')).not.toBeInTheDocument()
+    })
+
+    it('after rule save shows success toast mentioning Settings → Rules', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      ;(rulesService.create as any).mockResolvedValue({
+        id: 'rule-1', name: 'Hide: CVS Pharmacy', priority: 0, is_active: true,
+        conditions: [], actions: [], user_id: 'u1', created_at: '', updated_at: '',
+      })
+      ;(rulesService.applyAll as any).mockResolvedValue({ updated: 3 })
+      render(<Transactions />)
+      await waitFor(() => screen.getByTitle('Tag this transaction'))
+      fireEvent.click(screen.getByTitle('Tag this transaction'))
+      await waitFor(() => screen.getByRole('button', { name: /create hide rule/i }))
+      fireEvent.click(screen.getByRole('button', { name: /create hide rule/i }))
+      await waitFor(() => screen.getByRole('button', { name: 'Save Rule' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
+      await waitFor(() => {
+        expect(screen.getByText(/Settings → Rules/)).toBeInTheDocument()
+      })
     })
   })
 
@@ -692,9 +765,9 @@ describe('Transactions page', () => {
       fireEvent.click(screen.getByText('CVS Pharmacy'))
 
       await waitFor(() => {
-        // HsaToggle and MemberPicker both render in the mobile expandable section
-        const markButtons = screen.getAllByRole('button', { name: 'Mark' })
-        expect(markButtons.length).toBeGreaterThan(0)
+        // Tag button and MemberPicker both render in the mobile expandable section
+        const tagButtons = screen.getAllByRole('button', { name: 'Tag' })
+        expect(tagButtons.length).toBeGreaterThan(0)
         const personPickers = screen.getAllByDisplayValue('— person —')
         expect(personPickers.length).toBeGreaterThan(0)
       })
@@ -931,101 +1004,6 @@ describe('Transactions page', () => {
     })
   })
 
-  describe('hide flow', () => {
-    it('shows Hide button on All tab for a transaction', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
-      render(<Transactions />)
-      await waitFor(() => {
-        expect(screen.getByTitle('Hide this transaction')).toBeInTheDocument()
-      })
-    })
-
-    it('does not show Hide button when transaction is already hidden', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn({ auto_flag: 'hidden' })])
-      render(<Transactions />)
-      await waitFor(() => screen.getByText('CVS Pharmacy'))
-      expect(screen.queryByTitle('Hide this transaction')).not.toBeInTheDocument()
-    })
-
-    it('does not show Hide button on HSA tab', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn({ is_hsa_eligible: true })])
-      render(<Transactions />)
-      await waitFor(() => screen.getByRole('button', { name: 'HSA Transactions' }))
-      fireEvent.click(screen.getByRole('button', { name: 'HSA Transactions' }))
-      await waitFor(() => screen.getByText('CVS Pharmacy'))
-      expect(screen.queryByTitle('Hide this transaction')).not.toBeInTheDocument()
-    })
-
-    it('clicking Hide opens the dialog with both options', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
-      render(<Transactions />)
-      await waitFor(() => screen.getByTitle('Hide this transaction'))
-      fireEvent.click(screen.getByTitle('Hide this transaction'))
-      await waitFor(() => {
-        expect(screen.getByText('Hide transaction')).toBeInTheDocument()
-        expect(screen.getByRole('button', { name: /hide just this transaction/i })).toBeInTheDocument()
-        expect(screen.getByRole('button', { name: /create a hide rule/i })).toBeInTheDocument()
-      })
-    })
-
-    it('Cancel button closes the dialog', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
-      render(<Transactions />)
-      await waitFor(() => screen.getByTitle('Hide this transaction'))
-      fireEvent.click(screen.getByTitle('Hide this transaction'))
-      await waitFor(() => screen.getByText('Hide transaction'))
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-      await waitFor(() => {
-        expect(screen.queryByText('Hide transaction')).not.toBeInTheDocument()
-      })
-    })
-
-    it('"Hide just this one" calls annotateTransaction with auto_flag hidden and removes row', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
-      ;(bankService.annotateTransaction as any).mockResolvedValue(makeTxn({ auto_flag: 'hidden' }))
-      render(<Transactions />)
-      await waitFor(() => screen.getByTitle('Hide this transaction'))
-      fireEvent.click(screen.getByTitle('Hide this transaction'))
-      await waitFor(() => screen.getByRole('button', { name: /hide just this transaction/i }))
-      fireEvent.click(screen.getByRole('button', { name: /hide just this transaction/i }))
-      await waitFor(() => {
-        expect(bankService.annotateTransaction).toHaveBeenCalledWith('txn-1', { auto_flag: 'hidden' })
-        expect(screen.queryByText('CVS Pharmacy')).not.toBeInTheDocument()
-      })
-    })
-
-    it('"Create a hide rule" opens RuleEditor pre-filled with transaction description', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
-      render(<Transactions />)
-      await waitFor(() => screen.getByTitle('Hide this transaction'))
-      fireEvent.click(screen.getByTitle('Hide this transaction'))
-      await waitFor(() => screen.getByRole('button', { name: /create a hide rule/i }))
-      fireEvent.click(screen.getByRole('button', { name: /create a hide rule/i }))
-      await waitFor(() => {
-        expect(screen.getByDisplayValue('Hide: CVS Pharmacy')).toBeInTheDocument()
-        expect(screen.getByDisplayValue('CVS Pharmacy')).toBeInTheDocument()
-      })
-    })
-
-    it('after rule save shows success toast mentioning Settings → Rules', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
-      ;(rulesService.create as any).mockResolvedValue({
-        id: 'rule-1', name: 'Hide: CVS Pharmacy', priority: 0, is_active: true,
-        conditions: [], actions: [], user_id: 'u1', created_at: '', updated_at: '',
-      })
-      ;(rulesService.applyAll as any).mockResolvedValue({ updated: 3 })
-      render(<Transactions />)
-      await waitFor(() => screen.getByTitle('Hide this transaction'))
-      fireEvent.click(screen.getByTitle('Hide this transaction'))
-      await waitFor(() => screen.getByRole('button', { name: /create a hide rule/i }))
-      fireEvent.click(screen.getByRole('button', { name: /create a hide rule/i }))
-      await waitFor(() => screen.getByRole('button', { name: 'Save Rule' }))
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      await waitFor(() => {
-        expect(screen.getByText(/Settings → Rules/)).toBeInTheDocument()
-      })
-    })
-  })
 
   describe('eligibility warning badge', () => {
     it('shows warning badge when eligibility_warning is true and member is assigned', async () => {

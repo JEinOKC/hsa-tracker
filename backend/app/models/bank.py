@@ -94,6 +94,7 @@ class BankTransaction(Base):
         index=True,
     )
     hsa_category = Column(String(100), nullable=True)       # "medical", "dental", etc.
+    eligible_amount = Column(Numeric(12, 2), nullable=True) # partial HSA amount; None = use full amount
     reimbursement_status = Column(String(20), nullable=True) # "pending","reimbursed","not_needed"
     reimbursed_at = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
