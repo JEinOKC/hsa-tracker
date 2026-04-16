@@ -59,6 +59,7 @@ export interface BankTransactionAnnotation {
   reimbursement_status?: string | null
   reimbursed_at?: string | null
   notes?: string | null
+  auto_flag?: 'hidden' | null
 }
 
 export interface AllTransactionsParams {

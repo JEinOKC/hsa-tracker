@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { bankService, BankTransaction, HSA_CATEGORIES } from '../services/bank'
 import { familyService, FamilyMember } from '../services/family'
+import { rulesService, HsaRule } from '../services/rules'
 import DocumentUpload from '../components/DocumentUpload'
+import RuleEditor from '../components/RuleEditor'
 
 function formatAmount(amount: string): string {
   const n = parseFloat(amount)
@@ -212,6 +214,57 @@ function ReimburseToggle({ txn, onChange }: ReimburseToggleProps) {
   )
 }
 
+// ─── Hide dialog ──────────────────────────────────────────────────────────────
+
+interface HideDialogProps {
+  txn: BankTransaction
+  onHideOne: () => void
+  onCreateRule: () => void
+  onClose: () => void
+}
+
+function HideDialog({ txn, onHideOne, onCreateRule, onClose }: HideDialogProps) {
+  const amount = parseFloat(txn.amount)
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm">
+        <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-gray-900">Hide transaction</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+        </div>
+        <div className="px-5 py-4">
+          <p className="text-sm text-gray-700 truncate font-medium">{txn.description || '(no description)'}</p>
+          <p className={`text-sm font-semibold mt-0.5 ${amount < 0 ? 'text-gray-700' : 'text-green-600'}`}>
+            {formatAmount(txn.amount)} · {formatDate(txn.transaction_date)}
+          </p>
+          <div className="mt-4 space-y-2">
+            <button
+              onClick={onHideOne}
+              className="w-full px-4 py-2.5 text-sm font-medium text-white bg-gray-700 rounded-lg hover:bg-gray-800 text-left"
+            >
+              Hide just this transaction
+              <span className="block text-xs font-normal text-gray-300 mt-0.5">This transaction won't appear in your list.</span>
+            </button>
+            <button
+              onClick={onCreateRule}
+              className="w-full px-4 py-2.5 text-sm font-medium text-sky-700 bg-sky-50 rounded-lg hover:bg-sky-100 text-left"
+            >
+              Create a hide rule
+              <span className="block text-xs font-normal text-sky-500 mt-0.5">Auto-hide similar transactions in the future.</span>
+            </button>
+          </div>
+          <button onClick={onClose} className="mt-3 w-full text-xs text-center text-gray-400 hover:text-gray-600 py-1">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Transaction row ──────────────────────────────────────────────────────────
 
 interface TxnRowProps {
@@ -219,9 +272,10 @@ interface TxnRowProps {
   members: FamilyMember[]
   tab: Tab
   onChange: (updated: BankTransaction) => void
+  onHide?: (txn: BankTransaction) => void
 }
 
-function TxnRow({ txn, members, tab, onChange }: TxnRowProps) {
+function TxnRow({ txn, members, tab, onChange, onHide }: TxnRowProps) {
   const amount = parseFloat(txn.amount)
   const [expanded, setExpanded] = useState(false)
   const [docCount, setDocCount] = useState(txn.document_count ?? 0)
@@ -297,6 +351,17 @@ function TxnRow({ txn, members, tab, onChange }: TxnRowProps) {
         >
           📎{docCount > 0 ? ` ${docCount}` : ''}
         </button>
+
+        {/* Hide button — All tab only */}
+        {tab === 'all' && onHide && txn.auto_flag !== 'hidden' && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onHide(txn) }}
+            title="Hide this transaction"
+            className="shrink-0 text-xs text-gray-300 hover:text-gray-500 px-1 py-0.5 rounded transition-colors"
+          >
+            Hide
+          </button>
+        )}
       </div>
 
       {/* Expandable panel */}
@@ -431,6 +496,32 @@ export default function Transactions() {
     setTransactions(prev => prev.map(t => t.id === updated.id ? updated : t))
   }, [])
 
+  // ── Hide flow ────────────────────────────────────────────────────────────
+  const [hidePromptTxn, setHidePromptTxn] = useState<BankTransaction | null>(null)
+  const [ruleEditorTxn, setRuleEditorTxn] = useState<BankTransaction | null>(null)
+  const [ruleSuccessMsg, setRuleSuccessMsg] = useState<string | null>(null)
+
+  const handleHideOne = async (txn: BankTransaction) => {
+    await bankService.annotateTransaction(txn.id, { auto_flag: 'hidden' })
+    setTransactions(prev => prev.filter(t => t.id !== txn.id))
+    setHidePromptTxn(null)
+  }
+
+  const handleRuleSave = async (rule: HsaRule) => {
+    setRuleEditorTxn(null)
+    try {
+      const result = await rulesService.applyAll()
+      await load()
+      setRuleSuccessMsg(
+        `Rule "${rule.name}" created — ${result.updated} transaction(s) updated. You can edit or delete it anytime in Settings → Rules.`
+      )
+    } catch {
+      setRuleSuccessMsg(
+        `Rule "${rule.name}" created. You can edit or delete it anytime in Settings → Rules.`
+      )
+    }
+  }
+
   const switchTab = (next: Tab) => {
     setSearchParams(next === 'all' ? {} : { tab: next })
     setSearch('')
@@ -468,6 +559,29 @@ export default function Transactions() {
 
   return (
     <>
+    {/* Hide prompt dialog */}
+    {hidePromptTxn && (
+      <HideDialog
+        txn={hidePromptTxn}
+        onHideOne={() => handleHideOne(hidePromptTxn)}
+        onCreateRule={() => { setRuleEditorTxn(hidePromptTxn); setHidePromptTxn(null) }}
+        onClose={() => setHidePromptTxn(null)}
+      />
+    )}
+
+    {/* Quick hide rule editor */}
+    {ruleEditorTxn && (
+      <RuleEditor
+        rule={null}
+        members={members}
+        initialName={`Hide: ${ruleEditorTxn.description || 'transaction'}`}
+        initialConditions={[{ field: 'description', operator: 'is', value: ruleEditorTxn.description || '' }]}
+        initialActions={[{ action_type: 'hide', member_id: null }]}
+        onSave={handleRuleSave}
+        onClose={() => setRuleEditorTxn(null)}
+      />
+    )}
+
     <div className="container mx-auto px-4 py-4 sm:py-8 max-w-5xl">
       {/* Header */}
       <div className="flex items-start justify-between gap-3 mb-4 sm:mb-6 flex-wrap">
@@ -584,6 +698,14 @@ export default function Transactions() {
         </div>
       </div>
 
+      {/* Rule success toast */}
+      {ruleSuccessMsg && (
+        <div className="mb-4 flex items-start gap-3 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+          <span className="flex-1">{ruleSuccessMsg}</span>
+          <button onClick={() => setRuleSuccessMsg(null)} className="text-green-500 hover:text-green-700 shrink-0 text-base leading-none">&times;</button>
+        </div>
+      )}
+
       {/* Column headers — desktop only */}
       <div className="hidden sm:flex items-center gap-3 px-4 py-2 text-xs font-medium text-gray-400 uppercase tracking-wide">
         <span className="w-24 shrink-0">Date</span>
@@ -621,6 +743,7 @@ export default function Transactions() {
               members={members}
               tab={tab}
               onChange={handleChange}
+              onHide={tab === 'all' ? setHidePromptTxn : undefined}
             />
           ))
         )}

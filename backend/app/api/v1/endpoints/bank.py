@@ -117,6 +117,7 @@ class BankTransactionAnnotation(BaseModel):
     reimbursement_status: Optional[str] = None
     reimbursed_at: Optional[datetime] = None
     notes: Optional[str] = None
+    auto_flag: Optional[str] = None
 
 
 class SyncResult(BaseModel):
