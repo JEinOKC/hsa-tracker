@@ -18,6 +18,7 @@ from app.schemas.household import (
     HouseholdRoleCreate,
     HouseholdRoleOut,
     HouseholdRoleUpdate,
+    HouseholdSettingsUpdate,
     TransferAdminRequest,
 )
 
@@ -55,12 +56,13 @@ def _reject_admin_name(name: str | None) -> None:
         )
 
 
-def _build_detail(household: Household, db: Session) -> HouseholdDetailOut:
+def _build_detail(household: Household, db: Session, current_user_id=None) -> HouseholdDetailOut:
     memberships = db.query(HouseholdMembership).filter(
         HouseholdMembership.household_id == household.id
     ).all()
 
     members_out = []
+    caller_is_admin = False
     for m in memberships:
         user = db.query(User).filter(User.id == m.user_id).first()
         members_out.append(HouseholdMemberOut(
@@ -73,6 +75,8 @@ def _build_detail(household: Household, db: Session) -> HouseholdDetailOut:
             is_admin=m.is_admin,
             joined_at=m.joined_at,
         ))
+        if current_user_id and m.user_id == current_user_id:
+            caller_is_admin = m.is_admin
 
     roles_out = [HouseholdRoleOut.model_validate(r) for r in household.roles]
 
@@ -80,6 +84,7 @@ def _build_detail(household: Household, db: Session) -> HouseholdDetailOut:
         household=household,
         roles=roles_out,
         members=members_out,
+        is_admin=caller_is_admin,
     )
 
 
@@ -135,7 +140,7 @@ async def create_household(
     db.commit()
     db.refresh(household)
 
-    return _build_detail(household, db)
+    return _build_detail(household, db, current_user_id=current_user.id)
 
 
 @router.get("/mine", response_model=HouseholdDetailOut)
@@ -146,7 +151,22 @@ async def get_my_household(
     """Get the current user's household. 404 if not in one."""
     mem = _require_membership(current_user, db)
     household = db.query(Household).filter(Household.id == mem.household_id).first()
-    return _build_detail(household, db)
+    return _build_detail(household, db, current_user_id=current_user.id)
+
+
+@router.patch("/mine", response_model=HouseholdDetailOut)
+async def update_household_settings(
+    payload: HouseholdSettingsUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update household settings (e.g. strict_eligibility). Admin only."""
+    mem = _require_admin(current_user, db)
+    household = db.query(Household).filter(Household.id == mem.household_id).first()
+    household.strict_eligibility = payload.strict_eligibility
+    db.commit()
+    db.refresh(household)
+    return _build_detail(household, db, current_user_id=current_user.id)
 
 
 @router.post("/mine/roles", response_model=HouseholdRoleOut, status_code=201)
@@ -301,4 +321,4 @@ async def transfer_admin(
 
     household = db.query(Household).filter(Household.id == target.household_id).first()
     db.refresh(household)
-    return _build_detail(household, db)
+    return _build_detail(household, db, current_user_id=current_user.id)

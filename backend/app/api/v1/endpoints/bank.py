@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -26,8 +26,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.bank import BankConnection, BankTransaction, TransactionDocument
-from app.models.family import FamilyMember
-from app.models.household import HouseholdMembership
+from app.models.family import FamilyMember, HsaEligibilityPeriod
+from app.models.household import Household, HouseholdMembership
 from app.models.user import User
 from app.providers import get_teller_provider, is_teller_configured
 from app.utils.access import get_readable_owner_ids, check_permission
@@ -104,6 +104,8 @@ class BankTransactionResponse(BaseModel):
     # Rules engine fields
     auto_flag: Optional[str] = None
     rule_id: Optional[UUID] = None
+    # Coverage window
+    eligibility_warning: bool = False
 
     class Config:
         from_attributes = True
@@ -139,7 +141,12 @@ def _get_connection_or_404(account_id: UUID, user, db: Session, operation: str =
     return connection
 
 
-def _txn_to_response(txn: BankTransaction, document_count: int = 0, owner_display_name: Optional[str] = None) -> BankTransactionResponse:
+def _txn_to_response(
+    txn: BankTransaction,
+    document_count: int = 0,
+    owner_display_name: Optional[str] = None,
+    eligibility_warning: bool = False,
+) -> BankTransactionResponse:
     """Map a BankTransaction ORM object to its response schema, adding denormalised fields."""
     data = BankTransactionResponse.model_validate(txn)
     if txn.connection:
@@ -147,6 +154,7 @@ def _txn_to_response(txn: BankTransaction, document_count: int = 0, owner_displa
         data.institution_name = txn.connection.institution_name
     data.document_count = document_count
     data.owner_display_name = owner_display_name
+    data.eligibility_warning = eligibility_warning
     return data
 
 
@@ -164,6 +172,48 @@ def _batch_document_counts(txn_ids: list, db: Session) -> dict:
         .all()
     )
     return {row[0]: row[1] for row in rows}
+
+
+def _load_member_periods(household_id, db: Session) -> dict:
+    """Return {member_id: [(start_date, end_date), ...]} for all members in a household."""
+    members = (
+        db.query(FamilyMember)
+        .filter(FamilyMember.household_id == household_id)
+        .all()
+    )
+    member_ids = [m.id for m in members]
+    if not member_ids:
+        return {}
+    periods = (
+        db.query(HsaEligibilityPeriod)
+        .filter(HsaEligibilityPeriod.family_member_id.in_(member_ids))
+        .all()
+    )
+    result: dict = {m.id: [] for m in members}
+    for p in periods:
+        result[p.family_member_id].append((p.start_date, p.end_date))
+    return result
+
+
+def _is_eligible(member_periods: dict, family_member_id, txn_date) -> bool:
+    """Return True if the transaction date falls within the member's coverage window."""
+    if family_member_id is None:
+        return False
+    periods = member_periods.get(family_member_id, [])
+    if not periods:
+        return False
+    return any(
+        p_start <= txn_date and (p_end is None or p_end >= txn_date)
+        for p_start, p_end in periods
+    )
+
+
+def _get_user_household(user_id, db: Session):
+    """Return the Household for this user, or None."""
+    mem = db.query(HouseholdMembership).filter(HouseholdMembership.user_id == user_id).first()
+    if not mem:
+        return None
+    return db.query(Household).filter(Household.id == mem.household_id).first()
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +319,10 @@ async def get_dashboard_summary(
         .subquery()
     )
 
+    # Strict eligibility: only count transactions within a member's coverage window
+    household = _get_user_household(current_user.id, db)
+    strict = household.strict_eligibility if household else False
+
     def date_filters():
         f = [
             BankTransaction.connection_id.in_(user_connection_ids),
@@ -278,6 +332,24 @@ async def get_dashboard_summary(
             f.append(BankTransaction.transaction_date >= start_date)
         if end_date:
             f.append(BankTransaction.transaction_date <= end_date)
+        if strict:
+            # Must have an assigned member
+            f.append(BankTransaction.family_member_id.isnot(None))
+            # That member must have an eligibility period covering the transaction date
+            eligible_exists = (
+                db.query(HsaEligibilityPeriod.id)
+                .filter(
+                    HsaEligibilityPeriod.family_member_id == BankTransaction.family_member_id,
+                    HsaEligibilityPeriod.start_date <= BankTransaction.transaction_date,
+                    or_(
+                        HsaEligibilityPeriod.end_date.is_(None),
+                        HsaEligibilityPeriod.end_date >= BankTransaction.transaction_date,
+                    ),
+                )
+                .correlate(BankTransaction)
+                .exists()
+            )
+            f.append(eligible_exists)
         return f
 
     hsa_spending = (
@@ -418,7 +490,19 @@ async def list_all_transactions(
             return owner_map.get(owner_id)
         return None
 
-    return [_txn_to_response(t, counts.get(t.id, 0), _owner_name(t)) for t in txns]
+    # Build eligibility period lookup for warning badges
+    household = _get_user_household(current_user.id, db)
+    member_periods: dict = _load_member_periods(household.id, db) if household else {}
+
+    return [
+        _txn_to_response(
+            t,
+            counts.get(t.id, 0),
+            _owner_name(t),
+            eligibility_warning=not _is_eligible(member_periods, t.family_member_id, t.transaction_date),
+        )
+        for t in txns
+    ]
 
 
 @router.patch("/transactions/{transaction_id}", response_model=BankTransactionResponse)
@@ -473,7 +557,13 @@ async def annotate_transaction(
         )
         .scalar() or 0
     )
-    return _txn_to_response(txn, doc_count)
+    household = _get_user_household(current_user.id, db)
+    member_periods: dict = _load_member_periods(household.id, db) if household else {}
+    return _txn_to_response(
+        txn,
+        doc_count,
+        eligibility_warning=not _is_eligible(member_periods, txn.family_member_id, txn.transaction_date),
+    )
 
 
 @router.get("/accounts", response_model=list[BankAccountResponse])

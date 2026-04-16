@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { bankService, BankTransaction, HSA_CATEGORIES } from '../services/bank'
 import { familyService, FamilyMember } from '../services/family'
 import { rulesService, HsaRule } from '../services/rules'
+import { householdService, Household } from '../services/household'
 import DocumentUpload from '../components/DocumentUpload'
 import RuleEditor from '../components/RuleEditor'
 
@@ -87,17 +88,28 @@ function MemberPicker({ txn, members, onChange }: MemberPickerProps) {
   }
 
   return (
-    <select
-      value={txn.family_member_id ?? ''}
-      onChange={handleChange}
-      disabled={saving}
-      className="text-xs border border-gray-200 rounded px-1 py-0.5 text-gray-600 bg-white disabled:opacity-50 max-w-[110px]"
-    >
-      <option value="">— person —</option>
-      {members.map(m => (
-        <option key={m.id} value={m.id}>{m.name}</option>
-      ))}
-    </select>
+    <span className="inline-flex items-center gap-1">
+      <select
+        value={txn.family_member_id ?? ''}
+        onChange={handleChange}
+        disabled={saving}
+        className="text-xs border border-gray-200 rounded px-1 py-0.5 text-gray-600 bg-white disabled:opacity-50 max-w-[110px]"
+      >
+        <option value="">— person —</option>
+        {members.map(m => (
+          <option key={m.id} value={m.id}>{m.name}</option>
+        ))}
+      </select>
+      {txn.eligibility_warning && txn.family_member_id && (
+        <span
+          title="Transaction date is outside this member's coverage window"
+          className="text-amber-500 text-xs font-bold leading-none select-none"
+          aria-label="Outside coverage window"
+        >
+          ⚠
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -398,6 +410,7 @@ export default function Transactions() {
 
   const [transactions, setTransactions] = useState<BankTransaction[]>([])
   const [members, setMembers] = useState<FamilyMember[]>([])
+  const [household, setHousehold] = useState<Household | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
@@ -448,12 +461,14 @@ export default function Transactions() {
     setLoading(true)
     setError(null)
     try {
-      const [txns, fam] = await Promise.all([
+      const [txns, fam, hh] = await Promise.all([
         bankService.listAllTransactions(buildParams(0)),
         familyService.list(),
+        householdService.getMine(),
       ])
       setTransactions(txns)
       setMembers(fam)
+      setHousehold(hh)
       setHasMore(txns.length === PAGE_SIZE)
     } catch {
       setError('Failed to load transactions.')
@@ -551,8 +566,11 @@ export default function Transactions() {
     setSearchParams(tab !== 'all' ? { tab } : {})
   }
 
+  const strict = household?.strict_eligibility ?? false
   const tabTotal = (tab === 'hsa' || tab === 'reimbursed')
-    ? transactions.reduce((sum, t) => sum + parseFloat(t.amount), 0)
+    ? transactions
+        .filter(t => !strict || !t.eligibility_warning)
+        .reduce((sum, t) => sum + parseFloat(t.amount), 0)
     : null
 
   const hasFilters = !!(search || filterMember || startDate || endDate || filterDocs || showHidden || filterAutoFlag)
@@ -594,6 +612,7 @@ export default function Transactions() {
             <p className="text-xs text-gray-400">
               {tab === 'reimbursed' ? 'Reimbursed total' : 'HSA total'}
               {hasMore ? ' (partial)' : ''}
+              {strict ? ' · strict' : ''}
             </p>
             <p className={`text-xl font-bold ${tab === 'reimbursed' ? 'text-purple-700' : 'text-green-700'}`}>
               {formatAmount(tabTotal.toFixed(2))}

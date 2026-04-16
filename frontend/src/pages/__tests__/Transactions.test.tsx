@@ -34,10 +34,17 @@ vi.mock('../../services/rules', () => ({
   },
 }))
 
+vi.mock('../../services/household', () => ({
+  householdService: {
+    getMine: vi.fn(),
+  },
+}))
+
 import { bankService } from '../../services/bank'
 import { familyService } from '../../services/family'
 import { documentService } from '../../services/documents'
 import { rulesService } from '../../services/rules'
+import { householdService } from '../../services/household'
 
 const makeTxn = (overrides = {}) => ({
   id: 'txn-1',
@@ -62,6 +69,7 @@ const makeTxn = (overrides = {}) => ({
   document_count: 0,
   auto_flag: null,
   rule_id: null,
+  eligibility_warning: false,
   ...overrides,
 })
 
@@ -73,11 +81,20 @@ const mockMember = {
   date_of_birth: null,
 }
 
+const mockHousehold = {
+  id: 'hh-1',
+  name: 'Test Household',
+  created_by_id: 'user-1',
+  strict_eligibility: false,
+  is_admin: true,
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   ;(bankService.listAllTransactions as any).mockResolvedValue([])
   ;(familyService.list as any).mockResolvedValue([])
   ;(documentService.list as any).mockResolvedValue([])
+  ;(householdService.getMine as any).mockResolvedValue(mockHousehold)
   ;(rulesService.applyAll as any).mockResolvedValue({ updated: 0 })
   ;(rulesService.create as any).mockResolvedValue({
     id: 'rule-1', name: 'Hide: CVS Pharmacy', priority: 0, is_active: true,
@@ -1006,6 +1023,83 @@ describe('Transactions page', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
       await waitFor(() => {
         expect(screen.getByText(/Settings → Rules/)).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('eligibility warning badge', () => {
+    it('shows warning badge when eligibility_warning is true and member is assigned', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ family_member_id: 'member-1', eligibility_warning: true }),
+      ])
+      ;(familyService.list as any).mockResolvedValue([mockMember])
+      render(<Transactions />)
+      await waitFor(() => {
+        expect(screen.getByTitle(/outside.*coverage window/i)).toBeInTheDocument()
+      })
+    })
+
+    it('does not show warning badge when eligibility_warning is false', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ family_member_id: 'member-1', eligibility_warning: false }),
+      ])
+      ;(familyService.list as any).mockResolvedValue([mockMember])
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+      expect(screen.queryByTitle(/outside.*coverage window/i)).not.toBeInTheDocument()
+    })
+
+    it('does not show warning badge when eligibility_warning is true but no member assigned', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ family_member_id: null, eligibility_warning: true }),
+      ])
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+      expect(screen.queryByTitle(/outside.*coverage window/i)).not.toBeInTheDocument()
+    })
+  })
+
+  describe('strict tab total', () => {
+    it('excludes warned transactions from HSA total when strict_eligibility is true', async () => {
+      ;(householdService.getMine as any).mockResolvedValue({ ...mockHousehold, strict_eligibility: true })
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ id: 'txn-1', is_hsa_eligible: true, amount: '-100.00', eligibility_warning: false }),
+        makeTxn({ id: 'txn-2', is_hsa_eligible: true, amount: '-50.00', eligibility_warning: true }),
+      ])
+      render(<Transactions />)
+      await waitFor(() => screen.getByRole('button', { name: 'HSA Transactions' }))
+      fireEvent.click(screen.getByRole('button', { name: 'HSA Transactions' }))
+      await waitFor(() => {
+        // Only the non-warned transaction (-100.00) should count
+        expect(screen.getByText('-$100.00')).toBeInTheDocument()
+      })
+    })
+
+    it('includes all transactions in HSA total when strict_eligibility is false', async () => {
+      ;(householdService.getMine as any).mockResolvedValue({ ...mockHousehold, strict_eligibility: false })
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ id: 'txn-1', is_hsa_eligible: true, amount: '-100.00', eligibility_warning: false }),
+        makeTxn({ id: 'txn-2', is_hsa_eligible: true, amount: '-50.00', eligibility_warning: true }),
+      ])
+      render(<Transactions />)
+      await waitFor(() => screen.getByRole('button', { name: 'HSA Transactions' }))
+      fireEvent.click(screen.getByRole('button', { name: 'HSA Transactions' }))
+      await waitFor(() => {
+        // Both transactions (-150.00) should count
+        expect(screen.getByText('-$150.00')).toBeInTheDocument()
+      })
+    })
+
+    it('shows strict label suffix on HSA total when strict_eligibility is true', async () => {
+      ;(householdService.getMine as any).mockResolvedValue({ ...mockHousehold, strict_eligibility: true })
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ id: 'txn-1', is_hsa_eligible: true, amount: '-75.00' }),
+      ])
+      render(<Transactions />)
+      await waitFor(() => screen.getByRole('button', { name: 'HSA Transactions' }))
+      fireEvent.click(screen.getByRole('button', { name: 'HSA Transactions' }))
+      await waitFor(() => {
+        expect(screen.getByText(/strict/i)).toBeInTheDocument()
       })
     })
   })

@@ -50,6 +50,8 @@ export interface BankTransaction {
   // Rules engine fields
   auto_flag: 'potential_hsa' | 'hidden' | null
   rule_id: string | null
+  // Coverage window
+  eligibility_warning: boolean
 }
 
 export interface BankTransactionAnnotation {

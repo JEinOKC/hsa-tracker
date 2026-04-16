@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -16,6 +16,7 @@ class Household(Base):
     name = Column(String(100), nullable=False)
     created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    strict_eligibility = Column(Boolean, nullable=False, default=True, server_default=text("true"))
 
     roles = relationship("HouseholdRole", back_populates="household", cascade="all, delete-orphan")
     members = relationship("HouseholdMembership", back_populates="household", cascade="all, delete-orphan")

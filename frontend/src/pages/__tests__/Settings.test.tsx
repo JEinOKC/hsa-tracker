@@ -2,6 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '../../test/utils'
 import Settings from '../Settings'
 
+vi.mock('../../services/household', () => ({
+  householdService: {
+    getMine: vi.fn(),
+    updateSettings: vi.fn(),
+  },
+}))
+
 vi.mock('../../services/pushNotifications', () => ({
   isPushSupported: vi.fn(),
   getExistingSubscription: vi.fn(),
@@ -17,7 +24,10 @@ import {
   saveSubscription,
   removeSubscription,
 } from '../../services/pushNotifications'
+import { householdService } from '../../services/household'
 
+const mockGetMine = vi.mocked(householdService.getMine)
+const mockUpdateSettings = vi.mocked(householdService.updateSettings)
 const mockIsPushSupported = vi.mocked(isPushSupported)
 const mockGetExisting = vi.mocked(getExistingSubscription)
 const mockSubscribeToPush = vi.mocked(subscribeToPush)
@@ -30,8 +40,17 @@ const mockSub = {
   unsubscribe: vi.fn().mockResolvedValue(true),
 } as unknown as PushSubscription
 
+const mockAdminHousehold = {
+  id: 'hh-1',
+  name: 'Test Household',
+  created_by_id: 'user-1',
+  strict_eligibility: true,
+  is_admin: true,
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
+  mockGetMine.mockResolvedValue(null)
   // Default: supported, no existing subscription
   mockIsPushSupported.mockReturnValue(true)
   mockGetExisting.mockResolvedValue(null)
@@ -150,6 +169,68 @@ describe('Settings page', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /enable push notifications/i })).toBeInTheDocument()
+    })
+  })
+})
+
+describe('Calculation Settings section', () => {
+  it('shows Calculation Settings section when user is admin', async () => {
+    mockGetMine.mockResolvedValue(mockAdminHousehold)
+    render(<Settings />)
+    await waitFor(() => {
+      expect(screen.getByText('Calculation Settings')).toBeInTheDocument()
+    })
+  })
+
+  it('does not show Calculation Settings section when user is not admin', async () => {
+    mockGetMine.mockResolvedValue({ ...mockAdminHousehold, is_admin: false })
+    render(<Settings />)
+    await waitFor(() => screen.getByText('Push Notifications'))
+    expect(screen.queryByText('Calculation Settings')).not.toBeInTheDocument()
+  })
+
+  it('does not show Calculation Settings section when no household', async () => {
+    mockGetMine.mockResolvedValue(null)
+    render(<Settings />)
+    await waitFor(() => screen.getByText('Push Notifications'))
+    expect(screen.queryByText('Calculation Settings')).not.toBeInTheDocument()
+  })
+
+  it('toggle reflects strict_eligibility state (on)', async () => {
+    mockGetMine.mockResolvedValue({ ...mockAdminHousehold, strict_eligibility: true })
+    render(<Settings />)
+    await waitFor(() => {
+      expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true')
+    })
+  })
+
+  it('toggle reflects strict_eligibility state (off)', async () => {
+    mockGetMine.mockResolvedValue({ ...mockAdminHousehold, strict_eligibility: false })
+    render(<Settings />)
+    await waitFor(() => {
+      expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false')
+    })
+  })
+
+  it('clicking toggle calls updateSettings with toggled value', async () => {
+    mockGetMine.mockResolvedValue({ ...mockAdminHousehold, strict_eligibility: true })
+    mockUpdateSettings.mockResolvedValue({ ...mockAdminHousehold, strict_eligibility: false })
+    render(<Settings />)
+    await waitFor(() => screen.getByRole('switch'))
+    fireEvent.click(screen.getByRole('switch'))
+    await waitFor(() => {
+      expect(mockUpdateSettings).toHaveBeenCalledWith(false)
+    })
+  })
+
+  it('toggle updates to off after successful updateSettings', async () => {
+    mockGetMine.mockResolvedValue({ ...mockAdminHousehold, strict_eligibility: true })
+    mockUpdateSettings.mockResolvedValue({ ...mockAdminHousehold, strict_eligibility: false })
+    render(<Settings />)
+    await waitFor(() => screen.getByRole('switch'))
+    fireEvent.click(screen.getByRole('switch'))
+    await waitFor(() => {
+      expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false')
     })
   })
 })

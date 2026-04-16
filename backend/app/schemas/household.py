@@ -80,15 +80,21 @@ class HouseholdOut(BaseModel):
     name: str
     created_by_id: UUID
     created_at: datetime
+    strict_eligibility: bool = True
 
     class Config:
         from_attributes = True
+
+
+class HouseholdSettingsUpdate(BaseModel):
+    strict_eligibility: bool
 
 
 class HouseholdDetailOut(BaseModel):
     household: HouseholdOut
     roles: List[HouseholdRoleOut]
     members: List[HouseholdMemberOut]
+    is_admin: bool = False
 
 
 class CreateHouseholdRequest(BaseModel):

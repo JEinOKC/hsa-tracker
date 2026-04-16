@@ -7,6 +7,7 @@ import {
   saveSubscription,
   removeSubscription,
 } from '../services/pushNotifications'
+import { householdService, Household } from '../services/household'
 
 type PushState = 'loading' | 'unsupported' | 'denied' | 'not_subscribed' | 'subscribed' | 'error'
 
@@ -15,6 +16,23 @@ export default function Settings() {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [household, setHousehold] = useState<Household | null>(null)
+  const [strictBusy, setStrictBusy] = useState(false)
+
+  useEffect(() => {
+    householdService.getMine().then(setHousehold)
+  }, [])
+
+  async function handleToggleStrict() {
+    if (!household) return
+    setStrictBusy(true)
+    try {
+      const updated = await householdService.updateSettings(!household.strict_eligibility)
+      setHousehold(updated)
+    } finally {
+      setStrictBusy(false)
+    }
+  }
 
   useEffect(() => {
     if (!isPushSupported()) {
@@ -80,6 +98,44 @@ export default function Settings() {
   return (
     <div className="container mx-auto px-4 py-8 max-w-2xl">
       <h1 className="text-2xl font-bold text-gray-900 mb-8">Settings</h1>
+
+      {household?.is_admin && (
+        <div className="bg-white rounded-lg border border-gray-200 p-6 mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Calculation Settings</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Control how HSA spending totals are calculated across your household.
+          </p>
+          <div className="flex items-start gap-4">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={household.strict_eligibility}
+              onClick={handleToggleStrict}
+              disabled={strictBusy}
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50 ${
+                household.strict_eligibility ? 'bg-sky-600' : 'bg-gray-200'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  household.strict_eligibility ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+            <div>
+              <p className="text-sm font-medium text-gray-800">
+                Strict eligibility calculations {household.strict_eligibility ? '(on)' : '(off)'}
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                When on, HSA totals only count transactions that fall within each member's
+                configured coverage window. Unassigned transactions and members with no
+                coverage periods are excluded. Turn off to count all HSA-tagged transactions
+                regardless of coverage windows.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 mb-4">
         <h2 className="text-lg font-semibold text-gray-900 mb-1">Transaction Rules</h2>
