@@ -48,6 +48,9 @@ interface RuleEditorProps {
   members: FamilyMember[]
   onSave: (rule: HsaRule) => void
   onClose: () => void
+  initialName?: string
+  initialConditions?: Omit<RuleCondition, 'id' | 'rule_id' | 'created_at'>[]
+  initialActions?: Omit<RuleAction, 'id' | 'rule_id' | 'created_at'>[]
 }
 
 // ─── Blank row factories ──────────────────────────────────────────────────────
@@ -62,14 +65,14 @@ function blankAction(): Omit<RuleAction, 'id' | 'rule_id' | 'created_at'> {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function RuleEditor({ rule, members, onSave, onClose }: RuleEditorProps) {
-  const [name, setName] = useState(rule?.name ?? '')
+export default function RuleEditor({ rule, members, onSave, onClose, initialName, initialConditions, initialActions }: RuleEditorProps) {
+  const [name, setName] = useState(rule?.name ?? initialName ?? '')
   const [isActive, setIsActive] = useState(rule?.is_active ?? true)
   const [conditions, setConditions] = useState<Omit<RuleCondition, 'id' | 'rule_id' | 'created_at'>[]>(
-    rule?.conditions?.map(c => ({ field: c.field, operator: c.operator, value: c.value })) ?? [blankCondition()]
+    rule?.conditions?.map(c => ({ field: c.field, operator: c.operator, value: c.value })) ?? initialConditions ?? [blankCondition()]
   )
   const [actions, setActions] = useState<Omit<RuleAction, 'id' | 'rule_id' | 'created_at'>[]>(
-    rule?.actions?.map(a => ({ action_type: a.action_type, member_id: a.member_id ?? null })) ?? [blankAction()]
+    rule?.actions?.map(a => ({ action_type: a.action_type, member_id: a.member_id ?? null })) ?? initialActions ?? [blankAction()]
   )
   const [placement, setPlacement] = useState<'first' | 'last'>('first')
   const [saving, setSaving] = useState(false)
