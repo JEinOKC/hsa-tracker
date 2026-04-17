@@ -110,8 +110,9 @@ export default function ManualTransactionForm({ onClose, onCreated }: Props) {
       </p>
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Date</label>
+          <label htmlFor="mtf-date" className="block text-xs font-medium text-gray-700 mb-1">Date</label>
           <input
+            id="mtf-date"
             type="date"
             required
             value={date}
@@ -120,8 +121,9 @@ export default function ManualTransactionForm({ onClose, onCreated }: Props) {
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Amount ($)</label>
+          <label htmlFor="mtf-amount" className="block text-xs font-medium text-gray-700 mb-1">Amount ($)</label>
           <input
+            id="mtf-amount"
             type="number"
             required
             min="0.01"
@@ -133,8 +135,9 @@ export default function ManualTransactionForm({ onClose, onCreated }: Props) {
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Merchant</label>
+          <label htmlFor="mtf-merchant" className="block text-xs font-medium text-gray-700 mb-1">Merchant</label>
           <input
+            id="mtf-merchant"
             type="text"
             required
             placeholder="e.g. Dr. Smith Optometry"
@@ -144,10 +147,11 @@ export default function ManualTransactionForm({ onClose, onCreated }: Props) {
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">
+          <label htmlFor="mtf-description" className="block text-xs font-medium text-gray-700 mb-1">
             Description <span className="text-gray-400 font-normal">(optional)</span>
           </label>
           <input
+            id="mtf-description"
             type="text"
             placeholder="e.g. Annual eye exam"
             value={description}
