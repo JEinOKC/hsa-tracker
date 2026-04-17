@@ -12,7 +12,7 @@ Endpoints:
   DELETE /bank/accounts/{id}                   - deactivate connection
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
@@ -198,6 +198,24 @@ def _load_member_periods(household_id, db: Session) -> dict:
     result: dict = {m.id: [] for m in members}
     for p in periods:
         result[p.family_member_id].append((p.start_date, p.end_date))
+    return result
+
+
+def _earliest_hsa_start(household_id, db: Session) -> Optional[date]:
+    """Return the earliest HSA eligibility start date across all members in the household."""
+    members = (
+        db.query(FamilyMember)
+        .filter(FamilyMember.household_id == household_id)
+        .all()
+    )
+    member_ids = [m.id for m in members]
+    if not member_ids:
+        return None
+    result = (
+        db.query(func.min(HsaEligibilityPeriod.start_date))
+        .filter(HsaEligibilityPeriod.family_member_id.in_(member_ids))
+        .scalar()
+    )
     return result
 
 
@@ -438,31 +456,24 @@ async def list_transaction_categories(
     return sorted(r[0] for r in rows if r[0])
 
 
-@router.get("/transactions", response_model=list[BankTransactionResponse])
-async def list_all_transactions(
-    start_date: Optional[date] = Query(None),
-    end_date: Optional[date] = Query(None),
-    is_hsa_eligible: Optional[bool] = Query(None, description="Filter by HSA eligibility (omit = all, true = HSA only, false = non-HSA only)"),
-    family_member_id: Optional[UUID] = Query(None),
-    status: Optional[str] = Query(None, description="posted or pending"),
-    reimbursement_status: Optional[str] = Query(None, description="Filter by reimbursement status (e.g. 'reimbursed', 'null' for unset)"),
-    has_documents: Optional[bool] = Query(None, description="Filter by documentation status (true = has receipts, false = missing receipts)"),
-    search: Optional[str] = Query(None, description="Case-insensitive substring match on description"),
-    show_hidden: bool = Query(False, description="Include transactions flagged as hidden (default: excluded)"),
-    auto_flag_filter: Optional[str] = Query(None, alias="auto_flag", description="Filter to transactions with this auto_flag value"),
-    teller_category: Optional[str] = Query(None, description="Filter by Teller-provided category (e.g. 'health', 'food_and_drink')"),
-    limit: int = Query(50, le=200),
-    offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+def _build_transaction_query(
+    db: Session,
+    user_connection_ids,
+    *,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    is_hsa_eligible: Optional[bool] = None,
+    include_potential_hsa: bool = False,
+    family_member_id: Optional[UUID] = None,
+    status: Optional[str] = None,
+    reimbursement_status: Optional[str] = None,
+    has_documents: Optional[bool] = None,
+    search: Optional[str] = None,
+    show_hidden: bool = False,
+    auto_flag_filter: Optional[str] = None,
+    teller_category: Optional[str] = None,
 ):
-    """List all transactions across every connected account for the current user and shared accounts."""
-    readable_owner_ids = get_readable_owner_ids(current_user, db, resource="transactions")
-    user_connection_ids = (
-        db.query(BankConnection.id)
-        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active == True)
-        .subquery()
-    )
+    """Return a filtered SQLAlchemy query for BankTransaction (no limit/offset applied)."""
     query = (
         db.query(BankTransaction)
         .filter(BankTransaction.connection_id.in_(user_connection_ids))
@@ -472,7 +483,17 @@ async def list_all_transactions(
     if end_date:
         query = query.filter(BankTransaction.transaction_date <= end_date)
     if is_hsa_eligible is not None:
-        query = query.filter(BankTransaction.is_hsa_eligible == is_hsa_eligible)
+        if is_hsa_eligible and include_potential_hsa:
+            # Confirmed HSA eligible OR unreviewed auto-flagged as potential
+            query = query.filter(
+                (BankTransaction.is_hsa_eligible == True) |  # noqa: E712
+                (
+                    BankTransaction.is_hsa_eligible.is_(None) &
+                    (BankTransaction.auto_flag == "potential_hsa")
+                )
+            )
+        else:
+            query = query.filter(BankTransaction.is_hsa_eligible == is_hsa_eligible)
     if family_member_id:
         query = query.filter(BankTransaction.family_member_id == family_member_id)
     if status:
@@ -503,6 +524,91 @@ async def list_all_transactions(
         query = query.filter(
             BankTransaction.details["category"].astext == teller_category
         )
+    return query
+
+
+@router.get("/transactions/count")
+async def count_transactions(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    is_hsa_eligible: Optional[bool] = Query(None),
+    include_potential_hsa: bool = Query(False),
+    family_member_id: Optional[UUID] = Query(None),
+    status: Optional[str] = Query(None),
+    reimbursement_status: Optional[str] = Query(None),
+    has_documents: Optional[bool] = Query(None),
+    search: Optional[str] = Query(None),
+    show_hidden: bool = Query(False),
+    auto_flag_filter: Optional[str] = Query(None, alias="auto_flag"),
+    teller_category: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> int:
+    """Return the total count of transactions matching the given filters."""
+    readable_owner_ids = get_readable_owner_ids(current_user, db, resource="transactions")
+    user_connection_ids = (
+        db.query(BankConnection.id)
+        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active == True)
+        .subquery()
+    )
+    return _build_transaction_query(
+        db, user_connection_ids,
+        start_date=start_date,
+        end_date=end_date,
+        is_hsa_eligible=is_hsa_eligible,
+        include_potential_hsa=include_potential_hsa,
+        family_member_id=family_member_id,
+        status=status,
+        reimbursement_status=reimbursement_status,
+        has_documents=has_documents,
+        search=search,
+        show_hidden=show_hidden,
+        auto_flag_filter=auto_flag_filter,
+        teller_category=teller_category,
+    ).count()
+
+
+@router.get("/transactions", response_model=list[BankTransactionResponse])
+async def list_all_transactions(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    is_hsa_eligible: Optional[bool] = Query(None, description="Filter by HSA eligibility (omit = all, true = HSA only, false = non-HSA only)"),
+    include_potential_hsa: bool = Query(False, description="When is_hsa_eligible=true, also include potential_hsa auto-flagged transactions"),
+    family_member_id: Optional[UUID] = Query(None),
+    status: Optional[str] = Query(None, description="posted or pending"),
+    reimbursement_status: Optional[str] = Query(None, description="Filter by reimbursement status (e.g. 'reimbursed', 'null' for unset)"),
+    has_documents: Optional[bool] = Query(None, description="Filter by documentation status (true = has receipts, false = missing receipts)"),
+    search: Optional[str] = Query(None, description="Case-insensitive substring match on description"),
+    show_hidden: bool = Query(False, description="Include transactions flagged as hidden (default: excluded)"),
+    auto_flag_filter: Optional[str] = Query(None, alias="auto_flag", description="Filter to transactions with this auto_flag value"),
+    teller_category: Optional[str] = Query(None, description="Filter by Teller-provided category (e.g. 'health', 'food_and_drink')"),
+    limit: int = Query(50, le=2000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List all transactions across every connected account for the current user and shared accounts."""
+    readable_owner_ids = get_readable_owner_ids(current_user, db, resource="transactions")
+    user_connection_ids = (
+        db.query(BankConnection.id)
+        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active == True)
+        .subquery()
+    )
+    query = _build_transaction_query(
+        db, user_connection_ids,
+        start_date=start_date,
+        end_date=end_date,
+        is_hsa_eligible=is_hsa_eligible,
+        include_potential_hsa=include_potential_hsa,
+        family_member_id=family_member_id,
+        status=status,
+        reimbursement_status=reimbursement_status,
+        has_documents=has_documents,
+        search=search,
+        show_hidden=show_hidden,
+        auto_flag_filter=auto_flag_filter,
+        teller_category=teller_category,
+    )
 
     txns = (
         query
@@ -675,6 +781,29 @@ async def sync_account_transactions(
         raise HTTPException(status_code=503, detail="Bank provider not configured.")
     if not connection.enrollment_token:
         raise HTTPException(status_code=422, detail="Account has no enrollment token. Reconnect via Teller Connect.")
+
+    # Auto-determine from_date when not explicitly provided
+    if from_date is None:
+        household = _get_user_household(current_user.id, db)
+        hsa_start = _earliest_hsa_start(household.id, db) if household else None
+        oldest_in_db = (
+            db.query(func.min(BankTransaction.transaction_date))
+            .filter(BankTransaction.connection_id == connection.id)
+            .scalar()
+        )
+        if hsa_start:
+            history_complete = oldest_in_db is not None and oldest_in_db <= hsa_start
+            if history_complete:
+                lookback = (
+                    connection.last_synced_at.date() - timedelta(days=7)
+                    if connection.last_synced_at else hsa_start
+                )
+                from_date = max(lookback, hsa_start)
+            else:
+                from_date = hsa_start
+        elif connection.last_synced_at:
+            from_date = connection.last_synced_at.date() - timedelta(days=7)
+        # else: first-ever sync, no HSA periods — fetch whatever Teller returns
 
     provider = get_teller_provider(access_token=connection.enrollment_token)
     external_txns = provider.list_transactions(

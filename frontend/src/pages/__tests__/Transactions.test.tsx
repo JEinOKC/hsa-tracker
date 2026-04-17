@@ -7,6 +7,7 @@ vi.mock('../../services/bank', () => ({
     listAllTransactions: vi.fn(),
     annotateTransaction: vi.fn(),
     listTransactionCategories: vi.fn(),
+    countTransactions: vi.fn(),
   },
   HSA_CATEGORIES: [
     { value: 'medical', label: 'Medical Care' },
@@ -96,6 +97,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   ;(bankService.listAllTransactions as any).mockResolvedValue([])
   ;(bankService.listTransactionCategories as any).mockResolvedValue([])
+  ;(bankService.countTransactions as any).mockResolvedValue(0)
   ;(familyService.list as any).mockResolvedValue([])
   ;(documentService.list as any).mockResolvedValue([])
   ;(householdService.getMine as any).mockResolvedValue(mockHousehold)
@@ -176,9 +178,76 @@ describe('Transactions page', () => {
       makeTxn({ id: 'txn-1' }),
       makeTxn({ id: 'txn-2', description: 'Walgreens' }),
     ])
+    ;(bankService.countTransactions as any).mockResolvedValue(2)
     render(<Transactions />)
     await waitFor(() => {
-      expect(screen.getByText(/2 transactions/i)).toBeInTheDocument()
+      expect(screen.getByText(/showing 2 of 2 transactions/i)).toBeInTheDocument()
+    })
+  })
+
+  describe('category filter', () => {
+    it('shows warning banner when teller category filter is active', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      ;(bankService.listTransactionCategories as any).mockResolvedValue(['health'])
+      ;(bankService.countTransactions as any).mockResolvedValue(1)
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+
+      fireEvent.change(screen.getByDisplayValue('All categories'), { target: { value: 'health' } })
+
+      await waitFor(() => {
+        expect(screen.getByText(/older transactions may not have bank-provided category data/i)).toBeInTheDocument()
+      })
+    })
+
+    it('does not show category warning when no category filter is active', async () => {
+      render(<Transactions />)
+      await waitFor(() => expect(bankService.listAllTransactions).toHaveBeenCalled())
+      expect(screen.queryByText(/older transactions may not have bank-provided category data/i)).not.toBeInTheDocument()
+    })
+
+    it('shows Showing X of Y when count exceeds loaded transactions', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      ;(bankService.countTransactions as any).mockResolvedValue(42)
+      render(<Transactions />)
+      await waitFor(() => {
+        expect(screen.getByText(/showing 1 of 42 transactions/i)).toBeInTheDocument()
+      })
+    })
+
+    it('sends include_potential_hsa=true when on HSA tab', async () => {
+      render(<Transactions />)
+      await waitFor(() => screen.getByRole('button', { name: 'HSA Transactions' }))
+      fireEvent.click(screen.getByRole('button', { name: 'HSA Transactions' }))
+      await waitFor(() => {
+        expect(bankService.listAllTransactions).toHaveBeenCalledWith(
+          expect.objectContaining({ is_hsa_eligible: true, include_potential_hsa: true })
+        )
+      })
+    })
+  })
+
+  describe('potential HSA callout', () => {
+    it('shows callout on HSA tab when potential_hsa rows are present', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ is_hsa_eligible: null, auto_flag: 'potential_hsa' }),
+      ])
+      ;(bankService.countTransactions as any).mockResolvedValue(1)
+      render(<Transactions />)
+      await waitFor(() => screen.getByRole('button', { name: 'HSA Transactions' }))
+      fireEvent.click(screen.getByRole('button', { name: 'HSA Transactions' }))
+      await waitFor(() => {
+        expect(screen.getByText(/need your review/i)).toBeInTheDocument()
+      })
+    })
+
+    it('does not show callout on All tab even with potential_hsa rows', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ is_hsa_eligible: null, auto_flag: 'potential_hsa' }),
+      ])
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+      expect(screen.queryByText(/need your review/i)).not.toBeInTheDocument()
     })
   })
 

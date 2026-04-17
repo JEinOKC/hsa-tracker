@@ -72,6 +72,7 @@ export interface AllTransactionsParams {
   start_date?: string
   end_date?: string
   is_hsa_eligible?: boolean
+  include_potential_hsa?: boolean
   family_member_id?: string
   status?: string
   reimbursement_status?: string
@@ -128,6 +129,9 @@ export const bankService = {
 
   listTransactionCategories: () =>
     api.get<string[]>('/bank/transactions/categories').then(r => r.data),
+
+  countTransactions: (params?: Omit<AllTransactionsParams, 'limit' | 'offset'>) =>
+    api.get<number>('/bank/transactions/count', { params }).then(r => r.data),
 
   annotateTransaction: (id: string, annotation: BankTransactionAnnotation) =>
     api.patch<BankTransaction>(`/bank/transactions/${id}`, annotation).then(r => r.data),

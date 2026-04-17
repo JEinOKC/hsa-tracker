@@ -251,3 +251,160 @@ class TestAnnotateTransaction:
         )
         assert r.status_code == 200
         assert r.json()["eligible_amount"] is None
+
+
+class TestCountTransactions:
+    def test_count_returns_total(self, client, db_session, test_user, auth_headers):
+        conn = _make_connection(db_session, test_user.id)
+        _make_txn(db_session, conn.id, description="CVS")
+        _make_txn(db_session, conn.id, description="Walgreens")
+        _make_txn(db_session, conn.id, description="Target")
+        db_session.commit()
+
+        r = client.get("/api/v1/bank/transactions/count", headers=auth_headers)
+        assert r.status_code == 200
+        assert r.json() == 3
+
+    def test_count_filters_by_teller_category(self, client, db_session, test_user, auth_headers):
+        """Regression: category filter applies to count, old txns without category are excluded."""
+        conn = _make_connection(db_session, test_user.id)
+        t1 = _make_txn(db_session, conn.id, description="Doctor")
+        t2 = _make_txn(db_session, conn.id, description="Dentist")
+        t3 = _make_txn(db_session, conn.id, description="Grocery")
+        t1.details = {"category": "health"}
+        t2.details = {"category": "health"}
+        t3.details = {"category": "food_and_drink"}
+        db_session.commit()
+
+        r = client.get(
+            "/api/v1/bank/transactions/count",
+            params={"teller_category": "health"},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        assert r.json() == 2
+
+    def test_count_excludes_txns_without_category_field(self, client, db_session, test_user, auth_headers):
+        """Old transactions without details.category are excluded when category filter is active."""
+        conn = _make_connection(db_session, test_user.id)
+        t1 = _make_txn(db_session, conn.id, description="Modern Health Txn")
+        t2 = _make_txn(db_session, conn.id, description="Old Health Txn")
+        t1.details = {"category": "health"}
+        t2.details = {}  # no category key
+        db_session.commit()
+
+        r = client.get(
+            "/api/v1/bank/transactions/count",
+            params={"teller_category": "health"},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        assert r.json() == 1
+
+    def test_count_returns_zero_when_no_matches(self, client, db_session, test_user, auth_headers):
+        conn = _make_connection(db_session, test_user.id)
+        _make_txn(db_session, conn.id, description="Grocery")
+        db_session.commit()
+
+        r = client.get(
+            "/api/v1/bank/transactions/count",
+            params={"teller_category": "health"},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        assert r.json() == 0
+
+    def test_count_requires_auth(self, client):
+        r = client.get("/api/v1/bank/transactions/count")
+        assert r.status_code in (401, 403)
+
+    def test_count_isolates_by_user(self, client, db_session, test_user, auth_headers):
+        other_user = User(
+            id=uuid.uuid4(), username="count_other", display_name="Other",
+            is_active=True, is_superuser=False,
+        )
+        db_session.add(other_user)
+        db_session.flush()
+        other_conn = _make_connection(db_session, other_user.id)
+        _make_txn(db_session, other_conn.id, description="Other txn")
+        my_conn = _make_connection(db_session, test_user.id)
+        _make_txn(db_session, my_conn.id, description="My txn")
+        db_session.commit()
+
+        r = client.get("/api/v1/bank/transactions/count", headers=auth_headers)
+        assert r.status_code == 200
+        assert r.json() == 1
+
+
+class TestIncludePotentialHsa:
+    def test_hsa_tab_excludes_potential_by_default(self, client, db_session, test_user, auth_headers):
+        """Regression: potential_hsa txns are invisible on HSA tab without the flag."""
+        conn = _make_connection(db_session, test_user.id)
+        txn = _make_txn(db_session, conn.id, description="Dentist 2025")
+        txn.auto_flag = "potential_hsa"
+        txn.is_hsa_eligible = None
+        db_session.commit()
+
+        r = client.get(
+            "/api/v1/bank/transactions",
+            params={"is_hsa_eligible": True},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        assert all(t["description"] != "Dentist 2025" for t in r.json())
+
+    def test_hsa_tab_includes_potential_when_flag_set(self, client, db_session, test_user, auth_headers):
+        """Regression: potential_hsa txns appear when include_potential_hsa=true."""
+        conn = _make_connection(db_session, test_user.id)
+        txn = _make_txn(db_session, conn.id, description="Dentist 2025")
+        txn.auto_flag = "potential_hsa"
+        txn.is_hsa_eligible = None
+        db_session.commit()
+
+        r = client.get(
+            "/api/v1/bank/transactions",
+            params={"is_hsa_eligible": True, "include_potential_hsa": True},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        descriptions = [t["description"] for t in r.json()]
+        assert "Dentist 2025" in descriptions
+
+    def test_non_hsa_not_included_with_potential_flag(self, client, db_session, test_user, auth_headers):
+        """Unreviewed txns with no auto_flag are NOT included even with include_potential_hsa=true."""
+        conn = _make_connection(db_session, test_user.id)
+        txn = _make_txn(db_session, conn.id, description="Random Purchase")
+        txn.auto_flag = None
+        txn.is_hsa_eligible = None
+        db_session.commit()
+
+        r = client.get(
+            "/api/v1/bank/transactions",
+            params={"is_hsa_eligible": True, "include_potential_hsa": True},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        assert all(t["description"] != "Random Purchase" for t in r.json())
+
+    def test_count_endpoint_respects_include_potential_hsa(self, client, db_session, test_user, auth_headers):
+        conn = _make_connection(db_session, test_user.id)
+        confirmed = _make_txn(db_session, conn.id, description="Confirmed HSA")
+        confirmed.is_hsa_eligible = True
+        potential = _make_txn(db_session, conn.id, description="Potential HSA")
+        potential.auto_flag = "potential_hsa"
+        potential.is_hsa_eligible = None
+        db_session.commit()
+
+        r_default = client.get(
+            "/api/v1/bank/transactions/count",
+            params={"is_hsa_eligible": True},
+            headers=auth_headers,
+        )
+        assert r_default.json() == 1
+
+        r_with_potential = client.get(
+            "/api/v1/bank/transactions/count",
+            params={"is_hsa_eligible": True, "include_potential_hsa": True},
+            headers=auth_headers,
+        )
+        assert r_with_potential.json() == 2

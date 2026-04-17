@@ -524,6 +524,7 @@ export default function Transactions() {
   const [filterAutoFlag, setFilterAutoFlag] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
   const [availableCategories, setAvailableCategories] = useState<string[]>([])
+  const [totalCount, setTotalCount] = useState<number | null>(null)
 
   // Debounce search so we don't fire on every keystroke
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -538,6 +539,7 @@ export default function Transactions() {
 
   const buildParams = useCallback((offset: number) => ({
     is_hsa_eligible: (tab === 'hsa' || tab === 'reimbursed') ? true : undefined,
+    include_potential_hsa: tab === 'hsa' ? true : undefined,
     reimbursement_status: tab === 'reimbursed' ? 'reimbursed' : tab === 'hsa' ? 'null' : undefined,
     has_documents: filterDocs === 'missing' ? false : filterDocs === 'attached' ? true : undefined,
     search: debouncedSearch || undefined,
@@ -551,28 +553,36 @@ export default function Transactions() {
     offset,
   }), [tab, filterDocs, debouncedSearch, filterMember, startDate, endDate, showHidden, filterAutoFlag, filterCategory])
 
+  const buildCountParams = useCallback(() => {
+    const { limit: _l, offset: _o, ...rest } = buildParams(0)
+    return rest
+  }, [buildParams])
+
   // Initial / filter-change load — resets the list
   const load = useCallback(async () => {
     setLoading(true)
+    setTotalCount(null)
     setError(null)
     try {
-      const [txns, fam, hh, cats] = await Promise.all([
+      const [txns, fam, hh, cats, count] = await Promise.all([
         bankService.listAllTransactions(buildParams(0)),
         familyService.list(),
         householdService.getMine(),
         bankService.listTransactionCategories(),
+        bankService.countTransactions(buildCountParams()),
       ])
       setTransactions(txns)
       setMembers(fam)
       setHousehold(hh)
       setAvailableCategories(cats)
+      setTotalCount(count)
       setHasMore(txns.length === PAGE_SIZE)
     } catch {
       setError('Failed to load transactions.')
     } finally {
       setLoading(false)
     }
-  }, [buildParams])
+  }, [buildParams, buildCountParams])
 
   useEffect(() => { load() }, [load])
 
@@ -845,6 +855,29 @@ export default function Transactions() {
         </div>
       </div>
 
+      {/* Category filter warning */}
+      {filterCategory && (
+        <div className="mb-3 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+          <span className="shrink-0">⚠</span>
+          <span>
+            Filtering by bank category <strong>{filterCategory.replace(/_/g, ' ')}</strong>.
+            Older transactions may not have bank-provided category data and won&apos;t appear here
+            even if they are of the same type.
+          </span>
+        </div>
+      )}
+
+      {/* Potential HSA review callout */}
+      {tab === 'hsa' && transactions.some(t => t.is_hsa_eligible === null) && (
+        <div className="mb-3 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+          <span className="shrink-0">⚠</span>
+          <span>
+            Some transactions below are flagged as <strong>Potential HSA</strong> and need your review.
+            Click a row to confirm or reject each one.
+          </span>
+        </div>
+      )}
+
       {/* Rule success toast */}
       {ruleSuccessMsg && (
         <div className="mb-4 flex items-start gap-3 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
@@ -905,7 +938,10 @@ export default function Transactions() {
       {!loading && transactions.length > 0 && (
         <div className="mt-3 flex items-center justify-between">
           <p className="text-xs text-gray-400">
-            {transactions.length} transaction{transactions.length !== 1 ? 's' : ''} loaded
+            {totalCount !== null
+              ? `Showing ${transactions.length} of ${totalCount} transaction${totalCount !== 1 ? 's' : ''}`
+              : `${transactions.length} transaction${transactions.length !== 1 ? 's' : ''} loaded`
+            }
             {hasMore ? ' — scroll for more' : ''}
           </p>
           {hasMore && (

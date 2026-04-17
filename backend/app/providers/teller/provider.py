@@ -46,18 +46,40 @@ class TellerProvider(BankProvider):
         from_date: Optional[date] = None,
         count: int = 100,
     ) -> list[ExternalTransaction]:
-        # Teller paginates via cursor; count caps the request size
-        data = self._client.get(
-            f"/accounts/{account_id}/transactions",
-            params={"count": min(count, 500)},
-        )
-        transactions = [self._parse_transaction(t, account_id) for t in data]
+        # Teller paginates via cursor; loop until from_date reached or last page
+        all_transactions: list[ExternalTransaction] = []
+        page_size = min(count, 500)
+        from_id: Optional[str] = None
 
-        # Filter client-side if a start date is requested
-        if from_date:
-            transactions = [t for t in transactions if t.date >= from_date]
+        while True:
+            params: dict = {"count": page_size}
+            if from_id:
+                params["from_id"] = from_id
 
-        return transactions
+            data = self._client.get(
+                f"/accounts/{account_id}/transactions",
+                params=params,
+            )
+            if not data:
+                break
+
+            page_txns = [self._parse_transaction(t, account_id) for t in data]
+
+            if from_date:
+                for t in page_txns:
+                    if t.date >= from_date:
+                        all_transactions.append(t)
+                    else:
+                        return all_transactions  # Past the cutoff — done
+            else:
+                all_transactions.extend(page_txns)
+
+            if len(data) < page_size:
+                break  # Short page = end of history
+
+            from_id = data[-1]["id"]  # Cursor for next page
+
+        return all_transactions
 
     # ------------------------------------------------------------------
     # Private parsers
