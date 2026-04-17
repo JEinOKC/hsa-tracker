@@ -104,12 +104,13 @@ class TestApplyAutoFlag:
         txn = _make_txn(
             details={"category": "food"},
             is_hsa_eligible=None,
+            description="AMAZON MARKETPLACE",
         )
         apply_auto_flag(txn)
         assert txn.auto_flag is None
 
     def test_no_change_when_details_is_none(self):
-        txn = _make_txn(details=None, is_hsa_eligible=None)
+        txn = _make_txn(details=None, is_hsa_eligible=None, description="AMAZON MARKETPLACE")
         apply_auto_flag(txn)
         assert txn.auto_flag is None
 
@@ -121,7 +122,7 @@ class TestApplyAutoFlag:
         assert txn.auto_flag is None
 
     def test_handles_non_dict_details_gracefully(self):
-        txn = _make_txn(details="unexpected string", is_hsa_eligible=None)
+        txn = _make_txn(details="unexpected string", is_hsa_eligible=None, description="AMAZON MARKETPLACE")
         apply_auto_flag(txn)
         assert txn.auto_flag is None
 
@@ -182,13 +183,19 @@ class TestEvaluateConditionText:
         cond = _make_condition("counterparty_name", "contains", "cvs")
         assert _evaluate_condition(txn, cond) is True
 
-    def test_counterparty_name_missing_returns_false_for_contains(self):
-        txn = _make_txn(details={})
+    def test_counterparty_name_falls_back_to_description(self):
+        # When counterparty is absent the description is used as fallback
+        txn = _make_txn(details={}, description="CVS Pharmacy")
+        cond = _make_condition("counterparty_name", "contains", "cvs")
+        assert _evaluate_condition(txn, cond) is True
+
+    def test_counterparty_name_missing_no_description_match(self):
+        txn = _make_txn(details={}, description="AMAZON MARKETPLACE")
         cond = _make_condition("counterparty_name", "contains", "cvs")
         assert _evaluate_condition(txn, cond) is False
 
     def test_counterparty_name_missing_counterparty_key(self):
-        txn = _make_txn(details={"category": "health"})
+        txn = _make_txn(details={"category": "health"}, description="AMAZON MARKETPLACE")
         cond = _make_condition("counterparty_name", "is", "CVS")
         assert _evaluate_condition(txn, cond) is False
 
@@ -472,7 +479,7 @@ class TestApplyAutoFlagCategories:
 
     @pytest.mark.parametrize("category", ["food_and_drink", "shopping", "travel", "entertainment"])
     def test_non_hsa_categories_do_not_trigger_flag(self, category):
-        txn = _make_txn(details={"category": category}, is_hsa_eligible=None)
+        txn = _make_txn(details={"category": category}, is_hsa_eligible=None, description="AMAZON MARKETPLACE")
         apply_auto_flag(txn)
         assert txn.auto_flag is None, f"Expected no flag for category={category!r}"
 
