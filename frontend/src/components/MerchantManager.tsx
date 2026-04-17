@@ -44,6 +44,8 @@ export default function MerchantManager({ onClose, onHidden }: Props) {
     try {
       await rulesService.create({
         name: `Hide ${merchant.normalized_name}`,
+        priority: 0,
+        is_active: true,
         conditions: [{
           field: 'counterparty_name',
           operator: 'contains',
