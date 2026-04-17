@@ -23,11 +23,38 @@ export interface BankAccount {
   owner_display_name?: string | null
 }
 
+export interface MerchantSummary {
+  normalized_name: string
+  transaction_count: number
+  total_amount: string
+  first_seen: string
+  last_seen: string
+  has_hsa: boolean
+  hsa_likelihood: 'likely' | 'unlikely' | 'unknown'
+}
+
+export interface ManualTransactionCreate {
+  transaction_date: string
+  amount: string
+  merchant_name: string
+  description?: string
+}
+
+export interface MatchCandidate {
+  id: string
+  transaction_date: string
+  amount: string
+  merchant_name: string | null
+  description: string | null
+  teller_category: string | null
+}
+
 export interface BankTransaction {
   id: string
-  connection_id: string
-  provider: string
-  provider_transaction_id: string
+  connection_id: string | null
+  source: string
+  provider: string | null
+  provider_transaction_id: string | null
   transaction_date: string
   description: string | null
   amount: string
@@ -150,4 +177,16 @@ export const bankService = {
 
   disconnectAccount: (id: string) =>
     api.delete(`/bank/accounts/${id}`),
+
+  listMerchants: () =>
+    api.get<MerchantSummary[]>('/bank/transactions/merchants').then(r => r.data),
+
+  findMatchingTransactions: (params: { amount: string; date: string; merchant?: string }) =>
+    api.get<MatchCandidate[]>('/transactions/match', { params }).then(r => r.data),
+
+  createManualTransaction: (payload: ManualTransactionCreate) =>
+    api.post<BankTransaction>('/transactions/', payload).then(r => r.data),
+
+  deleteManualTransaction: (id: string) =>
+    api.delete(`/transactions/${id}`),
 }

@@ -12,52 +12,34 @@ update these tests to verify real functionality. Each failing test = a backlog i
 
 class TestTransactionStubs:
     """
-    STATUS: NOT IMPLEMENTED
-    TODO: Create Transaction model, implement CRUD, receipt upload, tax year calc
+    STATUS: IMPLEMENTED — manual transaction CRUD is live.
+    These tests verify the authentication boundary of the implemented endpoints.
+    Full functional coverage is in test_manual_transactions.py.
     """
 
-    def test_list_returns_empty(self, client):
-        response = client.get("/api/v1/transactions/")
-        assert response.status_code == 200
-        assert response.json() == []
-
-    def test_create_returns_501(self, client):
+    def test_create_requires_auth(self, client):
         response = client.post(
             "/api/v1/transactions/",
             json={
-                "family_member_id": "test",
-                "category_id": "test",
                 "transaction_date": "2026-01-15",
                 "amount": "29.99",
                 "merchant_name": "CVS Pharmacy",
-                "payment_method": "hsa_card",
-                "reimbursement_status": "not_needed",
             },
         )
-        assert response.status_code == 501
+        assert response.status_code == 403
 
-    def test_get_by_id_returns_404(self, client):
-        response = client.get("/api/v1/transactions/some-id")
-        assert response.status_code == 404
-
-    def test_update_returns_501(self, client):
+    def test_update_requires_auth(self, client):
+        import uuid
         response = client.put(
-            "/api/v1/transactions/some-id",
-            json={
-                "family_member_id": "test",
-                "category_id": "test",
-                "transaction_date": "2026-01-15",
-                "amount": "29.99",
-                "merchant_name": "CVS Pharmacy",
-                "payment_method": "hsa_card",
-                "reimbursement_status": "not_needed",
-            },
+            f"/api/v1/transactions/{uuid.uuid4()}",
+            json={"amount": "10.00"},
         )
-        assert response.status_code == 501
+        assert response.status_code == 403
 
-    def test_delete_returns_501(self, client):
-        response = client.delete("/api/v1/transactions/some-id")
-        assert response.status_code == 501
+    def test_delete_requires_auth(self, client):
+        import uuid
+        response = client.delete(f"/api/v1/transactions/{uuid.uuid4()}")
+        assert response.status_code == 403
 
 
 # ---------------------------------------------------------------------------

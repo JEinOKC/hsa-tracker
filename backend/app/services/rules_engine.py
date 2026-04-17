@@ -10,6 +10,10 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.bank import BankTransaction
 from app.models.rules import HsaRule, HsaRuleCondition, HsaRuleAction
+from app.services.merchant_keywords import (
+    classify_merchant,
+    normalize_merchant_name,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -32,13 +36,25 @@ POTENTIAL_HSA_CATEGORIES: frozenset[str] = frozenset({
 
 
 def apply_auto_flag(txn: BankTransaction) -> None:
-    """Set auto_flag='potential_hsa' if the category suggests HSA eligibility
-    and the user hasn't reviewed the transaction yet. No-op otherwise."""
+    """Set auto_flag='potential_hsa' if the transaction looks HSA-eligible
+    and the user hasn't reviewed it yet.
+
+    Two signals are checked (either is sufficient):
+      1. Teller category is in POTENTIAL_HSA_CATEGORIES.
+      2. Normalized merchant name matches HSA_LIKELY_KEYWORDS (catches cases
+         where Teller miscategorizes a medical provider).
+    """
     if txn.is_hsa_eligible is not None:
         return
     category = _safe_details_category(txn)
     if category in POTENTIAL_HSA_CATEGORIES:
         txn.auto_flag = "potential_hsa"
+        return
+    merchant_raw = _safe_counterparty_name(txn)
+    if merchant_raw:
+        normalized = normalize_merchant_name(merchant_raw)
+        if classify_merchant(normalized) == "likely":
+            txn.auto_flag = "potential_hsa"
 
 
 def apply_rules_to_transaction(txn: BankTransaction, rules: list[HsaRule]) -> None:

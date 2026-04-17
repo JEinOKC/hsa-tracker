@@ -32,6 +32,7 @@ from app.models.user import User
 from app.providers import get_teller_provider, is_teller_configured
 from app.utils.access import get_readable_owner_ids, check_permission
 from app.services.rules_engine import apply_auto_flag, apply_rules_to_transaction, get_active_rules_for_user
+from app.services.merchant_keywords import classify_merchant, normalize_merchant_name
 
 router = APIRouter()
 
@@ -76,9 +77,10 @@ class BankAccountDetailResponse(BankAccountResponse):
 
 class BankTransactionResponse(BaseModel):
     id: UUID
-    connection_id: UUID
-    provider: str
-    provider_transaction_id: str
+    connection_id: Optional[UUID]
+    source: str = "teller"
+    provider: Optional[str]
+    provider_transaction_id: Optional[str]
     transaction_date: date
     description: Optional[str]
     amount: Decimal
@@ -112,6 +114,17 @@ class BankTransactionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class MerchantSummary(BaseModel):
+    """Aggregated view of a single normalized merchant across all transactions."""
+    normalized_name: str
+    transaction_count: int
+    total_amount: Decimal
+    first_seen: date
+    last_seen: date
+    has_hsa: bool
+    hsa_likelihood: str  # 'likely' | 'unlikely' | 'unknown'
 
 
 class BankTransactionAnnotation(BaseModel):
@@ -456,10 +469,98 @@ async def list_transaction_categories(
     return sorted(r[0] for r in rows if r[0])
 
 
+@router.get("/transactions/merchants", response_model=list[MerchantSummary])
+async def list_transaction_merchants(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return merchants grouped and normalized, sorted by transaction count descending.
+
+    Merchant names are normalized (store numbers stripped) and grouped so that
+    'MCDONALD'S #4829' and 'MCDONALD'S #3021' appear as a single 'MCDONALD'S' entry.
+    Each entry includes an hsa_likelihood classification ('likely', 'unlikely', 'unknown')
+    and a has_hsa flag (true if any transaction from that merchant is marked HSA-eligible).
+    Hidden transactions are excluded.
+    """
+    readable_owner_ids = get_readable_owner_ids(current_user, db, resource="transactions")
+    user_connection_ids = (
+        db.query(BankConnection.id)
+        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active == True)
+        .subquery()
+    )
+
+    # Fetch all non-hidden transactions. Extract counterparty name in Python to
+    # stay compatible with both PostgreSQL and SQLite (JSON path syntax differs).
+    txns = (
+        db.query(
+            BankTransaction.details,
+            BankTransaction.amount,
+            BankTransaction.transaction_date,
+            BankTransaction.is_hsa_eligible,
+        )
+        .filter(
+            (BankTransaction.connection_id.in_(user_connection_ids)) |
+            (BankTransaction.source == "manual"),
+            (BankTransaction.auto_flag != "hidden") | (BankTransaction.auto_flag.is_(None)),
+        )
+        .all()
+    )
+
+    # Group by normalized name in Python
+    from collections import defaultdict
+    from decimal import Decimal as D
+
+    groups: dict[str, dict] = defaultdict(lambda: {
+        "total_amount": D("0"),
+        "count": 0,
+        "first_seen": None,
+        "last_seen": None,
+        "has_hsa": False,
+    })
+
+    for details, amount, txn_date, is_hsa in txns:
+        cp = (details or {}).get("counterparty") or {}
+        raw_name = cp.get("name") if isinstance(cp, dict) else None
+        if not raw_name:
+            continue
+        normalized = normalize_merchant_name(raw_name)
+        if not normalized:
+            continue
+        g = groups[normalized]
+        g["count"] += 1
+        g["total_amount"] += abs(amount or D("0"))
+        if g["first_seen"] is None or txn_date < g["first_seen"]:
+            g["first_seen"] = txn_date
+        if g["last_seen"] is None or txn_date > g["last_seen"]:
+            g["last_seen"] = txn_date
+        if is_hsa:
+            g["has_hsa"] = True
+
+    results = [
+        MerchantSummary(
+            normalized_name=name,
+            transaction_count=g["count"],
+            total_amount=g["total_amount"],
+            first_seen=g["first_seen"],
+            last_seen=g["last_seen"],
+            has_hsa=g["has_hsa"],
+            hsa_likelihood=classify_merchant(name),
+        )
+        for name, g in groups.items()
+        if g["first_seen"] is not None
+    ]
+
+    # Sort: unlikely first (by count desc), then unknown, then likely last
+    likelihood_order = {"unlikely": 0, "unknown": 1, "likely": 2}
+    results.sort(key=lambda m: (likelihood_order[m.hsa_likelihood], -m.transaction_count))
+    return results
+
+
 def _build_transaction_query(
     db: Session,
     user_connection_ids,
     *,
+    current_user_id: Optional[UUID] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     is_hsa_eligible: Optional[bool] = None,
@@ -473,11 +574,18 @@ def _build_transaction_query(
     auto_flag_filter: Optional[str] = None,
     teller_category: Optional[str] = None,
 ):
-    """Return a filtered SQLAlchemy query for BankTransaction (no limit/offset applied)."""
-    query = (
-        db.query(BankTransaction)
-        .filter(BankTransaction.connection_id.in_(user_connection_ids))
-    )
+    """Return a filtered SQLAlchemy query for BankTransaction (no limit/offset applied).
+
+    Includes both provider-synced transactions (via connection_id) and manual
+    transactions owned directly by current_user_id.
+    """
+    ownership_filter = BankTransaction.connection_id.in_(user_connection_ids)
+    if current_user_id is not None:
+        ownership_filter = or_(
+            ownership_filter,
+            (BankTransaction.source == "manual") & (BankTransaction.user_id == current_user_id),
+        )
+    query = db.query(BankTransaction).filter(ownership_filter)
     if start_date:
         query = query.filter(BankTransaction.transaction_date >= start_date)
     if end_date:
@@ -553,6 +661,7 @@ async def count_transactions(
     )
     return _build_transaction_query(
         db, user_connection_ids,
+        current_user_id=current_user.id,
         start_date=start_date,
         end_date=end_date,
         is_hsa_eligible=is_hsa_eligible,
@@ -596,6 +705,7 @@ async def list_all_transactions(
     )
     query = _build_transaction_query(
         db, user_connection_ids,
+        current_user_id=current_user.id,
         start_date=start_date,
         end_date=end_date,
         is_hsa_eligible=is_hsa_eligible,
