@@ -114,7 +114,9 @@ class TestApplyAutoFlag:
         assert txn.auto_flag is None
 
     def test_no_change_when_details_missing_category_key(self):
-        txn = _make_txn(details={"counterparty": {"name": "CVS"}}, is_hsa_eligible=None)
+        # Use a merchant that isn't in either keyword list so only the category
+        # path is exercised. "AMAZON MARKETPLACE" is classified 'unknown'.
+        txn = _make_txn(details={"counterparty": {"name": "AMAZON MARKETPLACE"}}, is_hsa_eligible=None)
         apply_auto_flag(txn)
         assert txn.auto_flag is None
 

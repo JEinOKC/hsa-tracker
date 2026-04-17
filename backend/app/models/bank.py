@@ -63,19 +63,29 @@ class BankConnection(Base):
 
 
 class BankTransaction(Base):
-    """A transaction imported from an external bank provider."""
+    """A bank transaction — either synced from a provider (Teller) or entered manually."""
 
     __tablename__ = "bank_transactions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Nullable for manual transactions that have no bank connection
     connection_id = Column(
         UUID(as_uuid=True),
         ForeignKey("bank_connections.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
-    provider = Column(String(50), nullable=False)
-    provider_transaction_id = Column(String(255), nullable=False, index=True)
+    # Direct user ownership — required for manual transactions (no connection to derive from)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    # 'teller' for synced transactions, 'manual' for user-entered ones
+    source = Column(String(20), nullable=False, server_default="teller")
+    provider = Column(String(50), nullable=True)
+    provider_transaction_id = Column(String(255), nullable=True, index=True)
 
     transaction_date = Column(Date, nullable=False, index=True)
     description = Column(String(500))
@@ -121,6 +131,7 @@ class BankTransaction(Base):
     )
 
     __table_args__ = (
+        # Only enforce uniqueness for provider-synced rows (nulls are ignored by postgres unique constraints)
         UniqueConstraint(
             "connection_id",
             "provider_transaction_id",
@@ -129,6 +140,10 @@ class BankTransaction(Base):
         CheckConstraint(
             "auto_flag IN ('potential_hsa', 'hidden') OR auto_flag IS NULL",
             name="ck_bank_txn_auto_flag",
+        ),
+        CheckConstraint(
+            "source IN ('teller', 'manual')",
+            name="ck_bank_txn_source",
         ),
     )
 

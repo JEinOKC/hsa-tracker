@@ -6,6 +6,8 @@ import { rulesService, HsaRule } from '../services/rules'
 import { householdService, Household } from '../services/household'
 import DocumentUpload from '../components/DocumentUpload'
 import RuleEditor from '../components/RuleEditor'
+import MerchantManager from '../components/MerchantManager'
+import ManualTransactionForm from '../components/ManualTransactionForm'
 
 function formatAmount(amount: string): string {
   const n = parseFloat(amount)
@@ -508,6 +510,8 @@ export default function Transactions() {
   const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showBackToTop, setShowBackToTop] = useState(false)
+  const [showMerchantManager, setShowMerchantManager] = useState(false)
+  const [showManualForm, setShowManualForm] = useState(false)
 
   useEffect(() => {
     const onScroll = () => setShowBackToTop(window.scrollY > 400)
@@ -699,6 +703,22 @@ export default function Transactions() {
 
   return (
     <>
+    {/* Merchant manager drawer */}
+    {showMerchantManager && (
+      <MerchantManager
+        onClose={() => setShowMerchantManager(false)}
+        onHidden={() => load()}
+      />
+    )}
+
+    {/* Manual transaction form */}
+    {showManualForm && (
+      <ManualTransactionForm
+        onClose={() => setShowManualForm(false)}
+        onCreated={txn => setTransactions(prev => [txn, ...prev])}
+      />
+    )}
+
     {/* Tag dialog */}
     {tagPromptTxn && (
       <TagDialog
@@ -745,6 +765,22 @@ export default function Transactions() {
             </p>
           </div>
         )}
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex gap-2 mb-3 justify-end">
+        <button
+          onClick={() => setShowMerchantManager(true)}
+          className="text-sm text-gray-600 border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50"
+        >
+          Manage merchants
+        </button>
+        <button
+          onClick={() => setShowManualForm(true)}
+          className="text-sm text-white bg-blue-600 border border-blue-600 rounded-lg px-3 py-1.5 hover:bg-blue-700"
+        >
+          + Add transaction
+        </button>
       </div>
 
       {/* Tabs */}
