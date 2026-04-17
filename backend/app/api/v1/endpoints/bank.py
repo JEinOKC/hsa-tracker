@@ -494,6 +494,7 @@ async def list_transaction_merchants(
     txns = (
         db.query(
             BankTransaction.details,
+            BankTransaction.description,
             BankTransaction.amount,
             BankTransaction.transaction_date,
             BankTransaction.is_hsa_eligible,
@@ -518,9 +519,9 @@ async def list_transaction_merchants(
         "has_hsa": False,
     })
 
-    for details, amount, txn_date, is_hsa in txns:
+    for details, description, amount, txn_date, is_hsa in txns:
         cp = (details or {}).get("counterparty") or {}
-        raw_name = cp.get("name") if isinstance(cp, dict) else None
+        raw_name = (cp.get("name") if isinstance(cp, dict) else None) or description
         if not raw_name:
             continue
         normalized = normalize_merchant_name(raw_name)

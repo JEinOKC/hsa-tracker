@@ -419,7 +419,7 @@ class TestApplyRules:
 
     def test_apply_with_no_rules_returns_zero(self, client, auth_headers, db_session, test_user):
         conn = _make_connection(db_session, test_user.id)
-        _make_transaction(db_session, conn.id)
+        _make_transaction(db_session, conn.id, description="AMAZON MARKETPLACE")
 
         resp = client.post("/api/v1/bank/rules/apply", headers=auth_headers)
         assert resp.status_code == 200

@@ -113,17 +113,23 @@ def _safe_details_category(txn: BankTransaction) -> Optional[str]:
 
 
 def _safe_counterparty_name(txn: BankTransaction) -> str:
-    """Extract details['counterparty']['name'], defaulting to ''."""
+    """Extract counterparty name, falling back to description.
+
+    Teller doesn't always populate details.counterparty.name (depends on the
+    payment terminal). When it's absent we fall back to txn.description so that
+    rules and keyword matching still work for those transactions.
+    """
     try:
         details = txn.details
-        if not details or not isinstance(details, dict):
-            return ""
-        cp = details.get("counterparty")
-        if not cp or not isinstance(cp, dict):
-            return ""
-        return cp.get("name") or ""
+        if details and isinstance(details, dict):
+            cp = details.get("counterparty")
+            if cp and isinstance(cp, dict):
+                name = cp.get("name")
+                if name:
+                    return name
     except Exception:
-        return ""
+        pass
+    return txn.description or ""
 
 
 def _rule_matches(txn: BankTransaction, rule: HsaRule) -> bool:
