@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     # AWS S3
     aws_access_key_id: str
     aws_secret_access_key: str
+    aws_session_token: Optional[str] = None  # set by Lambda runtime for STS temp credentials
     aws_s3_bucket: str
     aws_s3_region: str = "us-east-1"
 

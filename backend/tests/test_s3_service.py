@@ -22,15 +22,17 @@ os.environ.setdefault("WEBAUTHN_RP_NAME", "Test")
 os.environ.setdefault("WEBAUTHN_ORIGIN", "http://localhost:3001")
 
 
-def _make_service(mock_client=None):
+def _make_service(mock_client=None, session_token=None):
     """Return an S3Service with a patched boto3 client."""
-    from app.services.s3 import S3Service
+    from app.services import s3 as s3_module
     if mock_client is None:
         mock_client = MagicMock()
-    with patch("app.services.s3.boto3") as mock_boto3:
+    with patch("app.services.s3.boto3") as mock_boto3, \
+         patch.object(s3_module.settings, "aws_session_token", session_token):
         mock_boto3.client.return_value = mock_client
-        service = S3Service()
-    return service, mock_client
+        service = s3_module.S3Service()
+        boto3_call_kwargs = mock_boto3.client.call_args[1]
+    return service, mock_client, boto3_call_kwargs
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +43,7 @@ class TestPresignedUrls:
     def test_put_url_calls_generate_presigned_url_with_put_object(self):
         mock_client = MagicMock()
         mock_client.generate_presigned_url.return_value = "https://s3.example.com/put-url"
-        service, _ = _make_service(mock_client)
+        service, _, _ = _make_service(mock_client)
 
         url = service.generate_presigned_put_url("some/key.jpg", "image/jpeg")
 
@@ -55,7 +57,7 @@ class TestPresignedUrls:
     def test_put_url_respects_custom_expiry(self):
         mock_client = MagicMock()
         mock_client.generate_presigned_url.return_value = "https://s3.example.com/url"
-        service, _ = _make_service(mock_client)
+        service, _, _ = _make_service(mock_client)
 
         service.generate_presigned_put_url("k.jpg", "image/jpeg", expires_in=60)
 
@@ -65,7 +67,7 @@ class TestPresignedUrls:
     def test_get_url_calls_generate_presigned_url_with_get_object(self):
         mock_client = MagicMock()
         mock_client.generate_presigned_url.return_value = "https://s3.example.com/get-url"
-        service, _ = _make_service(mock_client)
+        service, _, _ = _make_service(mock_client)
 
         url = service.generate_presigned_get_url("some/key.jpg")
 
@@ -85,7 +87,7 @@ class TestObjectExists:
     def test_returns_true_when_head_object_succeeds(self):
         mock_client = MagicMock()
         mock_client.head_object.return_value = {"ContentLength": 1024}
-        service, _ = _make_service(mock_client)
+        service, _, _ = _make_service(mock_client)
 
         assert service.object_exists("dev/user/txn/file.jpg") is True
         mock_client.head_object.assert_called_once_with(
@@ -96,7 +98,7 @@ class TestObjectExists:
         mock_client = MagicMock()
         error_response = {"Error": {"Code": "404", "Message": "Not Found"}}
         mock_client.head_object.side_effect = ClientError(error_response, "HeadObject")
-        service, _ = _make_service(mock_client)
+        service, _, _ = _make_service(mock_client)
 
         assert service.object_exists("missing/key.jpg") is False
 
@@ -108,13 +110,28 @@ class TestObjectExists:
 class TestDelete:
     def test_delete_calls_delete_object(self):
         mock_client = MagicMock()
-        service, _ = _make_service(mock_client)
+        service, _, _ = _make_service(mock_client)
 
         service.delete("dev/user/txn/receipt.pdf")
 
         mock_client.delete_object.assert_called_once_with(
             Bucket=service.bucket, Key="dev/user/txn/receipt.pdf"
         )
+
+
+# ---------------------------------------------------------------------------
+# STS session token (regression: Lambda presigned URLs returned 403)
+# ---------------------------------------------------------------------------
+
+class TestSessionToken:
+    def test_session_token_passed_to_boto3_when_set(self):
+        _, _, kwargs = _make_service(session_token="test-session-token")
+        assert kwargs.get("aws_session_token") == "test-session-token"
+
+    def test_session_token_is_none_when_not_set(self):
+        # Simulates local dev with long-term IAM user credentials (no STS token)
+        _, _, kwargs = _make_service()
+        assert kwargs.get("aws_session_token") is None
 
 
 # ---------------------------------------------------------------------------
