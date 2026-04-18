@@ -126,42 +126,32 @@ class TestApplyAutoFlag:
         apply_auto_flag(txn)
         assert txn.auto_flag is None
 
-    def test_unlikely_merchant_gets_hidden(self):
-        # Merchant in HSA_UNLIKELY_KEYWORDS → auto_flag = 'hidden'
+    def test_unlikely_merchant_does_not_set_auto_flag(self):
+        # NON_HSA filtering is query-time, not written to DB — apply_auto_flag leaves these alone
         txn = _make_txn(
             details={"counterparty": {"name": "MCDONALD'S"}},
             is_hsa_eligible=None,
         )
         apply_auto_flag(txn)
-        assert txn.auto_flag == "hidden"
+        assert txn.auto_flag is None
 
-    def test_non_hsa_category_gets_hidden(self):
-        # Teller says food_and_drink, merchant is unknown → hidden
+    def test_non_hsa_category_does_not_set_auto_flag(self):
+        # NON_HSA filtering is query-time — apply_auto_flag leaves unreviewed food txns alone
         txn = _make_txn(
             details={"category": "food_and_drink", "counterparty": {"name": "AMAZON MARKETPLACE"}},
             is_hsa_eligible=None,
         )
         apply_auto_flag(txn)
-        assert txn.auto_flag == "hidden"
+        assert txn.auto_flag is None
 
-    def test_likely_merchant_overrides_non_hsa_category(self):
-        # Walgreens miscategorized as food_and_drink should still be potential_hsa
+    def test_likely_merchant_still_flagged_despite_non_hsa_category(self):
+        # Walgreens miscategorized as food_and_drink → still potential_hsa via keyword
         txn = _make_txn(
             details={"category": "food_and_drink", "counterparty": {"name": "WALGREENS"}},
             is_hsa_eligible=None,
         )
         apply_auto_flag(txn)
         assert txn.auto_flag == "potential_hsa"
-
-    def test_non_hsa_category_does_not_hide_reviewed_transaction(self):
-        # is_hsa_eligible already set → no change regardless of category
-        txn = _make_txn(
-            details={"category": "food_and_drink"},
-            is_hsa_eligible=True,
-            auto_flag=None,
-        )
-        apply_auto_flag(txn)
-        assert txn.auto_flag is None
 
 
 # ---------------------------------------------------------------------------
@@ -514,16 +504,9 @@ class TestApplyAutoFlagCategories:
         apply_auto_flag(txn)
         assert txn.auto_flag == "potential_hsa", f"Expected potential_hsa for category={category!r}"
 
-    @pytest.mark.parametrize("category", ["food_and_drink", "travel", "entertainment", "fuel", "gambling", "subscription"])
-    def test_non_hsa_categories_get_hidden(self, category):
-        # NON_HSA_CATEGORIES should auto-hide when merchant is unknown
-        txn = _make_txn(details={"category": category}, is_hsa_eligible=None, description="AMAZON MARKETPLACE")
-        apply_auto_flag(txn)
-        assert txn.auto_flag == "hidden", f"Expected hidden for category={category!r}"
-
-    @pytest.mark.parametrize("category", ["shopping", "transportation", "other"])
-    def test_uncategorized_categories_get_no_flag(self, category):
-        # Categories not in either list → no auto-flag for unknown merchants
+    @pytest.mark.parametrize("category", ["food_and_drink", "travel", "entertainment", "fuel", "gambling", "subscription", "shopping", "transportation", "other"])
+    def test_non_potential_hsa_categories_do_not_set_auto_flag(self, category):
+        # NON_HSA filtering happens at query time; apply_auto_flag leaves these untouched
         txn = _make_txn(details={"category": category}, is_hsa_eligible=None, description="AMAZON MARKETPLACE")
         apply_auto_flag(txn)
         assert txn.auto_flag is None, f"Expected no flag for category={category!r}"

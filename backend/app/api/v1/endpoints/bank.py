@@ -31,7 +31,7 @@ from app.models.household import Household, HouseholdMembership
 from app.models.user import User
 from app.providers import get_teller_provider, is_teller_configured
 from app.utils.access import get_readable_owner_ids, check_permission
-from app.services.rules_engine import apply_auto_flag, apply_rules_to_transaction, get_active_rules_for_user
+from app.services.rules_engine import apply_auto_flag, apply_rules_to_transaction, get_active_rules_for_user, NON_HSA_CATEGORIES
 from app.services.merchant_keywords import classify_merchant, normalize_merchant_name
 
 router = APIRouter()
@@ -626,6 +626,16 @@ def _build_transaction_query(
     if not show_hidden:
         query = query.filter(
             (BankTransaction.auto_flag != "hidden") | BankTransaction.auto_flag.is_(None)
+        )
+        # Also exclude unreviewed transactions in clearly non-medical Teller categories.
+        # Manually reviewed transactions (is_hsa_eligible is not None) always show.
+        # Transactions with no category (NULL) always show — we can't classify them.
+        non_hsa_list = list(NON_HSA_CATEGORIES)
+        category_col = BankTransaction.details["category"].astext
+        query = query.filter(
+            BankTransaction.is_hsa_eligible.isnot(None) |
+            category_col.is_(None) |
+            ~category_col.in_(non_hsa_list)
         )
     if auto_flag_filter is not None:
         query = query.filter(BankTransaction.auto_flag == auto_flag_filter)
