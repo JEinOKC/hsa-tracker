@@ -572,6 +572,7 @@ def _build_transaction_query(
     has_documents: Optional[bool] = None,
     search: Optional[str] = None,
     show_hidden: bool = False,
+    show_all_categories: bool = False,
     auto_flag_filter: Optional[str] = None,
     teller_category: Optional[str] = None,
 ):
@@ -627,16 +628,17 @@ def _build_transaction_query(
         query = query.filter(
             (BankTransaction.auto_flag != "hidden") | BankTransaction.auto_flag.is_(None)
         )
-        # Also exclude unreviewed transactions in clearly non-medical Teller categories.
-        # Manually reviewed transactions (is_hsa_eligible is not None) always show.
-        # Transactions with no category (NULL) always show — we can't classify them.
-        non_hsa_list = list(NON_HSA_CATEGORIES)
-        category_col = BankTransaction.details["category"].astext
-        query = query.filter(
-            BankTransaction.is_hsa_eligible.isnot(None) |
-            category_col.is_(None) |
-            ~category_col.in_(non_hsa_list)
-        )
+        # In "Smart" mode (default), exclude unreviewed transactions in clearly
+        # non-medical Teller categories. "All" mode bypasses this filter.
+        # Transactions with no category (NULL) always show.
+        if not show_all_categories:
+            non_hsa_list = list(NON_HSA_CATEGORIES)
+            category_col = BankTransaction.details["category"].astext
+            query = query.filter(
+                BankTransaction.is_hsa_eligible.isnot(None) |
+                category_col.is_(None) |
+                ~category_col.in_(non_hsa_list)
+            )
     if auto_flag_filter is not None:
         query = query.filter(BankTransaction.auto_flag == auto_flag_filter)
     if teller_category is not None:
@@ -658,6 +660,7 @@ async def count_transactions(
     has_documents: Optional[bool] = Query(None),
     search: Optional[str] = Query(None),
     show_hidden: bool = Query(False),
+    show_all_categories: bool = Query(False),
     auto_flag_filter: Optional[str] = Query(None, alias="auto_flag"),
     teller_category: Optional[str] = Query(None),
     db: Session = Depends(get_db),
@@ -683,6 +686,7 @@ async def count_transactions(
         has_documents=has_documents,
         search=search,
         show_hidden=show_hidden,
+        show_all_categories=show_all_categories,
         auto_flag_filter=auto_flag_filter,
         teller_category=teller_category,
     ).count()
@@ -700,6 +704,7 @@ async def list_all_transactions(
     has_documents: Optional[bool] = Query(None, description="Filter by documentation status (true = has receipts, false = missing receipts)"),
     search: Optional[str] = Query(None, description="Case-insensitive substring match on description"),
     show_hidden: bool = Query(False, description="Include transactions flagged as hidden (default: excluded)"),
+    show_all_categories: bool = Query(False, description="Disable smart category filter — show non-HSA categories like food, gas, entertainment"),
     auto_flag_filter: Optional[str] = Query(None, alias="auto_flag", description="Filter to transactions with this auto_flag value"),
     teller_category: Optional[str] = Query(None, description="Filter by Teller-provided category (e.g. 'health', 'food_and_drink')"),
     limit: int = Query(50, le=2000),
@@ -727,6 +732,7 @@ async def list_all_transactions(
         has_documents=has_documents,
         search=search,
         show_hidden=show_hidden,
+        show_all_categories=show_all_categories,
         auto_flag_filter=auto_flag_filter,
         teller_category=teller_category,
     )
