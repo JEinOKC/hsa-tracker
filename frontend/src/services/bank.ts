@@ -108,6 +108,7 @@ export interface AllTransactionsParams {
   show_hidden?: boolean
   auto_flag?: string
   teller_category?: string
+  show_all_categories?: boolean
   limit?: number
   offset?: number
 }

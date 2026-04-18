@@ -711,7 +711,8 @@ export default function Transactions() {
     end_date: endDate || undefined,
     show_hidden: showHidden || undefined,
     auto_flag: filterAutoFlag || undefined,
-    teller_category: filterCategory || undefined,
+    show_all_categories: filterCategory === '__all__' ? true : undefined,
+    teller_category: (filterCategory && filterCategory !== '__all__') ? filterCategory : undefined,
     limit: PAGE_SIZE,
     offset,
   }), [tab, filterDocs, debouncedSearch, filterMember, startDate, endDate, showHidden, filterAutoFlag, filterCategory])
@@ -840,7 +841,7 @@ export default function Transactions() {
         .reduce((sum, t) => sum + parseFloat(t.amount), 0)
     : null
 
-  const hasFilters = !!(search || filterMember || startDate || endDate || filterDocs || showHidden || filterAutoFlag || filterCategory)
+  const hasFilters = !!(search || filterMember || startDate || endDate || filterDocs || showHidden || filterAutoFlag || (filterCategory && filterCategory !== '__all__'))
 
   return (
     <>
@@ -987,9 +988,10 @@ export default function Transactions() {
               onChange={e => setFilterCategory(e.target.value)}
               className="min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
             >
-              <option value="">All categories</option>
+              <option value="">Smart</option>
+              <option value="__all__">All categories</option>
               {availableCategories.map(c => (
-                <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>
+                <option key={c} value={c}>{c.replace(/_/g, ' ').replace(/^\w/, l => l.toUpperCase())}</option>
               ))}
             </select>
           )}
@@ -1032,11 +1034,11 @@ export default function Transactions() {
       </div>
 
       {/* Category filter warning */}
-      {filterCategory && (
+      {filterCategory && filterCategory !== '__all__' && (
         <div className="mb-3 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
           <span className="shrink-0">⚠</span>
           <span>
-            Filtering by bank category <strong>{filterCategory.replace(/_/g, ' ')}</strong>.
+            Filtering by bank category <strong>{filterCategory.replace(/_/g, ' ').replace(/^\w/, l => l.toUpperCase())}</strong>.
             Older transactions may not have bank-provided category data and won&apos;t appear here
             even if they are of the same type.
           </span>

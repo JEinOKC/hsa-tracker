@@ -193,7 +193,7 @@ describe('Transactions page', () => {
       render(<Transactions />)
       await waitFor(() => screen.getByText('CVS Pharmacy'))
 
-      fireEvent.change(screen.getByDisplayValue('All categories'), { target: { value: 'health' } })
+      fireEvent.change(screen.getByDisplayValue('Smart'), { target: { value: 'health' } })
 
       await waitFor(() => {
         expect(screen.getByText(/older transactions may not have bank-provided category data/i)).toBeInTheDocument()
