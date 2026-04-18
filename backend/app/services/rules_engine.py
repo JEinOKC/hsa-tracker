@@ -29,6 +29,18 @@ POTENTIAL_HSA_CATEGORIES: frozenset[str] = frozenset({
     "fitness",        # gym memberships (sometimes HSA-eligible)
 })
 
+# Teller category values that are never plausibly HSA-eligible.
+# Used as a fallback when the merchant name is unknown/unreadable.
+# Conservative list — only categories where no purchase could be medical.
+NON_HSA_CATEGORIES: frozenset[str] = frozenset({
+    "food_and_drink",   # restaurants, fast food, bars
+    "entertainment",    # movies, concerts, sports
+    "travel",           # flights, hotels, car rentals
+    "fuel",             # gas stations
+    "gambling",         # casinos, lottery
+    "subscription",     # streaming, software subscriptions
+})
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -36,13 +48,15 @@ POTENTIAL_HSA_CATEGORIES: frozenset[str] = frozenset({
 
 
 def apply_auto_flag(txn: BankTransaction) -> None:
-    """Set auto_flag='potential_hsa' if the transaction looks HSA-eligible
-    and the user hasn't reviewed it yet.
+    """Set auto_flag based on HSA likelihood signals.
 
-    Two signals are checked (either is sufficient):
-      1. Teller category is in POTENTIAL_HSA_CATEGORIES.
-      2. Normalized merchant name matches HSA_LIKELY_KEYWORDS (catches cases
-         where Teller miscategorizes a medical provider).
+    Signals checked in order (first match wins):
+      1. Teller category in POTENTIAL_HSA_CATEGORIES → potential_hsa
+      2. Merchant keyword classified as 'likely'      → potential_hsa
+      3. Merchant keyword classified as 'unlikely'    → hidden
+      4. Teller category in NON_HSA_CATEGORIES        → hidden (fallback when merchant unknown)
+
+    Manually reviewed transactions (is_hsa_eligible is not None) are never touched.
     """
     if txn.is_hsa_eligible is not None:
         return
@@ -53,8 +67,15 @@ def apply_auto_flag(txn: BankTransaction) -> None:
     merchant_raw = _safe_counterparty_name(txn)
     if merchant_raw:
         normalized = normalize_merchant_name(merchant_raw)
-        if classify_merchant(normalized) == "likely":
+        classification = classify_merchant(normalized)
+        if classification == "likely":
             txn.auto_flag = "potential_hsa"
+            return
+        if classification == "unlikely":
+            txn.auto_flag = "hidden"
+            return
+    if category in NON_HSA_CATEGORIES:
+        txn.auto_flag = "hidden"
 
 
 def apply_rules_to_transaction(txn: BankTransaction, rules: list[HsaRule]) -> None:

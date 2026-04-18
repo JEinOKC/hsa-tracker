@@ -277,25 +277,184 @@ function EligibleAmountEditor({ txn, onChange }: EligibleAmountEditorProps) {
 
 // ─── Tag dialog ───────────────────────────────────────────────────────────────
 
+/** Extract the most useful merchant name from a transaction for rule creation. */
+function extractMerchantName(txn: BankTransaction): string | null {
+  const details = txn.details as { counterparty?: { name?: string } } | null
+  if (details?.counterparty?.name) return details.counterparty.name
+  return txn.description || null
+}
+
 interface TagDialogProps {
   txn: BankTransaction
-  onMarkHsa: () => void
-  onMarkNotHsa: () => void
+  onChange: (updated: BankTransaction) => void
+  onHidden: () => void
   onCreateHsaRule: () => void
-  onHideOne: () => void
   onCreateHideRule: () => void
   onClose: () => void
 }
 
-function TagDialog({ txn, onMarkHsa, onMarkNotHsa, onCreateHsaRule, onHideOne, onCreateHideRule, onClose }: TagDialogProps) {
+function TagDialog({ txn, onChange, onHidden, onCreateHsaRule, onCreateHideRule, onClose }: TagDialogProps) {
+  const [step, setStep] = useState<'options' | 'remember-hide' | 'remember-hsa'>('options')
+  const [merchantName, setMerchantName] = useState<string | null>(null)
+  const [ruleCreating, setRuleCreating] = useState(false)
+
   const amount = parseFloat(txn.amount)
+
+  const handleMarkHsa = async () => {
+    const updated = await bankService.annotateTransaction(txn.id, { is_hsa_eligible: true })
+    onChange(updated)
+    const merchant = extractMerchantName(txn)
+    if (merchant) {
+      setMerchantName(merchant)
+      setStep('remember-hsa')
+    } else {
+      onClose()
+    }
+  }
+
+  const handleMarkNotHsa = async () => {
+    const updated = await bankService.annotateTransaction(txn.id, { is_hsa_eligible: false })
+    onChange(updated)
+    const merchant = extractMerchantName(txn)
+    if (merchant) {
+      setMerchantName(merchant)
+      setStep('remember-hide')
+    } else {
+      onClose()
+    }
+  }
+
+  const handleHideOne = async () => {
+    await bankService.annotateTransaction(txn.id, { auto_flag: 'hidden' })
+    onHidden()  // reload list — hidden transactions are excluded by the API by default
+    onClose()
+  }
+
+  const handleCreateMerchantHideRule = async () => {
+    if (!merchantName) { onClose(); return }
+    setRuleCreating(true)
+    try {
+      await rulesService.create({
+        name: `Hide ${merchantName}`,
+        priority: 0,
+        is_active: true,
+        conditions: [{ field: 'counterparty_name', operator: 'contains', value: merchantName }],
+        actions: [{ action_type: 'hide' }],
+        placement: 'last',
+      })
+      await rulesService.applyAll()
+      onHidden()
+    } finally {
+      setRuleCreating(false)
+      onClose()
+    }
+  }
+
+  const handleCreateMerchantFlagRule = async () => {
+    if (!merchantName) { onClose(); return }
+    setRuleCreating(true)
+    try {
+      await rulesService.create({
+        name: `Flag ${merchantName} as potential HSA`,
+        priority: 0,
+        is_active: true,
+        conditions: [{ field: 'counterparty_name', operator: 'contains', value: merchantName }],
+        actions: [{ action_type: 'mark_potential' }],
+        placement: 'last',
+      })
+      await rulesService.applyAll()
+    } finally {
+      setRuleCreating(false)
+      onClose()
+    }
+  }
+
+  const backdrop = "fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+  const card = "bg-white rounded-xl shadow-xl w-full max-w-sm"
+  const header = "px-5 py-4 border-b border-gray-200 flex items-center justify-between"
+
+  // Step 2a — offer to hide all from this merchant
+  if (step === 'remember-hide' && merchantName) {
+    return (
+      <div className={backdrop} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+        <div className={card}>
+          <div className={header}>
+            <h2 className="text-base font-semibold text-gray-900">Remember this merchant?</h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+          </div>
+          <div className="px-5 py-4">
+            <p className="text-sm text-gray-700 mb-1">
+              Want to hide all <span className="font-semibold">{merchantName}</span> transactions?
+            </p>
+            <p className="text-xs text-gray-400 mb-4">
+              A rule will be created to hide this merchant automatically going forward.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={onClose}
+                className="px-3 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                No thanks
+              </button>
+              <button
+                onClick={handleCreateMerchantHideRule}
+                disabled={ruleCreating}
+                className="px-3 py-1.5 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50"
+              >
+                {ruleCreating ? 'Creating…' : 'Yes, hide all'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Step 2b — offer to flag future transactions from this merchant
+  if (step === 'remember-hsa' && merchantName) {
+    return (
+      <div className={backdrop} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+        <div className={card}>
+          <div className={header}>
+            <h2 className="text-base font-semibold text-gray-900">Remember this merchant?</h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+          </div>
+          <div className="px-5 py-4">
+            <p className="text-sm text-gray-700 mb-1">
+              Flag future <span className="font-semibold">{merchantName}</span> transactions for review?
+            </p>
+            <p className="text-xs text-gray-400 mb-4">
+              A rule will flag new transactions from this merchant as potential HSA for your review.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={onClose}
+                className="px-3 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                No thanks
+              </button>
+              <button
+                onClick={handleCreateMerchantFlagRule}
+                disabled={ruleCreating}
+                className="px-3 py-1.5 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50"
+              >
+                {ruleCreating ? 'Creating…' : 'Yes, flag them'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Step 1 — main options
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      className={backdrop}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm">
-        <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+      <div className={card}>
+        <div className={header}>
           <h2 className="text-base font-semibold text-gray-900">Tag transaction</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
         </div>
@@ -306,14 +465,14 @@ function TagDialog({ txn, onMarkHsa, onMarkNotHsa, onCreateHsaRule, onHideOne, o
           </p>
           <div className="mt-4 space-y-2">
             <button
-              onClick={onMarkHsa}
+              onClick={handleMarkHsa}
               className="w-full px-4 py-2.5 text-sm font-medium text-green-700 bg-green-50 rounded-lg hover:bg-green-100 text-left"
             >
               Mark as HSA eligible
               <span className="block text-xs font-normal text-green-500 mt-0.5">Count this charge toward your HSA spending.</span>
             </button>
             <button
-              onClick={onMarkNotHsa}
+              onClick={handleMarkNotHsa}
               className="w-full px-4 py-2.5 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 text-left"
             >
               Mark as Not HSA
@@ -327,7 +486,7 @@ function TagDialog({ txn, onMarkHsa, onMarkNotHsa, onCreateHsaRule, onHideOne, o
               <span className="block text-xs font-normal text-sky-500 mt-0.5">Auto-mark similar transactions as HSA eligible.</span>
             </button>
             <button
-              onClick={onHideOne}
+              onClick={handleHideOne}
               className="w-full px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 text-left"
             >
               Hide this transaction
@@ -628,24 +787,6 @@ export default function Transactions() {
   const [ruleEditorAction, setRuleEditorAction] = useState<'hide' | 'mark_hsa'>('hide')
   const [ruleSuccessMsg, setRuleSuccessMsg] = useState<string | null>(null)
 
-  const handleTagMarkHsa = async (txn: BankTransaction) => {
-    const updated = await bankService.annotateTransaction(txn.id, { is_hsa_eligible: true })
-    handleChange(updated)
-    setTagPromptTxn(null)
-  }
-
-  const handleTagMarkNotHsa = async (txn: BankTransaction) => {
-    const updated = await bankService.annotateTransaction(txn.id, { is_hsa_eligible: false })
-    handleChange(updated)
-    setTagPromptTxn(null)
-  }
-
-  const handleHideOne = async (txn: BankTransaction) => {
-    await bankService.annotateTransaction(txn.id, { auto_flag: 'hidden' })
-    setTransactions(prev => prev.filter(t => t.id !== txn.id))
-    setTagPromptTxn(null)
-  }
-
   const handleRuleSave = async (rule: HsaRule) => {
     setRuleEditorTxn(null)
     try {
@@ -723,10 +864,9 @@ export default function Transactions() {
     {tagPromptTxn && (
       <TagDialog
         txn={tagPromptTxn}
-        onMarkHsa={() => handleTagMarkHsa(tagPromptTxn)}
-        onMarkNotHsa={() => handleTagMarkNotHsa(tagPromptTxn)}
+        onChange={handleChange}
+        onHidden={() => load()}
         onCreateHsaRule={() => { setRuleEditorAction('mark_hsa'); setRuleEditorTxn(tagPromptTxn); setTagPromptTxn(null) }}
-        onHideOne={() => handleHideOne(tagPromptTxn)}
         onCreateHideRule={() => { setRuleEditorAction('hide'); setRuleEditorTxn(tagPromptTxn); setTagPromptTxn(null) }}
         onClose={() => setTagPromptTxn(null)}
       />
