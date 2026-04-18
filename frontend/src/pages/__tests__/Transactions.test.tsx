@@ -455,7 +455,9 @@ describe('Transactions page', () => {
     })
 
     it('"Hide this transaction" hides it and removes from list', async () => {
-      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      ;(bankService.listAllTransactions as any)
+        .mockResolvedValueOnce([makeTxn()])  // initial load
+        .mockResolvedValue([])               // reload after hiding (hidden txns excluded)
       ;(bankService.annotateTransaction as any).mockResolvedValue(makeTxn({ auto_flag: 'hidden' }))
       render(<Transactions />)
       await waitFor(() => screen.getByTitle('Tag this transaction'))
@@ -1191,6 +1193,115 @@ describe('Transactions page', () => {
         const calls = (bankService.listAllTransactions as any).mock.calls
         const lastCall = calls[calls.length - 1][0]
         expect(lastCall.auto_flag).toBeUndefined()
+      })
+    })
+  })
+
+  describe('TagDialog merchant memory', () => {
+    const txnWithMerchant = makeTxn({
+      description: 'NASHBIRD CHICKEN',
+      details: { counterparty: { name: 'NASHBIRD CHICKEN' } },
+    })
+    const txnNoMerchant = makeTxn({
+      description: null,
+      details: null,
+    })
+
+    beforeEach(() => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([txnWithMerchant])
+      ;(bankService.countTransactions as any).mockResolvedValue(1)
+      ;(bankService.annotateTransaction as any).mockResolvedValue({
+        ...txnWithMerchant,
+        is_hsa_eligible: false,
+      })
+    })
+
+    it('shows merchant memory prompt after marking Not HSA when merchant is known', async () => {
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('NASHBIRD CHICKEN'))
+
+      fireEvent.click(screen.getByTitle('Tag this transaction'))
+      await waitFor(() => screen.getByText('Mark as Not HSA'))
+
+      fireEvent.click(screen.getByText('Mark as Not HSA'))
+      await waitFor(() => {
+        expect(screen.getByText(/want to hide all/i)).toBeInTheDocument()
+        expect(screen.getByText('Yes, hide all')).toBeInTheDocument()
+      })
+    })
+
+    it('creates hide rule when user confirms merchant hide', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([txnWithMerchant])
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('NASHBIRD CHICKEN'))
+
+      fireEvent.click(screen.getByTitle('Tag this transaction'))
+      await waitFor(() => screen.getByText('Mark as Not HSA'))
+      fireEvent.click(screen.getByText('Mark as Not HSA'))
+
+      await waitFor(() => screen.getByText('Yes, hide all'))
+      fireEvent.click(screen.getByText('Yes, hide all'))
+
+      await waitFor(() => {
+        expect(rulesService.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            actions: [{ action_type: 'hide' }],
+            conditions: [expect.objectContaining({ value: 'NASHBIRD CHICKEN' })],
+          })
+        )
+        expect(rulesService.applyAll).toHaveBeenCalled()
+      })
+    })
+
+    it('does not create rule when user clicks No thanks', async () => {
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('NASHBIRD CHICKEN'))
+
+      fireEvent.click(screen.getByTitle('Tag this transaction'))
+      await waitFor(() => screen.getByText('Mark as Not HSA'))
+      fireEvent.click(screen.getByText('Mark as Not HSA'))
+
+      await waitFor(() => screen.getByText('No thanks'))
+      fireEvent.click(screen.getByText('No thanks'))
+
+      expect(rulesService.create).not.toHaveBeenCalled()
+    })
+
+    it('closes dialog immediately after marking Not HSA when no merchant name', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([txnNoMerchant])
+      ;(bankService.annotateTransaction as any).mockResolvedValue({
+        ...txnNoMerchant,
+        is_hsa_eligible: false,
+      })
+      render(<Transactions />)
+      await waitFor(() => expect(bankService.listAllTransactions).toHaveBeenCalled())
+
+      fireEvent.click(screen.getByTitle('Tag this transaction'))
+      await waitFor(() => screen.getByText('Mark as Not HSA'))
+      fireEvent.click(screen.getByText('Mark as Not HSA'))
+
+      await waitFor(() => {
+        expect(screen.queryByText(/want to hide all/i)).not.toBeInTheDocument()
+        expect(screen.queryByText('Tag transaction')).not.toBeInTheDocument()
+      })
+    })
+
+    it('shows flag prompt after marking as HSA when merchant is known', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([txnWithMerchant])
+      ;(bankService.annotateTransaction as any).mockResolvedValue({
+        ...txnWithMerchant,
+        is_hsa_eligible: true,
+      })
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('NASHBIRD CHICKEN'))
+
+      fireEvent.click(screen.getByTitle('Tag this transaction'))
+      await waitFor(() => screen.getByText('Mark as HSA eligible'))
+      fireEvent.click(screen.getByText('Mark as HSA eligible'))
+
+      await waitFor(() => {
+        expect(screen.getByText(/flag future/i)).toBeInTheDocument()
+        expect(screen.getByText('Yes, flag them')).toBeInTheDocument()
       })
     })
   })
