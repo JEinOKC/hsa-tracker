@@ -4,7 +4,7 @@ import { bankService, BankTransaction, CategorySmartStatus, HSA_CATEGORIES } fro
 import { familyService, FamilyMember } from '../services/family'
 import { rulesService, HsaRule } from '../services/rules'
 import { householdService, Household } from '../services/household'
-import { receiptsService, PharmacyFill, ReceiptLineItem } from '../services/receipts'
+import { receiptsService, PharmacyFill, PharmacyImportResult, ReceiptLineItem } from '../services/receipts'
 import DocumentUpload from '../components/DocumentUpload'
 import RuleEditor from '../components/RuleEditor'
 import MerchantManager from '../components/MerchantManager'
@@ -512,6 +512,127 @@ function TagDialog({ txn, onChange, onHidden, onCreateHsaRule, onCreateHideRule,
 
 // ─── Transaction row ──────────────────────────────────────────────────────────
 
+// ─── CVS import modal ────────────────────────────────────────────────────────
+
+function CvsImportModal({ onClose }: { onClose: () => void }) {
+  const [result, setResult] = useState<PharmacyImportResult | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const handleFile = async (file: File) => {
+    setLoading(true)
+    setError(null)
+    setResult(null)
+    try {
+      setResult(await receiptsService.importCvsPharmacy(file))
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail
+      setError(typeof detail === 'string' ? detail : 'Import failed. Please check the file and try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h2 className="text-base font-semibold text-gray-900">Import CVS Pharmacy CSV</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+        </div>
+        <div className="px-5 py-4">
+          <p className="text-sm text-gray-500 mb-4">
+            Download your Financial Summary from{' '}
+            <span className="font-medium">cvs.com → Prescriptions → Financial Summary → Download</span>.
+            Each prescription fill will be matched to a bank transaction and marked as an HSA-eligible prescription.
+          </p>
+          <div className="flex items-center gap-3 mb-4">
+            <button
+              onClick={() => inputRef.current?.click()}
+              disabled={loading}
+              data-testid="cvs-upload-button"
+              className="text-sm font-medium px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              {loading ? 'Importing…' : 'Upload CSV'}
+            </button>
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              data-testid="cvs-file-input"
+              onChange={e => {
+                const file = e.target.files?.[0]
+                if (file) handleFile(file)
+                e.target.value = ''
+              }}
+            />
+            {result && !loading && (
+              <span className="text-sm text-gray-500">
+                Matched {result.matched} of {result.row_count} fills
+              </span>
+            )}
+          </div>
+          {error && (
+            <div data-testid="import-error" className="text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2 mb-4">
+              {error}
+            </div>
+          )}
+          {result && (
+            <div data-testid="import-result">
+              <div className="flex gap-4 text-sm mb-3">
+                <span className="text-green-700 font-medium">{result.matched} matched</span>
+                {result.unmatched > 0 && (
+                  <span className="text-amber-600 font-medium">{result.unmatched} unmatched</span>
+                )}
+              </div>
+              <div className="rounded border border-gray-100 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                    <tr>
+                      <th className="text-left px-3 py-2">Drug</th>
+                      <th className="text-right px-3 py-2">Amount</th>
+                      <th className="text-left px-3 py-2">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.fills.map(fill => (
+                      <tr key={fill.id} className="border-t border-gray-50">
+                        <td className="px-3 py-2 text-gray-900">
+                          <div>{fill.drug_name}</div>
+                          {fill.member_name && <div className="text-xs text-gray-400">{fill.member_name}</div>}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-900">${parseFloat(fill.amount_paid).toFixed(2)}</td>
+                        <td className="px-3 py-2">
+                          {fill.matched
+                            ? <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-green-100 text-green-700">Matched</span>
+                            : <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-600">Unmatched</span>
+                          }
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {result.unmatched > 0 && (
+                <p className="text-xs text-gray-400 mt-2">
+                  Unmatched fills couldn't be linked automatically. Open the matching transaction and use the pharmacy fills panel to link manually.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="px-5 py-3 border-t border-gray-100 flex justify-end">
+          <button onClick={onClose} className="text-sm px-4 py-2 rounded border border-gray-200 text-gray-600 hover:bg-gray-50">
+            {result ? 'Done' : 'Cancel'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Pharmacy fills panel ─────────────────────────────────────────────────────
 
 function PharmacyFillsPanel({ transactionId }: { transactionId: string }) {
@@ -927,6 +1048,8 @@ export default function Transactions() {
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [showMerchantManager, setShowMerchantManager] = useState(false)
   const [showManualForm, setShowManualForm] = useState(false)
+  const [showImport, setShowImport] = useState(false)
+  const [showAddMenu, setShowAddMenu] = useState(false)
 
   useEffect(() => {
     const onScroll = () => setShowBackToTop(window.scrollY > 400)
@@ -1121,6 +1244,11 @@ export default function Transactions() {
       />
     )}
 
+    {/* CVS pharmacy import modal */}
+    {showImport && (
+      <CvsImportModal onClose={() => setShowImport(false)} />
+    )}
+
     {/* Tag dialog */}
     {tagPromptTxn && (
       <TagDialog
@@ -1176,12 +1304,41 @@ export default function Transactions() {
         >
           Manage merchants
         </button>
-        <button
-          onClick={() => setShowManualForm(true)}
-          className="text-sm text-white bg-blue-600 border border-blue-600 rounded-lg px-3 py-1.5 hover:bg-blue-700"
-        >
-          + Add transaction
-        </button>
+        <div className="relative">
+          <div className="flex">
+            <button
+              onClick={() => setShowManualForm(true)}
+              className="text-sm text-white bg-blue-600 border border-blue-600 rounded-l-lg px-3 py-1.5 hover:bg-blue-700"
+            >
+              + Add transaction
+            </button>
+            <button
+              onClick={() => setShowAddMenu(prev => !prev)}
+              className="text-sm text-white bg-blue-600 border border-blue-600 border-l-blue-500 rounded-r-lg px-2 py-1.5 hover:bg-blue-700 border-l"
+              title="More options"
+              data-testid="add-menu-toggle"
+            >
+              ▾
+            </button>
+          </div>
+          {showAddMenu && (
+            <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-max">
+              <button
+                onClick={() => { setShowAddMenu(false); setShowManualForm(true) }}
+                className="block w-full text-left text-sm px-4 py-2 hover:bg-gray-50 text-gray-700"
+              >
+                + Add transaction
+              </button>
+              <button
+                onClick={() => { setShowAddMenu(false); setShowImport(true) }}
+                className="block w-full text-left text-sm px-4 py-2 hover:bg-gray-50 text-gray-700"
+                data-testid="open-import-button"
+              >
+                ↑ Import CVS pharmacy CSV
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
