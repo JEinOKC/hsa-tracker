@@ -99,13 +99,13 @@ function CvsPharmacyImport() {
       )}
 
       {result && (
-        <ImportResultTable result={result} onRelink={(updatedResult) => setResult(updatedResult)} />
+        <ImportResultTable result={result} />
       )}
     </div>
   )
 }
 
-function ImportResultTable({ result, onRelink }: { result: PharmacyImportResult; onRelink?: (r: PharmacyImportResult) => void }) {
+function ImportResultTable({ result }: { result: PharmacyImportResult }) {
   return (
     <div data-testid="import-result">
       <div className="flex gap-4 text-sm mb-3">
