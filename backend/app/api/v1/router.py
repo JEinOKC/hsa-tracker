@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     categories,
     bank,
     documents,
+    receipts,
     roles,
     households,
     push,
@@ -34,3 +35,4 @@ api_router.include_router(roles.router, prefix="/roles", tags=["Roles & Access"]
 api_router.include_router(households.router, prefix="/households", tags=["Households"])
 api_router.include_router(push.router, prefix="/push", tags=["Push Notifications"])
 api_router.include_router(rules.router, prefix="/bank", tags=["HSA Rules Engine"])
+api_router.include_router(receipts.router, prefix="/bank", tags=["Retailer Import"])
