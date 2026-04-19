@@ -11,6 +11,7 @@ import Register from './pages/Register'
 import InvitePage from './pages/InvitePage'
 import Settings from './pages/Settings'
 import Rules from './pages/Rules'
+import ReviewQueue from './pages/ReviewQueue'
 import ProtectedRoute from './components/ProtectedRoute'
 
 function Nav() {
@@ -123,6 +124,7 @@ function App() {
         <Route path="/transactions" element={<ProtectedLayout><Transactions /></ProtectedLayout>} />
         <Route path="/settings" element={<ProtectedLayout><Settings /></ProtectedLayout>} />
         <Route path="/settings/rules" element={<ProtectedLayout><Rules /></ProtectedLayout>} />
+        <Route path="/review" element={<ProtectedLayout><ReviewQueue /></ProtectedLayout>} />
       </Routes>
     </div>
     </ToastProvider>
