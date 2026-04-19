@@ -29,15 +29,15 @@ self.addEventListener('periodicsync', (event: any) => {
 self.addEventListener('push', (event: PushEvent) => {
   if (!event.data) return
   const data = event.data.json() as { title: string; body: string; url?: string }
-  event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      icon: '/icons/pwa-192.png',
-      badge: '/icons/pwa-192.png',
-      data: { url: data.url ?? '/' },
-      actions: [{ action: 'review', title: 'Review' }],
-    })
-  )
+  // `actions` is a valid Push API extension not yet reflected in the TS lib types
+  const options: NotificationOptions & { actions?: { action: string; title: string }[] } = {
+    body: data.body,
+    icon: '/icons/pwa-192.png',
+    badge: '/icons/pwa-192.png',
+    data: { url: data.url ?? '/' },
+    actions: [{ action: 'review', title: 'Review' }],
+  }
+  event.waitUntil(self.registration.showNotification(data.title, options))
 })
 
 self.addEventListener('notificationclick', (event: NotificationEvent) => {

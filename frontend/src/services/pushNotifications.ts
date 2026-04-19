@@ -55,3 +55,7 @@ export async function removeSubscription(sub: PushSubscription): Promise<void> {
   await sub.unsubscribe()
   await api.delete('/push/subscribe', { data: { endpoint: sub.endpoint, keys: json.keys } })
 }
+
+export async function notifyHsaReview(count: number): Promise<void> {
+  await api.post('/push/notify-hsa-review', { count })
+}

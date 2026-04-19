@@ -1,11 +1,14 @@
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { bankService } from '../services/bank'
+import { notifyHsaReview } from '../services/pushNotifications'
 import { useToast } from '../components/Toast'
 
 const STORAGE_KEY = 'hsa_last_auto_sync'
 const INTERVAL_STORAGE_KEY = 'hsa_sync_interval_ms'
+const PUSH_COOLDOWN_KEY = 'hsa_last_push_at'
 const DEFAULT_INTERVAL_MS = 24 * 60 * 60 * 1000
+const PUSH_COOLDOWN_MS = 12 * 60 * 60 * 1000
 
 const VALID_INTERVALS = [4, 8, 12, 24].map(h => h * 60 * 60 * 1000)
 
@@ -31,6 +34,16 @@ function markChecked() {
   localStorage.setItem(STORAGE_KEY, Date.now().toString())
 }
 
+function isPushCooldownActive(): boolean {
+  const last = localStorage.getItem(PUSH_COOLDOWN_KEY)
+  if (!last) return false
+  return Date.now() - parseInt(last, 10) < PUSH_COOLDOWN_MS
+}
+
+function markPushSent() {
+  localStorage.setItem(PUSH_COOLDOWN_KEY, Date.now().toString())
+}
+
 export function useAutoSync() {
   const { toast } = useToast()
   const navigate = useNavigate()
@@ -47,31 +60,36 @@ export function useAutoSync() {
       const stale = accounts.filter(a => a.is_active && isStale(a.last_synced_at))
       if (stale.length === 0) return
 
-      const errors: string[] = []
-
-      await Promise.allSettled(
-        stale.map(async account => {
-          try {
-            await bankService.syncAccount(account.id)
-          } catch (err: any) {
-            const status = err?.response?.status
-            const name = account.institution_name || account.account_name
-            if (status === 422) {
-              errors.push(`${name} needs to be reconnected`)
-            } else {
-              errors.push(`${name} failed to sync`)
-            }
-          }
-        })
+      // Sync all stale accounts in parallel, collecting results for batched push
+      const results = await Promise.allSettled(
+        stale.map(account => bankService.syncAccount(account.id))
       )
 
-      if (errors.length > 0) {
-        errors.forEach(msg => {
+      // Surface any sync errors as toasts
+      results.forEach((result, i) => {
+        if (result.status === 'rejected') {
+          const status = result.reason?.response?.status
+          const name = stale[i].institution_name || stale[i].account_name
+          const msg = status === 422
+            ? `${name} needs to be reconnected`
+            : `${name} failed to sync`
           toast(msg, 'error', {
             label: 'Go to Bank Accounts',
             onClick: () => navigate('/bank'),
           })
-        })
+        }
+      })
+
+      // Send one batched push for all potential HSA transactions found this session,
+      // subject to a 12-hour cooldown to avoid alert fatigue.
+      if (!isPushCooldownActive()) {
+        const totalPotentialHsa = results.reduce((sum, r) =>
+          r.status === 'fulfilled' ? sum + (r.value?.potential_hsa_count ?? 0) : sum
+        , 0)
+        if (totalPotentialHsa > 0) {
+          markPushSent()
+          notifyHsaReview(totalPotentialHsa).catch(() => {})
+        }
       }
     } catch {
       // If we can't even list accounts (e.g. no bank connections), skip silently

@@ -37,7 +37,6 @@ from app.services.rules_engine import (
     _SMART_MIN_REVIEWED, _SMART_MIN_HSA_RATE,
 )
 from app.services.merchant_keywords import classify_merchant, normalize_merchant_name
-from app.utils.push import send_push_to_user
 
 router = APIRouter()
 
@@ -1101,20 +1100,6 @@ async def sync_account_transactions(
     db.commit()
 
     potential_hsa_count = sum(1 for t in new_txns if t.auto_flag == "potential_hsa")
-    if potential_hsa_count > 0:
-        push_body = (
-            f"{potential_hsa_count} new transaction may be HSA-eligible"
-            if potential_hsa_count == 1
-            else f"{potential_hsa_count} new transactions may be HSA-eligible"
-        )
-        send_push_to_user(
-            user_id=current_user.id,
-            title="HSA Tracker",
-            body=push_body,
-            db=db,
-            url="/review",
-        )
-
     return SyncResult(added=added, skipped=skipped, account_id=str(account_id), potential_hsa_count=potential_hsa_count)
 
 

@@ -71,6 +71,38 @@ def unsubscribe(
     db.commit()
 
 
+class HsaReviewNotifyPayload(BaseModel):
+    count: int
+
+
+@router.post("/notify-hsa-review")
+def notify_hsa_review(
+    payload: HsaReviewNotifyPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Send a batched push notification after a sync session finds potential HSA transactions.
+
+    Called by the frontend after all accounts have synced, with the total
+    count of new potential_hsa transactions across all accounts.
+    """
+    if payload.count <= 0:
+        return {"sent_to": 0}
+    body = (
+        f"{payload.count} new transaction may be HSA-eligible"
+        if payload.count == 1
+        else f"{payload.count} new transactions may be HSA-eligible"
+    )
+    sent = send_push_to_user(
+        user_id=current_user.id,
+        title="HSA Tracker",
+        body=body,
+        db=db,
+        url="/review",
+    )
+    return {"sent_to": sent}
+
+
 @router.post("/test")
 def send_test_push(
     db: Session = Depends(get_db),
