@@ -1,4 +1,4 @@
-.PHONY: help setup-wizard dev-build dev-up dev-rebuild dev-down dev-logs prod-up prod-down prod-logs tf-init tf-plan tf-apply tf-destroy tf-ecr-bootstrap db-init db-migrate db-migrate-prod db-upgrade db-downgrade db-reset test-backend test-frontend test-all clean format lint push-test generate-vapid generate-invite lambda-build lambda-push lambda-deploy frontend-deploy deploy deploy-with-migrations
+.PHONY: help setup-wizard dev-build dev-up dev-rebuild dev-down dev-logs prod-up prod-down prod-logs tf-init tf-plan tf-apply tf-destroy tf-ecr-bootstrap db-init db-migrate db-migrate-prod db-upgrade db-downgrade db-reset test-backend test-frontend test-all clean format lint push-test generate-vapid generate-invite lambda-build lambda-push lambda-deploy build-check frontend-deploy deploy deploy-with-migrations
 
 # Default target
 .DEFAULT_GOAL := help
@@ -90,9 +90,9 @@ dev-build: ## Build development containers (after code changes)
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.dev.yml build
 	@echo "$(GREEN)✓ Development containers built$(NC)"
 
-dev-up: ## Start development environment
+dev-up: ## Start development environment (uses Doppler dev secrets)
 	@echo "$(BLUE)Starting development environment...$(NC)"
-	$(DOCKER_COMPOSE_CMD) -f docker-compose.dev.yml up -d
+	doppler run --config dev -- docker compose -f docker-compose.dev.yml up -d
 	@echo "$(GREEN)✓ Development environment started$(NC)"
 	@echo "Frontend: http://localhost:3001 (configurable via FRONTEND_PORT)"
 	@echo "Backend API: http://localhost:8001 (configurable via BACKEND_PORT)"
@@ -105,9 +105,9 @@ dev-rebuild-frontend: ## Rebuild frontend container (use after adding npm packag
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.dev.yml up -d --build frontend
 	@echo "$(GREEN)✓ Frontend rebuilt$(NC)"
 
-dev-rebuild: ## Rebuild and restart development environment
+dev-rebuild: ## Rebuild and restart development environment (uses Doppler dev secrets)
 	@echo "$(BLUE)Rebuilding and restarting development environment...$(NC)"
-	$(DOCKER_COMPOSE_CMD) -f docker-compose.dev.yml up -d --build
+	doppler run --config dev -- docker compose -f docker-compose.dev.yml up -d --build
 	@echo "$(GREEN)✓ Development environment rebuilt and started$(NC)"
 	@echo "Frontend: http://localhost:3001 (configurable via FRONTEND_PORT)"
 	@echo "Backend API: http://localhost:8001 (configurable via BACKEND_PORT)"
@@ -271,6 +271,18 @@ lambda-push: ## Authenticate to ECR, push the Lambda image, and force Lambda to 
 lambda-deploy: lambda-build lambda-push ## Build and push Lambda image (run tf-ecr-bootstrap first if ECR doesn't exist)
 
 deploy: lambda-deploy db-migrate-prod frontend-deploy ## Deploy Lambda, run migrations, and deploy frontend
+
+build-check: ## Dry-run the frontend build with dev secrets (catches TS/build errors before deploying)
+	@echo "$(BLUE)Running frontend build check with dev secrets...$(NC)"
+	doppler run --config dev -- sh -c '\
+		cd frontend && \
+		VITE_API_URL="$${VITE_API_URL:-http://localhost:8001/api/v1}" \
+		VITE_VAPID_PUBLIC_KEY="$$VAPID_PUBLIC_KEY" \
+		VITE_WEBAUTHN_RP_ID="$${WEBAUTHN_RP_ID:-localhost}" \
+		VITE_TELLER_APP_ID="$$TELLER_APP_ID" \
+		VITE_TELLER_ENV="$${TELLER_ENV:-sandbox}" \
+		npm run build'
+	@echo "$(GREEN)✓ Build check passed — safe to deploy$(NC)"
 
 frontend-deploy: ## Build and deploy frontend to Cloudflare Pages (manual — does not auto-deploy on git push)
 	@echo "$(BLUE)Building frontend...$(NC)"
