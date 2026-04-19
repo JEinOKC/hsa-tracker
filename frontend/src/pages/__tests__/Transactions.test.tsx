@@ -45,11 +45,24 @@ vi.mock('../../services/household', () => ({
   },
 }))
 
+vi.mock('../../services/receipts', () => ({
+  receiptsService: {
+    listTransactionFills: vi.fn(),
+    listLineItems: vi.fn(),
+    importLineItemsCsv: vi.fn(),
+    createLineItem: vi.fn(),
+    updateLineItem: vi.fn(),
+    deleteLineItem: vi.fn(),
+    unlinkFill: vi.fn(),
+  },
+}))
+
 import { bankService } from '../../services/bank'
 import { familyService } from '../../services/family'
 import { documentService } from '../../services/documents'
 import { rulesService } from '../../services/rules'
 import { householdService } from '../../services/household'
+import { receiptsService } from '../../services/receipts'
 
 const makeTxn = (overrides = {}) => ({
   id: 'txn-1',
@@ -105,6 +118,8 @@ beforeEach(() => {
   ;(familyService.list as any).mockResolvedValue([])
   ;(documentService.list as any).mockResolvedValue([])
   ;(householdService.getMine as any).mockResolvedValue(mockHousehold)
+  ;(receiptsService.listTransactionFills as any).mockResolvedValue([])
+  ;(receiptsService.listLineItems as any).mockResolvedValue([])
   ;(rulesService.applyAll as any).mockResolvedValue({ updated: 0 })
   ;(rulesService.create as any).mockResolvedValue({
     id: 'rule-1', name: 'Hide: CVS Pharmacy', priority: 0, is_active: true,

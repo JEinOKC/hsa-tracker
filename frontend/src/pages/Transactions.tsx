@@ -4,6 +4,7 @@ import { bankService, BankTransaction, CategorySmartStatus, HSA_CATEGORIES } fro
 import { familyService, FamilyMember } from '../services/family'
 import { rulesService, HsaRule } from '../services/rules'
 import { householdService, Household } from '../services/household'
+import { receiptsService, PharmacyFill, ReceiptLineItem } from '../services/receipts'
 import DocumentUpload from '../components/DocumentUpload'
 import RuleEditor from '../components/RuleEditor'
 import MerchantManager from '../components/MerchantManager'
@@ -511,6 +512,256 @@ function TagDialog({ txn, onChange, onHidden, onCreateHsaRule, onCreateHideRule,
 
 // ─── Transaction row ──────────────────────────────────────────────────────────
 
+// ─── Pharmacy fills panel ─────────────────────────────────────────────────────
+
+function PharmacyFillsPanel({ transactionId }: { transactionId: string }) {
+  const [fills, setFills] = useState<PharmacyFill[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    receiptsService.listTransactionFills(transactionId)
+      .then(setFills)
+      .catch(() => setFills([]))
+      .finally(() => setLoading(false))
+  }, [transactionId])
+
+  const handleUnlink = async (fillId: string) => {
+    try {
+      await receiptsService.unlinkFill(fillId)
+      setFills(prev => prev.filter(f => f.id !== fillId))
+    } catch {
+      // ignore
+    }
+  }
+
+  if (loading || fills.length === 0) return null
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-100" data-testid="pharmacy-fills-panel">
+      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Prescription fills</p>
+      <div className="space-y-1">
+        {fills.map(fill => (
+          <div key={fill.id} className="flex items-center justify-between gap-2 text-sm">
+            <div className="flex-1 min-w-0">
+              <span className="text-gray-900 truncate block">{fill.drug_name}</span>
+              {fill.rx_number && (
+                <span className="text-xs text-gray-400">Rx #{fill.rx_number}</span>
+              )}
+            </div>
+            <span className="text-gray-500 shrink-0">${parseFloat(fill.amount_paid).toFixed(2)}</span>
+            <button
+              onClick={() => handleUnlink(fill.id)}
+              title="Unlink this fill"
+              className="text-xs text-gray-300 hover:text-red-400 shrink-0 transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Line items panel ─────────────────────────────────────────────────────────
+
+function LineItemsPanel({ transactionId, onEligibleAmountChange }: {
+  transactionId: string
+  onEligibleAmountChange?: (amount: string | null) => void
+}) {
+  const [items, setItems] = useState<ReceiptLineItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [importing, setImporting] = useState(false)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [newDesc, setNewDesc] = useState('')
+  const [newAmount, setNewAmount] = useState('')
+  const [newHsa, setNewHsa] = useState<boolean | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    receiptsService.listLineItems(transactionId)
+      .then(setItems)
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false))
+  }, [transactionId])
+
+  const eligibleTotal = items
+    .filter(i => i.is_hsa_eligible === true)
+    .reduce((sum, i) => sum + parseFloat(i.amount), 0)
+
+  const handleImportCsv = async (file: File) => {
+    setImporting(true)
+    try {
+      const result = await receiptsService.importLineItemsCsv(transactionId, file)
+      setItems(result.line_items)
+      onEligibleAmountChange?.(result.eligible_total)
+    } catch {
+      // ignore
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const handleToggleHsa = async (item: ReceiptLineItem) => {
+    const next = item.is_hsa_eligible === true ? false : true
+    try {
+      const updated = await receiptsService.updateLineItem(transactionId, item.id, { is_hsa_eligible: next })
+      setItems(prev => prev.map(i => i.id === item.id ? updated : i))
+      const newTotal = [...items.map(i => i.id === item.id ? updated : i)]
+        .filter(i => i.is_hsa_eligible === true)
+        .reduce((s, i) => s + parseFloat(i.amount), 0)
+      onEligibleAmountChange?.(newTotal > 0 ? newTotal.toFixed(2) : null)
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleDelete = async (itemId: string) => {
+    try {
+      await receiptsService.deleteLineItem(transactionId, itemId)
+      const remaining = items.filter(i => i.id !== itemId)
+      setItems(remaining)
+      const newTotal = remaining.filter(i => i.is_hsa_eligible === true).reduce((s, i) => s + parseFloat(i.amount), 0)
+      onEligibleAmountChange?.(newTotal > 0 ? newTotal.toFixed(2) : null)
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleAddItem = async () => {
+    if (!newDesc.trim() || !newAmount.trim()) return
+    try {
+      const item = await receiptsService.createLineItem(transactionId, {
+        description: newDesc.trim(),
+        amount: newAmount.trim(),
+        is_hsa_eligible: newHsa,
+      })
+      const updated = [...items, item]
+      setItems(updated)
+      const newTotal = updated.filter(i => i.is_hsa_eligible === true).reduce((s, i) => s + parseFloat(i.amount), 0)
+      onEligibleAmountChange?.(newTotal > 0 ? newTotal.toFixed(2) : null)
+      setNewDesc('')
+      setNewAmount('')
+      setNewHsa(null)
+      setShowAddForm(false)
+    } catch {
+      // ignore
+    }
+  }
+
+  if (loading) return null
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-100" data-testid="line-items-panel">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Line items</p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            className="text-xs text-blue-600 hover:underline disabled:opacity-50"
+            data-testid="import-csv-button"
+          >
+            {importing ? 'Importing…' : 'Import CSV'}
+          </button>
+          <button
+            onClick={() => setShowAddForm(prev => !prev)}
+            className="text-xs text-blue-600 hover:underline"
+          >
+            + Add item
+          </button>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          data-testid="line-items-file-input"
+          onChange={e => {
+            const file = e.target.files?.[0]
+            if (file) handleImportCsv(file)
+            e.target.value = ''
+          }}
+        />
+      </div>
+
+      {items.length > 0 && (
+        <div className="space-y-1 mb-2">
+          {items.map(item => (
+            <div key={item.id} className="flex items-center gap-2 text-sm">
+              <button
+                onClick={() => handleToggleHsa(item)}
+                title={item.is_hsa_eligible ? 'Mark as not HSA eligible' : 'Mark as HSA eligible'}
+                className={`text-xs shrink-0 w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                  item.is_hsa_eligible === true
+                    ? 'bg-green-500 border-green-500 text-white'
+                    : item.is_hsa_eligible === false
+                      ? 'bg-white border-gray-300 text-gray-300'
+                      : 'bg-white border-gray-200 text-gray-200'
+                }`}
+              >
+                {item.is_hsa_eligible === true ? '✓' : ''}
+              </button>
+              <span className="flex-1 text-gray-900 truncate">{item.description}</span>
+              <span className="text-gray-500 shrink-0 text-xs">${parseFloat(item.amount).toFixed(2)}</span>
+              <button
+                onClick={() => handleDelete(item.id)}
+                title="Remove item"
+                className="text-xs text-gray-200 hover:text-red-400 shrink-0 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          {eligibleTotal > 0 && (
+            <p className="text-xs text-green-700 font-medium pt-1">
+              Eligible: ${eligibleTotal.toFixed(2)}
+            </p>
+          )}
+        </div>
+      )}
+
+      {showAddForm && (
+        <div className="flex gap-1 mt-1">
+          <input
+            type="text"
+            placeholder="Description"
+            value={newDesc}
+            onChange={e => setNewDesc(e.target.value)}
+            className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 min-w-0"
+          />
+          <input
+            type="text"
+            placeholder="Amount"
+            value={newAmount}
+            onChange={e => setNewAmount(e.target.value)}
+            className="w-20 text-xs border border-gray-200 rounded px-2 py-1 text-right"
+          />
+          <select
+            value={newHsa === null ? '' : newHsa ? 'true' : 'false'}
+            onChange={e => setNewHsa(e.target.value === '' ? null : e.target.value === 'true')}
+            className="text-xs border border-gray-200 rounded px-1 py-1"
+          >
+            <option value="">HSA?</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+          <button
+            onClick={handleAddItem}
+            className="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
+          >
+            Add
+          </button>
+        </div>
+      )}
+
+      {items.length === 0 && !showAddForm && (
+        <p className="text-xs text-gray-400">No line items yet.</p>
+      )}
+    </div>
+  )
+}
+
 interface TxnRowProps {
   txn: BankTransaction
   members: FamilyMember[]
@@ -642,6 +893,11 @@ function TxnRow({ txn, members, tab, onChange, onTag }: TxnRowProps) {
           <DocumentUpload
             transactionId={txn.id}
             onCountChange={handleDocCountChange}
+          />
+          <PharmacyFillsPanel transactionId={txn.id} />
+          <LineItemsPanel
+            transactionId={txn.id}
+            onEligibleAmountChange={(amount) => onChange({ ...txn, eligible_amount: amount })}
           />
         </div>
       )}

@@ -182,6 +182,109 @@ class TransactionDocument(Base):
         return f"<TransactionDocument({self.original_filename} → {self.s3_key})>"
 
 
+class PharmacyImportBatch(Base):
+    """Tracks each CVS/pharmacy CSV upload for audit purposes."""
+
+    __tablename__ = "pharmacy_import_batches"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    filename = Column(String(500), nullable=False)
+    source = Column(String(30), nullable=False)   # 'cvs_financial_summary'
+    row_count = Column(Integer, nullable=False, default=0)
+    matched = Column(Integer, nullable=False, default=0)
+    unmatched = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    fills = relationship("PharmacyFill", back_populates="batch", cascade="all, delete-orphan")
+
+
+class PharmacyFill(Base):
+    """One prescription fill row imported from a pharmacy CSV (e.g. CVS Financial Summary)."""
+
+    __tablename__ = "pharmacy_fills"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    import_batch_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("pharmacy_import_batches.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Nullable — null means unmatched
+    transaction_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("bank_transactions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    member_name = Column(String(200), nullable=True)
+    drug_name = Column(String(500), nullable=False)
+    rx_number = Column(String(100), nullable=True)
+    fill_date = Column(Date, nullable=False, index=True)
+    amount_paid = Column(Numeric(12, 2), nullable=False)
+    pharmacy = Column(String(200), nullable=True)
+    source = Column(String(30), nullable=False)  # 'cvs_financial_summary'
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    batch = relationship("PharmacyImportBatch", back_populates="fills")
+    transaction = relationship("BankTransaction", foreign_keys=[transaction_id])
+
+
+class ReceiptLineItem(Base):
+    """An itemized line from a receipt attached to a bank transaction."""
+
+    __tablename__ = "receipt_line_items"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    transaction_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("bank_transactions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    description = Column(String(500), nullable=False)
+    amount = Column(Numeric(12, 2), nullable=False)
+    quantity = Column(Integer, nullable=False, default=1)
+    is_hsa_eligible = Column(Boolean, nullable=True)   # null = unclassified
+    hsa_category = Column(String(100), nullable=True)
+    source = Column(String(30), nullable=False)        # 'csv_generic' | 'manual'
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('csv_generic', 'manual')",
+            name="ck_receipt_line_item_source",
+        ),
+    )
+
+
+# Add line_items relationship to BankTransaction (patched here to avoid circular imports)
+BankTransaction.line_items = relationship(
+    "ReceiptLineItem",
+    foreign_keys="ReceiptLineItem.transaction_id",
+    cascade="all, delete-orphan",
+    lazy="select",
+)
+
+
 class UserCategoryOverride(Base):
     """Per-user Smart filter pin: force a Teller category to always show or always hide."""
 
