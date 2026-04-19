@@ -8,6 +8,9 @@ vi.mock('../../services/bank', () => ({
     annotateTransaction: vi.fn(),
     listTransactionCategories: vi.fn(),
     countTransactions: vi.fn(),
+    getSmartFilterStatus: vi.fn(),
+    setCategoryOverride: vi.fn(),
+    deleteCategoryOverride: vi.fn(),
   },
   HSA_CATEGORIES: [
     { value: 'medical', label: 'Medical Care' },
@@ -98,6 +101,7 @@ beforeEach(() => {
   ;(bankService.listAllTransactions as any).mockResolvedValue([])
   ;(bankService.listTransactionCategories as any).mockResolvedValue([])
   ;(bankService.countTransactions as any).mockResolvedValue(0)
+  ;(bankService.getSmartFilterStatus as any).mockResolvedValue([])
   ;(familyService.list as any).mockResolvedValue([])
   ;(documentService.list as any).mockResolvedValue([])
   ;(householdService.getMine as any).mockResolvedValue(mockHousehold)
@@ -204,6 +208,94 @@ describe('Transactions page', () => {
       render(<Transactions />)
       await waitFor(() => expect(bankService.listAllTransactions).toHaveBeenCalled())
       expect(screen.queryByText(/older transactions may not have bank-provided category data/i)).not.toBeInTheDocument()
+    })
+
+    it('shows Smart mode hidden status when category is smart-hidden', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      ;(bankService.listTransactionCategories as any).mockResolvedValue(['dining'])
+      ;(bankService.countTransactions as any).mockResolvedValue(1)
+      ;(bankService.getSmartFilterStatus as any).mockResolvedValue([{
+        category: 'dining', is_hidden_by_default: true, is_auto_promoted: false,
+        pin_mode: null, effective_smart_hidden: true, reviewed_count: 0, hsa_rate: 0,
+      }])
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+      fireEvent.change(screen.getByDisplayValue('Smart'), { target: { value: 'dining' } })
+      await waitFor(() => {
+        expect(screen.getByText(/always show in smart mode/i)).toBeInTheDocument()
+        expect(screen.getAllByText(/smart mode/i).length).toBeGreaterThan(0)
+      })
+    })
+
+    it('shows auto-promoted label when category has high HSA rate', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      ;(bankService.listTransactionCategories as any).mockResolvedValue(['shopping'])
+      ;(bankService.countTransactions as any).mockResolvedValue(1)
+      ;(bankService.getSmartFilterStatus as any).mockResolvedValue([{
+        category: 'shopping', is_hidden_by_default: true, is_auto_promoted: true,
+        pin_mode: null, effective_smart_hidden: false, reviewed_count: 12, hsa_rate: 0.25,
+      }])
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+      fireEvent.change(screen.getByDisplayValue('Smart'), { target: { value: 'shopping' } })
+      await waitFor(() => {
+        expect(screen.getByText(/auto-promoted/i)).toBeInTheDocument()
+        expect(screen.getByText(/25%/i)).toBeInTheDocument()
+      })
+    })
+
+    it('shows remove pin button when category has a pin', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      ;(bankService.listTransactionCategories as any).mockResolvedValue(['dining'])
+      ;(bankService.countTransactions as any).mockResolvedValue(1)
+      ;(bankService.getSmartFilterStatus as any).mockResolvedValue([{
+        category: 'dining', is_hidden_by_default: true, is_auto_promoted: false,
+        pin_mode: 'show', effective_smart_hidden: false, reviewed_count: 0, hsa_rate: 0,
+      }])
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+      fireEvent.change(screen.getByDisplayValue('Smart'), { target: { value: 'dining' } })
+      await waitFor(() => {
+        expect(screen.getByText(/remove pin/i)).toBeInTheDocument()
+      })
+    })
+
+    it('calls setCategoryOverride when pinning a category', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      ;(bankService.listTransactionCategories as any).mockResolvedValue(['dining'])
+      ;(bankService.countTransactions as any).mockResolvedValue(1)
+      ;(bankService.getSmartFilterStatus as any).mockResolvedValue([{
+        category: 'dining', is_hidden_by_default: true, is_auto_promoted: false,
+        pin_mode: null, effective_smart_hidden: true, reviewed_count: 0, hsa_rate: 0,
+      }])
+      ;(bankService.setCategoryOverride as any).mockResolvedValue({ category: 'dining', pin_mode: 'show' })
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+      fireEvent.change(screen.getByDisplayValue('Smart'), { target: { value: 'dining' } })
+      await waitFor(() => screen.getByText(/always show in smart mode/i))
+      fireEvent.click(screen.getByText(/always show in smart mode/i))
+      await waitFor(() => {
+        expect(bankService.setCategoryOverride).toHaveBeenCalledWith('dining', 'show')
+      })
+    })
+
+    it('calls deleteCategoryOverride when removing a pin', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([makeTxn()])
+      ;(bankService.listTransactionCategories as any).mockResolvedValue(['dining'])
+      ;(bankService.countTransactions as any).mockResolvedValue(1)
+      ;(bankService.getSmartFilterStatus as any).mockResolvedValue([{
+        category: 'dining', is_hidden_by_default: true, is_auto_promoted: false,
+        pin_mode: 'show', effective_smart_hidden: false, reviewed_count: 0, hsa_rate: 0,
+      }])
+      ;(bankService.deleteCategoryOverride as any).mockResolvedValue(undefined)
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('CVS Pharmacy'))
+      fireEvent.change(screen.getByDisplayValue('Smart'), { target: { value: 'dining' } })
+      await waitFor(() => screen.getByText(/remove pin/i))
+      fireEvent.click(screen.getByText(/remove pin/i))
+      await waitFor(() => {
+        expect(bankService.deleteCategoryOverride).toHaveBeenCalledWith('dining')
+      })
     })
 
     it('shows Showing X of Y when count exceeds loaded transactions', async () => {
