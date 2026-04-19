@@ -93,9 +93,6 @@ export default function ReviewQueue() {
           <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
             <p className="text-xs text-gray-400 mb-1">{formatDate(current.transaction_date)}</p>
             <p className="text-base font-semibold text-gray-900 mb-1">{current.description}</p>
-            {current.counterparty_name && current.counterparty_name !== current.description && (
-              <p className="text-sm text-gray-500 mb-2">{current.counterparty_name}</p>
-            )}
             <p className="text-2xl font-bold text-gray-900">{formatAmount(current.amount)}</p>
           </div>
 

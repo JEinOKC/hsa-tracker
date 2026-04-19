@@ -151,3 +151,54 @@ def test_send_test_push_returns_zero_when_no_vapid(client, auth_headers):
 def test_send_test_push_requires_auth(client):
     response = client.post("/api/v1/push/test")
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# POST /push/notify-hsa-review
+# ---------------------------------------------------------------------------
+
+def test_notify_hsa_review_sends_singular_body(client, auth_headers, test_user):
+    with patch("app.api.v1.endpoints.push.send_push_to_user", return_value=1) as mock_send:
+        response = client.post(
+            "/api/v1/push/notify-hsa-review",
+            json={"count": 1},
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["sent_to"] == 1
+    mock_send.assert_called_once()
+    call_kwargs = mock_send.call_args.kwargs
+    assert call_kwargs["body"] == "1 new transaction may be HSA-eligible"
+    assert call_kwargs["url"] == "/review"
+
+
+def test_notify_hsa_review_sends_plural_body(client, auth_headers, test_user):
+    with patch("app.api.v1.endpoints.push.send_push_to_user", return_value=1) as mock_send:
+        response = client.post(
+            "/api/v1/push/notify-hsa-review",
+            json={"count": 5},
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 200
+    mock_send.assert_called_once()
+    assert mock_send.call_args.kwargs["body"] == "5 new transactions may be HSA-eligible"
+
+
+def test_notify_hsa_review_skips_push_for_zero_count(client, auth_headers):
+    with patch("app.api.v1.endpoints.push.send_push_to_user") as mock_send:
+        response = client.post(
+            "/api/v1/push/notify-hsa-review",
+            json={"count": 0},
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["sent_to"] == 0
+    mock_send.assert_not_called()
+
+
+def test_notify_hsa_review_requires_auth(client):
+    response = client.post("/api/v1/push/notify-hsa-review", json={"count": 1})
+    assert response.status_code == 403

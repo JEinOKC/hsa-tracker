@@ -22,10 +22,16 @@ vi.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
 }))
 
+vi.mock('../../services/pushNotifications', () => ({
+  notifyHsaReview: vi.fn().mockResolvedValue(undefined),
+}))
+
 import { bankService } from '../../services/bank'
+import { notifyHsaReview } from '../../services/pushNotifications'
 
 const STORAGE_KEY = 'hsa_last_auto_sync'
 const INTERVAL_STORAGE_KEY = 'hsa_sync_interval_ms'
+const PUSH_COOLDOWN_KEY = 'hsa_last_push_at'
 
 const staleAccount = {
   id: 'acc-1',
@@ -55,6 +61,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   localStorage.removeItem(STORAGE_KEY)
   localStorage.removeItem(INTERVAL_STORAGE_KEY)
+  localStorage.removeItem(PUSH_COOLDOWN_KEY)
   ;(bankService.listAccounts as any).mockResolvedValue([])
   ;(bankService.syncAccount as any).mockResolvedValue({ added: 0, skipped: 0, account_id: '', potential_hsa_count: 0 })
 })
@@ -62,6 +69,7 @@ beforeEach(() => {
 afterEach(() => {
   localStorage.removeItem(STORAGE_KEY)
   localStorage.removeItem(INTERVAL_STORAGE_KEY)
+  localStorage.removeItem(PUSH_COOLDOWN_KEY)
 })
 
 describe('useAutoSync', () => {
@@ -225,5 +233,55 @@ describe('useAutoSync', () => {
 
     // Restore
     Object.defineProperty(navigator, 'serviceWorker', { value: undefined, configurable: true })
+  })
+
+  it('calls notifyHsaReview with total count batched across multiple accounts', async () => {
+    const staleAccount2 = { ...staleAccount, id: 'acc-4', institution_name: 'Wells Fargo' }
+    ;(bankService.listAccounts as any).mockResolvedValue([staleAccount, staleAccount2])
+    ;(bankService.syncAccount as any)
+      .mockResolvedValueOnce({ added: 1, skipped: 0, account_id: 'acc-1', potential_hsa_count: 2 })
+      .mockResolvedValueOnce({ added: 1, skipped: 0, account_id: 'acc-4', potential_hsa_count: 3 })
+
+    renderHook(() => useAutoSync())
+
+    await waitFor(() => {
+      expect(notifyHsaReview).toHaveBeenCalledWith(5)
+    })
+    expect(notifyHsaReview).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not call notifyHsaReview when all syncs return 0 potential_hsa_count', async () => {
+    ;(bankService.listAccounts as any).mockResolvedValue([staleAccount])
+    ;(bankService.syncAccount as any).mockResolvedValue({ added: 1, skipped: 0, account_id: 'acc-1', potential_hsa_count: 0 })
+
+    renderHook(() => useAutoSync())
+
+    await waitFor(() => expect(bankService.syncAccount).toHaveBeenCalled())
+    await new Promise(r => setTimeout(r, 50))
+    expect(notifyHsaReview).not.toHaveBeenCalled()
+  })
+
+  it('does not call notifyHsaReview when push cooldown is active', async () => {
+    localStorage.setItem(PUSH_COOLDOWN_KEY, String(Date.now() - 60 * 60 * 1000)) // 1h ago, within 12h cooldown
+    ;(bankService.listAccounts as any).mockResolvedValue([staleAccount])
+    ;(bankService.syncAccount as any).mockResolvedValue({ added: 1, skipped: 0, account_id: 'acc-1', potential_hsa_count: 3 })
+
+    renderHook(() => useAutoSync())
+
+    await waitFor(() => expect(bankService.syncAccount).toHaveBeenCalled())
+    await new Promise(r => setTimeout(r, 50))
+    expect(notifyHsaReview).not.toHaveBeenCalled()
+  })
+
+  it('calls notifyHsaReview when push cooldown has expired', async () => {
+    localStorage.setItem(PUSH_COOLDOWN_KEY, String(Date.now() - 13 * 60 * 60 * 1000)) // 13h ago, beyond 12h cooldown
+    ;(bankService.listAccounts as any).mockResolvedValue([staleAccount])
+    ;(bankService.syncAccount as any).mockResolvedValue({ added: 1, skipped: 0, account_id: 'acc-1', potential_hsa_count: 2 })
+
+    renderHook(() => useAutoSync())
+
+    await waitFor(() => {
+      expect(notifyHsaReview).toHaveBeenCalledWith(2)
+    })
   })
 })
