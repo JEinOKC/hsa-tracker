@@ -44,12 +44,11 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
   event.notification.close()
   const url = (event.notification.data as any)?.url ?? '/'
   event.waitUntil(
-    self.clients.matchAll({ type: 'window' }).then(clients => {
+    self.clients.matchAll({ type: 'window' }).then(async clients => {
       const existing = clients.find(c => c.url.includes(self.location.origin))
       if (existing) {
-        existing.focus()
-        existing.navigate(url)
-        return
+        const focused = await existing.focus()
+        return focused?.navigate(url)
       }
       return self.clients.openWindow(url)
     })
