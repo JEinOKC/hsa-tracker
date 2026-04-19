@@ -554,3 +554,107 @@ class TestDisconnectAccount:
     def test_returns_404_for_unknown_account(self, client, auth_headers):
         resp = client.delete(f"/api/v1/bank/accounts/{uuid.uuid4()}", headers=auth_headers)
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Sync — push notification on potential HSA transactions
+# ---------------------------------------------------------------------------
+
+class TestSyncPushNotification:
+    def test_potential_hsa_count_zero_when_none_flagged(self, client, auth_headers, db_session, test_user):
+        conn = _make_connection(db_session, user_id=test_user.id)
+
+        mock_provider = MagicMock()
+        mock_provider.list_transactions.return_value = [
+            _make_external_txn("txn_001"),
+        ]
+
+        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider), \
+             patch("app.api.v1.endpoints.bank.apply_auto_flag") as mock_flag:
+            # apply_auto_flag does nothing (no flag set)
+            mock_flag.return_value = None
+            resp = client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
+
+        assert resp.status_code == 200
+        assert resp.json()["potential_hsa_count"] == 0
+
+    def test_potential_hsa_count_matches_flagged_transactions(self, client, auth_headers, db_session, test_user):
+        conn = _make_connection(db_session, user_id=test_user.id)
+
+        mock_provider = MagicMock()
+        mock_provider.list_transactions.return_value = [
+            _make_external_txn("txn_001"),
+            _make_external_txn("txn_002", amount="-30.00"),
+        ]
+
+        def flag_first_only(txn):
+            if txn.provider_transaction_id == "txn_001":
+                txn.auto_flag = "potential_hsa"
+
+        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider), \
+             patch("app.api.v1.endpoints.bank.apply_auto_flag", side_effect=flag_first_only), \
+             patch("app.api.v1.endpoints.bank.send_push_to_user"):
+            resp = client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
+
+        assert resp.status_code == 200
+        assert resp.json()["potential_hsa_count"] == 1
+
+    def test_push_sent_with_singular_body_and_review_url(self, client, auth_headers, db_session, test_user):
+        conn = _make_connection(db_session, user_id=test_user.id)
+
+        mock_provider = MagicMock()
+        mock_provider.list_transactions.return_value = [_make_external_txn("txn_001")]
+
+        def flag_all(txn):
+            txn.auto_flag = "potential_hsa"
+
+        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider), \
+             patch("app.api.v1.endpoints.bank.apply_auto_flag", side_effect=flag_all), \
+             patch("app.api.v1.endpoints.bank.send_push_to_user") as mock_push:
+            resp = client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
+
+        assert resp.status_code == 200
+        mock_push.assert_called_once()
+        call_kwargs = mock_push.call_args.kwargs
+        assert call_kwargs["body"] == "1 new transaction may be HSA-eligible"
+        assert call_kwargs["url"] == "/review"
+
+    def test_push_sent_with_plural_body_for_multiple(self, client, auth_headers, db_session, test_user):
+        conn = _make_connection(db_session, user_id=test_user.id)
+
+        mock_provider = MagicMock()
+        mock_provider.list_transactions.return_value = [
+            _make_external_txn("txn_001"),
+            _make_external_txn("txn_002", amount="-30.00"),
+        ]
+
+        def flag_all(txn):
+            txn.auto_flag = "potential_hsa"
+
+        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider), \
+             patch("app.api.v1.endpoints.bank.apply_auto_flag", side_effect=flag_all), \
+             patch("app.api.v1.endpoints.bank.send_push_to_user") as mock_push:
+            resp = client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
+
+        assert resp.status_code == 200
+        mock_push.assert_called_once()
+        assert mock_push.call_args.kwargs["body"] == "2 new transactions may be HSA-eligible"
+
+    def test_push_not_sent_when_no_potential_hsa(self, client, auth_headers, db_session, test_user):
+        conn = _make_connection(db_session, user_id=test_user.id)
+
+        mock_provider = MagicMock()
+        mock_provider.list_transactions.return_value = [_make_external_txn("txn_001")]
+
+        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider), \
+             patch("app.api.v1.endpoints.bank.apply_auto_flag"), \
+             patch("app.api.v1.endpoints.bank.send_push_to_user") as mock_push:
+            resp = client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
+
+        assert resp.status_code == 200
+        mock_push.assert_not_called()

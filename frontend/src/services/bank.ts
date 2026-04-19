@@ -127,6 +127,7 @@ export interface SyncResult {
   added: number
   skipped: number
   account_id: string
+  potential_hsa_count: number
 }
 
 export const HSA_CATEGORIES = [

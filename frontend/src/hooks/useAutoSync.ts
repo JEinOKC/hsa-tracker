@@ -4,18 +4,27 @@ import { bankService } from '../services/bank'
 import { useToast } from '../components/Toast'
 
 const STORAGE_KEY = 'hsa_last_auto_sync'
-const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000 // 24 hours
-const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000 // 24 hours
+const INTERVAL_STORAGE_KEY = 'hsa_sync_interval_ms'
+const DEFAULT_INTERVAL_MS = 24 * 60 * 60 * 1000
+
+const VALID_INTERVALS = [4, 8, 12, 24].map(h => h * 60 * 60 * 1000)
+
+function getSyncIntervalMs(): number {
+  const raw = localStorage.getItem(INTERVAL_STORAGE_KEY)
+  if (!raw) return DEFAULT_INTERVAL_MS
+  const parsed = parseInt(raw, 10)
+  return VALID_INTERVALS.includes(parsed) ? parsed : DEFAULT_INTERVAL_MS
+}
 
 function isStale(lastSyncedAt: string | null): boolean {
   if (!lastSyncedAt) return true
-  return Date.now() - new Date(lastSyncedAt).getTime() > STALE_THRESHOLD_MS
+  return Date.now() - new Date(lastSyncedAt).getTime() > getSyncIntervalMs()
 }
 
 function shouldCheck(): boolean {
   const last = localStorage.getItem(STORAGE_KEY)
   if (!last) return true
-  return Date.now() - parseInt(last, 10) > CHECK_INTERVAL_MS
+  return Date.now() - parseInt(last, 10) > getSyncIntervalMs()
 }
 
 function markChecked() {
@@ -80,6 +89,16 @@ export function useAutoSync() {
       if (document.visibilityState === 'visible') runSync()
     }
     document.addEventListener('visibilitychange', onVisibilityChange)
-    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+
+    // Re-run when the service worker sends a periodic sync trigger
+    const onSWMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'TRIGGER_SYNC') runSync()
+    }
+    navigator.serviceWorker?.addEventListener('message', onSWMessage)
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      navigator.serviceWorker?.removeEventListener('message', onSWMessage)
+    }
   }, [])
 }

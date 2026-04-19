@@ -8,7 +8,7 @@ from app.config import settings
 from app.models.push_subscription import PushSubscription
 
 
-def send_push_to_user(user_id, title: str, body: str, db: Session) -> int:
+def send_push_to_user(user_id, title: str, body: str, db: Session, url: str = "/") -> int:
     """Send a push notification to all active subscriptions for a user.
 
     Returns the number of successful sends.
@@ -29,7 +29,7 @@ def send_push_to_user(user_id, title: str, body: str, db: Session) -> int:
         .all()
     )
 
-    payload = json.dumps({"title": title, "body": body})
+    payload = json.dumps({"title": title, "body": body, "url": url})
     sent = 0
     for sub in subs:
         try:

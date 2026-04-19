@@ -17,6 +17,10 @@ vi.mock('../../services/pushNotifications', () => ({
   removeSubscription: vi.fn(),
 }))
 
+vi.mock('../../services/periodicSync', () => ({
+  registerPeriodicSync: vi.fn(),
+}))
+
 import {
   isPushSupported,
   getExistingSubscription,
@@ -24,6 +28,7 @@ import {
   saveSubscription,
   removeSubscription,
 } from '../../services/pushNotifications'
+import { registerPeriodicSync } from '../../services/periodicSync'
 import { householdService } from '../../services/household'
 
 const mockGetMine = vi.mocked(householdService.getMine)
@@ -33,6 +38,7 @@ const mockGetExisting = vi.mocked(getExistingSubscription)
 const mockSubscribeToPush = vi.mocked(subscribeToPush)
 const mockSaveSubscription = vi.mocked(saveSubscription)
 const mockRemoveSubscription = vi.mocked(removeSubscription)
+const mockRegisterPeriodicSync = vi.mocked(registerPeriodicSync)
 
 const mockSub = {
   endpoint: 'https://push.example.com/sub/1',
@@ -50,7 +56,9 @@ const mockAdminHousehold = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.removeItem('hsa_sync_interval_ms')
   mockGetMine.mockResolvedValue(null)
+  mockRegisterPeriodicSync.mockResolvedValue(undefined)
   // Default: supported, no existing subscription
   mockIsPushSupported.mockReturnValue(true)
   mockGetExisting.mockResolvedValue(null)
@@ -232,5 +240,41 @@ describe('Calculation Settings section', () => {
     await waitFor(() => {
       expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false')
     })
+  })
+})
+
+describe('Sync Interval section', () => {
+  it('renders the Sync Interval heading', async () => {
+    render(<Settings />)
+    expect(screen.getByText('Sync Interval')).toBeInTheDocument()
+  })
+
+  it('defaults to 24h when no localStorage value', async () => {
+    render(<Settings />)
+    const select = screen.getByRole('combobox') as HTMLSelectElement
+    expect(select.value).toBe(String(24 * 60 * 60 * 1000))
+  })
+
+  it('reads stored interval from localStorage on mount', async () => {
+    const fourHoursMs = 4 * 60 * 60 * 1000
+    localStorage.setItem('hsa_sync_interval_ms', String(fourHoursMs))
+    render(<Settings />)
+    const select = screen.getByRole('combobox') as HTMLSelectElement
+    expect(select.value).toBe(String(fourHoursMs))
+  })
+
+  it('writes new value to localStorage when interval changes', async () => {
+    render(<Settings />)
+    const select = screen.getByRole('combobox')
+    fireEvent.change(select, { target: { value: String(8 * 60 * 60 * 1000) } })
+    expect(localStorage.getItem('hsa_sync_interval_ms')).toBe(String(8 * 60 * 60 * 1000))
+  })
+
+  it('calls registerPeriodicSync when interval changes', async () => {
+    render(<Settings />)
+    const select = screen.getByRole('combobox')
+    const eightHoursMs = 8 * 60 * 60 * 1000
+    fireEvent.change(select, { target: { value: String(eightHoursMs) } })
+    expect(mockRegisterPeriodicSync).toHaveBeenCalledWith(eightHoursMs)
   })
 })

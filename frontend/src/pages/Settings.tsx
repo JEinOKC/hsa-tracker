@@ -7,9 +7,26 @@ import {
   saveSubscription,
   removeSubscription,
 } from '../services/pushNotifications'
+import { registerPeriodicSync } from '../services/periodicSync'
 import { householdService, Household } from '../services/household'
 
 type PushState = 'loading' | 'unsupported' | 'denied' | 'not_subscribed' | 'subscribed' | 'error'
+
+const INTERVAL_STORAGE_KEY = 'hsa_sync_interval_ms'
+const SYNC_OPTIONS = [
+  { label: 'Every 4 hours', value: 4 * 60 * 60 * 1000 },
+  { label: 'Every 8 hours', value: 8 * 60 * 60 * 1000 },
+  { label: 'Every 12 hours', value: 12 * 60 * 60 * 1000 },
+  { label: 'Every 24 hours', value: 24 * 60 * 60 * 1000 },
+]
+const DEFAULT_INTERVAL = 24 * 60 * 60 * 1000
+
+function getStoredInterval(): number {
+  const raw = localStorage.getItem(INTERVAL_STORAGE_KEY)
+  if (!raw) return DEFAULT_INTERVAL
+  const parsed = parseInt(raw, 10)
+  return SYNC_OPTIONS.some(o => o.value === parsed) ? parsed : DEFAULT_INTERVAL
+}
 
 export default function Settings() {
   const [pushState, setPushState] = useState<PushState>('loading')
@@ -18,10 +35,21 @@ export default function Settings() {
   const [busy, setBusy] = useState(false)
   const [household, setHousehold] = useState<Household | null>(null)
   const [strictBusy, setStrictBusy] = useState(false)
+  const [syncInterval, setSyncInterval] = useState<number>(getStoredInterval)
 
   useEffect(() => {
     householdService.getMine().then(setHousehold)
   }, [])
+
+  useEffect(() => {
+    registerPeriodicSync(syncInterval)
+  }, [])
+
+  function handleSyncIntervalChange(value: number) {
+    setSyncInterval(value)
+    localStorage.setItem(INTERVAL_STORAGE_KEY, String(value))
+    registerPeriodicSync(value)
+  }
 
   async function handleToggleStrict() {
     if (!household) return
@@ -148,6 +176,23 @@ export default function Settings() {
         >
           Manage Rules
         </Link>
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 p-6 mb-4">
+        <h2 className="text-lg font-semibold text-gray-900 mb-1">Sync Interval</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          How often to automatically check for new transactions when you have the app open.
+          On supported browsers with the app installed, syncs can also run in the background.
+        </p>
+        <select
+          value={syncInterval}
+          onChange={e => handleSyncIntervalChange(Number(e.target.value))}
+          className="block w-full max-w-xs rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
+        >
+          {SYNC_OPTIONS.map(o => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-6">

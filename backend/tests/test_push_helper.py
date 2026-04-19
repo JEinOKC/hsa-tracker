@@ -84,6 +84,34 @@ def test_skips_inactive_subscriptions(db_session, user_id, inactive_sub):
     mock_webpush.assert_not_called()
 
 
+def test_url_included_in_payload_when_provided(db_session, user_id, active_sub):
+    import json
+
+    with patch("app.utils.push.settings") as mock_settings:
+        mock_settings.vapid_private_key = "fake-private-key"
+        mock_settings.vapid_claims_email = "mailto:test@example.com"
+        with patch("pywebpush.webpush") as mock_webpush:
+            send_push_to_user(user_id, "Title", "Body", db_session, url="/review")
+
+    call_kwargs = mock_webpush.call_args.kwargs
+    payload = json.loads(call_kwargs["data"])
+    assert payload["url"] == "/review"
+
+
+def test_url_defaults_to_slash(db_session, user_id, active_sub):
+    import json
+
+    with patch("app.utils.push.settings") as mock_settings:
+        mock_settings.vapid_private_key = "fake-private-key"
+        mock_settings.vapid_claims_email = "mailto:test@example.com"
+        with patch("pywebpush.webpush") as mock_webpush:
+            send_push_to_user(user_id, "Title", "Body", db_session)
+
+    call_kwargs = mock_webpush.call_args.kwargs
+    payload = json.loads(call_kwargs["data"])
+    assert payload["url"] == "/"
+
+
 def test_deactivates_subscription_on_410(db_session, user_id, active_sub):
     from pywebpush import WebPushException
 
