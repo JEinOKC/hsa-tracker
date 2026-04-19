@@ -25,13 +25,17 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models.bank import BankConnection, BankTransaction, TransactionDocument
+from app.models.bank import BankConnection, BankTransaction, TransactionDocument, UserCategoryOverride
 from app.models.family import FamilyMember, HsaEligibilityPeriod
 from app.models.household import Household, HouseholdMembership
 from app.models.user import User
 from app.providers import get_teller_provider, is_teller_configured
 from app.utils.access import get_readable_owner_ids, check_permission
-from app.services.rules_engine import apply_auto_flag, apply_rules_to_transaction, get_active_rules_for_user, NON_HSA_CATEGORIES
+from app.services.rules_engine import (
+    apply_auto_flag, apply_rules_to_transaction, get_active_rules_for_user,
+    get_smart_hidden_categories, NON_HSA_CATEGORIES, SMART_DEFAULT_HIDDEN,
+    _SMART_MIN_REVIEWED, _SMART_MIN_HSA_RATE,
+)
 from app.services.merchant_keywords import classify_merchant, normalize_merchant_name
 
 router = APIRouter()
@@ -445,6 +449,113 @@ async def get_dashboard_summary(
     )
 
 
+@router.get("/smart-filter/status")
+async def get_smart_filter_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return Smart filter status for every category the user has transactions in."""
+    from app.models.bank import BankConnection as BC
+
+    user_connection_ids = (
+        db.query(BC.id)
+        .filter(BC.user_id == current_user.id, BC.is_active == True)  # noqa: E712
+        .subquery()
+    )
+
+    # Per-category HSA stats
+    rows = (
+        db.query(
+            BankTransaction.details["category"].astext.label("category"),
+            func.count().filter(BankTransaction.is_hsa_eligible.isnot(None)).label("reviewed"),
+            func.count().filter(BankTransaction.is_hsa_eligible == True).label("hsa_count"),  # noqa: E712
+        )
+        .filter(
+            BankTransaction.connection_id.in_(user_connection_ids),
+            BankTransaction.details["category"].astext.isnot(None),
+        )
+        .group_by(BankTransaction.details["category"].astext)
+        .all()
+    )
+
+    overrides = {
+        o.category: o.pin_mode
+        for o in db.query(UserCategoryOverride).filter(UserCategoryOverride.user_id == current_user.id).all()
+    }
+
+    result = []
+    for row in rows:
+        cat = row.category
+        if not cat:
+            continue
+        reviewed = row.reviewed or 0
+        hsa_count = row.hsa_count or 0
+        hsa_rate = (hsa_count / reviewed) if reviewed > 0 else 0.0
+        is_auto_promoted = reviewed >= _SMART_MIN_REVIEWED and hsa_rate >= _SMART_MIN_HSA_RATE
+        is_hidden_by_default = cat in SMART_DEFAULT_HIDDEN
+        pin_mode = overrides.get(cat)
+
+        if pin_mode == "show":
+            effective_hidden = False
+        elif pin_mode == "hide":
+            effective_hidden = True
+        elif is_auto_promoted:
+            effective_hidden = False
+        else:
+            effective_hidden = is_hidden_by_default
+
+        result.append({
+            "category": cat,
+            "is_hidden_by_default": is_hidden_by_default,
+            "is_auto_promoted": is_auto_promoted,
+            "pin_mode": pin_mode,
+            "effective_smart_hidden": effective_hidden,
+            "reviewed_count": reviewed,
+            "hsa_rate": round(hsa_rate, 4),
+        })
+
+    return sorted(result, key=lambda r: r["category"])
+
+
+@router.put("/smart-filter/categories/{category}", status_code=200)
+async def set_category_smart_override(
+    category: str,
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Pin a category to always show or always hide in Smart filter mode."""
+    pin_mode = body.get("pin_mode")
+    if pin_mode not in ("show", "hide"):
+        raise HTTPException(status_code=422, detail="pin_mode must be 'show' or 'hide'")
+
+    existing = (
+        db.query(UserCategoryOverride)
+        .filter(UserCategoryOverride.user_id == current_user.id, UserCategoryOverride.category == category)
+        .first()
+    )
+    if existing:
+        existing.pin_mode = pin_mode
+    else:
+        db.add(UserCategoryOverride(user_id=current_user.id, category=category, pin_mode=pin_mode))
+    db.commit()
+    return {"category": category, "pin_mode": pin_mode}
+
+
+@router.delete("/smart-filter/categories/{category}", status_code=204)
+async def delete_category_smart_override(
+    category: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Remove a category pin, reverting to auto Smart filter behavior."""
+    db.query(UserCategoryOverride).filter(
+        UserCategoryOverride.user_id == current_user.id,
+        UserCategoryOverride.category == category,
+    ).delete()
+    db.commit()
+
+
 @router.get("/transactions/categories", response_model=list[str])
 async def list_transaction_categories(
     db: Session = Depends(get_db),
@@ -628,17 +739,18 @@ def _build_transaction_query(
         query = query.filter(
             (BankTransaction.auto_flag != "hidden") | BankTransaction.auto_flag.is_(None)
         )
-        # In "Smart" mode (default), exclude unreviewed transactions in clearly
-        # non-medical Teller categories. "All" mode bypasses this filter.
+        # In "Smart" mode (default), exclude unreviewed transactions in categories
+        # the adaptive filter says to hide. "All" mode bypasses this entirely.
         # Transactions with no category (NULL) always show.
-        if not show_all_categories:
-            non_hsa_list = list(NON_HSA_CATEGORIES)
-            category_col = BankTransaction.details["category"].astext
-            query = query.filter(
-                BankTransaction.is_hsa_eligible.isnot(None) |
-                category_col.is_(None) |
-                ~category_col.in_(non_hsa_list)
-            )
+        if not show_all_categories and current_user_id is not None:
+            smart_hidden = get_smart_hidden_categories(current_user_id, db)
+            if smart_hidden:
+                category_col = BankTransaction.details["category"].astext
+                query = query.filter(
+                    BankTransaction.is_hsa_eligible.isnot(None) |
+                    category_col.is_(None) |
+                    ~category_col.in_(list(smart_hidden))
+                )
     if auto_flag_filter is not None:
         query = query.filter(BankTransaction.auto_flag == auto_flag_filter)
     if teller_category is not None:

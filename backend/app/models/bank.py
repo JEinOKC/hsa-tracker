@@ -180,3 +180,25 @@ class TransactionDocument(Base):
 
     def __repr__(self):
         return f"<TransactionDocument({self.original_filename} → {self.s3_key})>"
+
+
+class UserCategoryOverride(Base):
+    """Per-user Smart filter pin: force a Teller category to always show or always hide."""
+
+    __tablename__ = "user_category_overrides"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    category = Column(String(100), nullable=False)
+    pin_mode = Column(String(10), nullable=False)  # 'show' | 'hide'
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "category", name="uq_user_category_override_user_category"),
+        CheckConstraint("pin_mode IN ('show', 'hide')", name="ck_user_category_override_pin_mode"),
+    )

@@ -6,9 +6,10 @@ from datetime import date
 from typing import Optional
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.bank import BankTransaction
+from app.models.bank import BankTransaction, UserCategoryOverride
 from app.models.rules import HsaRule, HsaRuleCondition, HsaRuleAction
 from app.services.merchant_keywords import (
     classify_merchant,
@@ -30,8 +31,7 @@ POTENTIAL_HSA_CATEGORIES: frozenset[str] = frozenset({
 })
 
 # Teller category values that are never plausibly HSA-eligible.
-# Used as a fallback when the merchant name is unknown/unreadable.
-# Conservative list — only categories where no purchase could be medical.
+# Kept for reference; the smart filter now uses SMART_DEFAULT_HIDDEN instead.
 NON_HSA_CATEGORIES: frozenset[str] = frozenset({
     "food_and_drink",   # restaurants, fast food, bars
     "entertainment",    # movies, concerts, sports
@@ -40,6 +40,23 @@ NON_HSA_CATEGORIES: frozenset[str] = frozenset({
     "gambling",         # casinos, lottery
     "subscription",     # streaming, software subscriptions
 })
+
+# Full default-hide list for Smart filter mode. These are the Teller category
+# values that are hidden unless the user has a manual override or the system
+# has learned that the category is being used for HSA purchases.
+SMART_DEFAULT_HIDDEN: frozenset[str] = frozenset({
+    # Actual Teller category values observed in production
+    "dining", "bar", "entertainment", "fuel", "software", "phone",
+    "investment", "transportation", "tax", "shopping", "groceries",
+    "service", "home", "office", "charity", "insurance", "general",
+    # Legacy / alternate Teller values (keep for safety)
+    "food_and_drink", "travel", "gambling", "subscription",
+})
+
+# Minimum number of reviewed transactions before a category can be auto-promoted.
+_SMART_MIN_REVIEWED = 10
+# Minimum fraction of reviewed transactions that must be HSA-eligible.
+_SMART_MIN_HSA_RATE = 0.15
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +114,63 @@ def would_rule_apply(
         if _rule_matches(txn, rule):
             return False
     return _rule_matches(txn, test_rule)
+
+
+def get_smart_hidden_categories(user_id: UUID, db: Session) -> frozenset[str]:
+    """Return the set of Teller categories that Smart mode should hide for *user_id*.
+
+    Precedence (highest wins):
+      1. User pin override (show/hide)
+      2. Auto-promotion: category has >= _SMART_MIN_REVIEWED reviewed transactions
+         with >= _SMART_MIN_HSA_RATE HSA-eligible fraction → not hidden
+      3. SMART_DEFAULT_HIDDEN defaults
+    """
+    # --- Compute per-category HSA stats for this user ---
+    from app.models.bank import BankConnection
+
+    user_connection_ids = (
+        db.query(BankConnection.id)
+        .filter(BankConnection.user_id == user_id, BankConnection.is_active == True)  # noqa: E712
+        .subquery()
+    )
+
+    rows = (
+        db.query(
+            BankTransaction.details["category"].astext.label("category"),
+            func.count().filter(BankTransaction.is_hsa_eligible.isnot(None)).label("reviewed"),
+            func.count().filter(BankTransaction.is_hsa_eligible == True).label("hsa_count"),  # noqa: E712
+        )
+        .filter(BankTransaction.connection_id.in_(user_connection_ids))
+        .group_by(BankTransaction.details["category"].astext)
+        .all()
+    )
+
+    promoted: set[str] = set()
+    for row in rows:
+        cat = row.category
+        if not cat:
+            continue
+        reviewed = row.reviewed or 0
+        hsa_count = row.hsa_count or 0
+        if reviewed >= _SMART_MIN_REVIEWED and (hsa_count / reviewed) >= _SMART_MIN_HSA_RATE:
+            promoted.add(cat)
+
+    # --- Load user overrides ---
+    overrides = (
+        db.query(UserCategoryOverride)
+        .filter(UserCategoryOverride.user_id == user_id)
+        .all()
+    )
+    pin_show: set[str] = {o.category for o in overrides if o.pin_mode == "show"}
+    pin_hide: set[str] = {o.category for o in overrides if o.pin_mode == "hide"}
+
+    # --- Build effective hidden set ---
+    hidden = set(SMART_DEFAULT_HIDDEN)
+    hidden -= promoted
+    hidden -= pin_show
+    hidden |= pin_hide
+
+    return frozenset(hidden)
 
 
 def get_active_rules_for_user(user_id: UUID, db: Session) -> list[HsaRule]:

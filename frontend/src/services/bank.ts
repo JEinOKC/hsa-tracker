@@ -95,6 +95,16 @@ export interface BankTransactionAnnotation {
   auto_flag?: 'hidden' | null
 }
 
+export interface CategorySmartStatus {
+  category: string
+  is_hidden_by_default: boolean
+  is_auto_promoted: boolean
+  pin_mode: 'show' | 'hide' | null
+  effective_smart_hidden: boolean
+  reviewed_count: number
+  hsa_rate: number
+}
+
 export interface AllTransactionsParams {
   start_date?: string
   end_date?: string
@@ -157,6 +167,15 @@ export const bankService = {
 
   listTransactionCategories: () =>
     api.get<string[]>('/bank/transactions/categories').then(r => r.data),
+
+  getSmartFilterStatus: () =>
+    api.get<CategorySmartStatus[]>('/bank/smart-filter/status').then(r => r.data),
+
+  setCategoryOverride: (category: string, pin_mode: 'show' | 'hide') =>
+    api.put<{ category: string; pin_mode: string }>(`/bank/smart-filter/categories/${encodeURIComponent(category)}`, { pin_mode }).then(r => r.data),
+
+  deleteCategoryOverride: (category: string) =>
+    api.delete(`/bank/smart-filter/categories/${encodeURIComponent(category)}`),
 
   countTransactions: (params?: Omit<AllTransactionsParams, 'limit' | 'offset'>) =>
     api.get<number>('/bank/transactions/count', { params }).then(r => r.data),

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { bankService, BankTransaction, HSA_CATEGORIES } from '../services/bank'
+import { bankService, BankTransaction, CategorySmartStatus, HSA_CATEGORIES } from '../services/bank'
 import { familyService, FamilyMember } from '../services/family'
 import { rulesService, HsaRule } from '../services/rules'
 import { householdService, Household } from '../services/household'
@@ -687,6 +687,8 @@ export default function Transactions() {
   const [filterAutoFlag, setFilterAutoFlag] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
   const [availableCategories, setAvailableCategories] = useState<string[]>([])
+  const [smartStatus, setSmartStatus] = useState<CategorySmartStatus[]>([])
+  const [pinSaving, setPinSaving] = useState(false)
   const [totalCount, setTotalCount] = useState<number | null>(null)
 
   // Debounce search so we don't fire on every keystroke
@@ -728,18 +730,20 @@ export default function Transactions() {
     setTotalCount(null)
     setError(null)
     try {
-      const [txns, fam, hh, cats, count] = await Promise.all([
+      const [txns, fam, hh, cats, count, smartSt] = await Promise.all([
         bankService.listAllTransactions(buildParams(0)),
         familyService.list(),
         householdService.getMine(),
         bankService.listTransactionCategories(),
         bankService.countTransactions(buildCountParams()),
+        bankService.getSmartFilterStatus(),
       ])
       setTransactions(txns)
       setMembers(fam)
       setHousehold(hh)
       setAvailableCategories(cats)
       setTotalCount(count)
+      setSmartStatus(smartSt)
       setHasMore(txns.length === PAGE_SIZE)
     } catch {
       setError('Failed to load transactions.')
@@ -1033,17 +1037,80 @@ export default function Transactions() {
         </div>
       </div>
 
-      {/* Category filter warning */}
-      {filterCategory && filterCategory !== '__all__' && (
-        <div className="mb-3 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
-          <span className="shrink-0">⚠</span>
-          <span>
-            Filtering by bank category <strong>{filterCategory.replace(/_/g, ' ').replace(/^\w/, l => l.toUpperCase())}</strong>.
-            Older transactions may not have bank-provided category data and won&apos;t appear here
-            even if they are of the same type.
-          </span>
-        </div>
-      )}
+      {/* Category filter info + Smart override */}
+      {filterCategory && filterCategory !== '__all__' && (() => {
+        const status = smartStatus.find(s => s.category === filterCategory)
+        const catLabel = filterCategory.replace(/_/g, ' ').replace(/^\w/, l => l.toUpperCase())
+        const handlePin = async (pin_mode: 'show' | 'hide') => {
+          setPinSaving(true)
+          try {
+            await bankService.setCategoryOverride(filterCategory, pin_mode)
+            const updated = await bankService.getSmartFilterStatus()
+            setSmartStatus(updated)
+          } finally {
+            setPinSaving(false)
+          }
+        }
+        const handleUnpin = async () => {
+          setPinSaving(true)
+          try {
+            await bankService.deleteCategoryOverride(filterCategory)
+            const updated = await bankService.getSmartFilterStatus()
+            setSmartStatus(updated)
+          } finally {
+            setPinSaving(false)
+          }
+        }
+        return (
+          <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+            <div className="flex items-start gap-2">
+              <span className="shrink-0">⚠</span>
+              <span>
+                Filtering by <strong>{catLabel}</strong>.
+                Older transactions may not have bank-provided category data and won&apos;t appear here even if they are of the same type.
+              </span>
+            </div>
+            {status && (
+              <div className="mt-2 flex items-center gap-3 pl-5 flex-wrap">
+                <span className="text-amber-700">
+                  Smart mode:{' '}
+                  <strong>{status.effective_smart_hidden ? 'hidden' : 'shown'}</strong>
+                  {status.is_auto_promoted && (
+                    <span className="ml-1 font-normal text-amber-600">
+                      (auto-promoted — {Math.round(status.hsa_rate * 100)}% HSA, {status.reviewed_count} reviewed)
+                    </span>
+                  )}
+                </span>
+                {status.pin_mode ? (
+                  <button
+                    onClick={handleUnpin}
+                    disabled={pinSaving}
+                    className="text-xs underline text-amber-700 hover:text-amber-900 disabled:opacity-50"
+                  >
+                    Remove pin (revert to auto)
+                  </button>
+                ) : status.effective_smart_hidden ? (
+                  <button
+                    onClick={() => handlePin('show')}
+                    disabled={pinSaving}
+                    className="text-xs underline text-amber-700 hover:text-amber-900 disabled:opacity-50"
+                  >
+                    Always show in Smart mode
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handlePin('hide')}
+                    disabled={pinSaving}
+                    className="text-xs underline text-amber-700 hover:text-amber-900 disabled:opacity-50"
+                  >
+                    Always hide in Smart mode
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Potential HSA review callout */}
       {tab === 'hsa' && transactions.some(t => t.is_hsa_eligible === null) && (
