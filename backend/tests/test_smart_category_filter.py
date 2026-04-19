@@ -280,6 +280,21 @@ class TestSmartFilterIntegration:
         descriptions = [t["description"] for t in r.json()]
         assert "NASHBIRD CHICKEN" in descriptions
 
+    def test_specific_category_selection_bypasses_smart_filter(self, client, db_session, test_user, auth_headers):
+        """Explicitly selecting a category shows all transactions in it, even smart-hidden ones."""
+        conn = _make_connection(db_session, test_user.id)
+        _make_txn(db_session, conn.id, category="dining", description="NASHBIRD CHICKEN")
+        db_session.commit()
+
+        r = client.get(
+            "/api/v1/bank/transactions",
+            params={"teller_category": "dining"},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        descriptions = [t["description"] for t in r.json()]
+        assert "NASHBIRD CHICKEN" in descriptions
+
     def test_pinned_show_bypasses_smart_filter(self, client, db_session, test_user, auth_headers):
         conn = _make_connection(db_session, test_user.id)
         _make_txn(db_session, conn.id, category="dining", description="NASHBIRD CHICKEN")

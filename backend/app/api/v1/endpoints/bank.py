@@ -742,7 +742,7 @@ def _build_transaction_query(
         # In "Smart" mode (default), exclude unreviewed transactions in categories
         # the adaptive filter says to hide. "All" mode bypasses this entirely.
         # Transactions with no category (NULL) always show.
-        if not show_all_categories and current_user_id is not None:
+        if not show_all_categories and teller_category is None and current_user_id is not None:
             smart_hidden = get_smart_hidden_categories(current_user_id, db)
             if smart_hidden:
                 category_col = BankTransaction.details["category"].astext
