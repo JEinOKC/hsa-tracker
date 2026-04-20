@@ -938,10 +938,13 @@ function TxnRow({ txn, members, tab, onChange, onTag }: TxnRowProps) {
             )}
           </p>
           {/* Badges on their own line so they never truncate the merchant name */}
-          {(showNoReceiptBadge || (txn.auto_flag === 'potential_hsa' && txn.is_hsa_eligible === null)) && (
+          {(txn.is_hsa_eligible === true || showNoReceiptBadge || (txn.auto_flag === 'potential_hsa' && txn.is_hsa_eligible === null)) && (
             <div className="flex flex-wrap gap-1 mt-0.5">
+              {txn.is_hsa_eligible === true && (
+                <span data-testid="hsa-badge-mobile" className="sm:hidden text-xs font-medium px-1.5 py-0.5 rounded bg-green-100 text-green-700">HSA ✓</span>
+              )}
               {showNoReceiptBadge && (
-                <span title="No receipt attached" className="text-xs font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-600">!</span>
+                <span title="No receipt attached" className="text-xs font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-600">No receipt</span>
               )}
               {txn.auto_flag === 'potential_hsa' && txn.is_hsa_eligible === null && (
                 <span title="Potential HSA expense" className="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-600">Potential HSA</span>
@@ -1119,7 +1122,6 @@ export default function Transactions() {
   // Initial / filter-change load — resets the list
   const load = useCallback(async () => {
     setLoading(true)
-    setTotalCount(null)
     setError(null)
     try {
       const [txns, fam, hh, cats, count, smartSt] = await Promise.all([

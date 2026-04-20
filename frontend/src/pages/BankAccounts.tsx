@@ -205,8 +205,8 @@ export default function BankAccounts() {
                     </p>
                     <div className="flex gap-2 mt-1 flex-wrap">
                       {account.account_subtype && (
-                        <span className="inline-block text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded capitalize">
-                          {account.account_subtype}
+                        <span className="inline-block text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+                          {account.account_subtype.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                         </span>
                       )}
                       {account.account_subtype === 'hsa' && (
