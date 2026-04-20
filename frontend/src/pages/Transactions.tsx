@@ -1305,7 +1305,7 @@ export default function Transactions() {
               {strict ? ' · strict' : ''}
             </p>
             <p className={`text-xl font-bold ${tab === 'reimbursed' ? 'text-purple-700' : 'text-green-700'}`}>
-              {formatAmount(tabTotal.toFixed(2))}
+              {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Math.abs(tabTotal))}
             </p>
           </div>
         )}
