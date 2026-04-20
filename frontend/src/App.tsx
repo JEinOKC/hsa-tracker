@@ -1,7 +1,9 @@
-import { Routes, Route, NavLink } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Routes, Route, NavLink, useNavigate } from 'react-router-dom'
 import { ToastProvider } from './components/Toast'
 import UpdatePrompt from './components/UpdatePrompt'
 import { useAutoSync } from './hooks/useAutoSync'
+import { bankService } from './services/bank'
 import Dashboard from './pages/Dashboard'
 import Transactions from './pages/Transactions'
 import BankAccounts from './pages/BankAccounts'
@@ -14,7 +16,9 @@ import Rules from './pages/Rules'
 import ReviewQueue from './pages/ReviewQueue'
 import ProtectedRoute from './components/ProtectedRoute'
 
-function Nav() {
+function Nav({ unreviewedCount }: { unreviewedCount: number }) {
+  const navigate = useNavigate()
+
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `px-3 py-2 rounded-md text-sm font-medium transition-colors ${
       isActive ? 'bg-sky-700 text-white' : 'text-sky-100 hover:bg-sky-700 hover:text-white'
@@ -27,8 +31,8 @@ function Nav() {
 
   return (
     <>
-      {/* Top bar */}
-      <nav className="bg-sky-600 shadow-sm">
+      {/* Top bar — paddingTop extends bg behind iOS status bar / Dynamic Island */}
+      <nav className="bg-sky-600 shadow-sm" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="container mx-auto px-4">
           <div className="flex items-center h-14 gap-1">
             <div className="flex items-center gap-2 mr-6">
@@ -41,13 +45,39 @@ function Nav() {
               <NavLink to="/bank" className={linkClass}>Bank Accounts</NavLink>
               <NavLink to="/family" className={linkClass}>Family</NavLink>
               <NavLink to="/transactions" className={linkClass}>Transactions</NavLink>
-              <NavLink to="/settings" className={linkClass}>Settings</NavLink>
+            </div>
+            {/* Header icon buttons — bell (alerts) + gear (settings) */}
+            <div className="ml-auto flex items-center gap-1">
+              {/* Bell — illuminated with red dot when unreviewed HSA items exist */}
+              <button
+                onClick={() => navigate('/review')}
+                className="relative p-2 text-sky-100 hover:text-white transition-colors rounded-md hover:bg-sky-700"
+                aria-label="HSA review queue"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                {unreviewedCount > 0 && (
+                  <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500" />
+                )}
+              </button>
+              {/* Gear — settings */}
+              <button
+                onClick={() => navigate('/settings')}
+                className="p-2 text-sky-100 hover:text-white transition-colors rounded-md hover:bg-sky-700"
+                aria-label="Settings"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
             </div>
           </div>
         </div>
       </nav>
 
-      {/* Bottom tab bar — mobile only */}
+      {/* Bottom tab bar — mobile only, 4 items */}
       <nav
         className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 flex"
         style={{
@@ -81,13 +111,6 @@ function Nav() {
           </svg>
           Transactions
         </NavLink>
-        <NavLink to="/settings" className={tabClass}>
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-          Settings
-        </NavLink>
       </nav>
     </>
   )
@@ -95,10 +118,20 @@ function Nav() {
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   useAutoSync()
+  const [unreviewedCount, setUnreviewedCount] = useState(0)
+
+  useEffect(() => {
+    bankService.listAllTransactions({ auto_flag: 'potential_hsa' })
+      .then(txns => setUnreviewedCount(
+        txns.filter(t => t.is_hsa_eligible === null || t.is_hsa_eligible === undefined).length
+      ))
+      .catch(() => {})
+  }, [])
+
   return (
     <ProtectedRoute>
       <>
-        <Nav />
+        <Nav unreviewedCount={unreviewedCount} />
         {/* Extra bottom padding on mobile so content clears the fixed tab bar */}
         <div className="pb-20 md:pb-0">
           {children}
