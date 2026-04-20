@@ -1241,8 +1241,8 @@ describe('Transactions page', () => {
       await waitFor(() => screen.getByRole('button', { name: 'HSA Transactions' }))
       fireEvent.click(screen.getByRole('button', { name: 'HSA Transactions' }))
       await waitFor(() => {
-        // Both transactions (-150.00) should count
-        expect(screen.getByText('-$150.00')).toBeInTheDocument()
+        // Both transactions ($150.00 total spending)
+        expect(screen.getByText('$150.00')).toBeInTheDocument()
       })
     })
 
