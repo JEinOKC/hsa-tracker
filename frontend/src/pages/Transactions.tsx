@@ -1299,7 +1299,7 @@ export default function Transactions() {
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Transactions</h1>
           <p className="text-gray-500 mt-1 text-sm sm:text-base">Review and tag transactions as HSA-eligible.</p>
         </div>
-        {tabTotal !== null && (
+        {tabTotal !== null && !loading && (
           <div className="text-right shrink-0">
             <p className="text-xs text-gray-400">
               {tab === 'reimbursed' ? 'Reimbursed total' : 'HSA total'}
