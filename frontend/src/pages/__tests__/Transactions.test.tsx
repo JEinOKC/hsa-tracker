@@ -1411,5 +1411,29 @@ describe('Transactions page', () => {
         expect(screen.getByText('Yes, flag them')).toBeInTheDocument()
       })
     })
+
+    it('skips merchant prompt when transaction is already auto-flagged as potential_hsa', async () => {
+      const alreadyFlagged = makeTxn({
+        description: 'NASHBIRD CHICKEN',
+        details: { counterparty: { name: 'NASHBIRD CHICKEN' } },
+        auto_flag: 'potential_hsa',
+      })
+      ;(bankService.listAllTransactions as any).mockResolvedValue([alreadyFlagged])
+      ;(bankService.annotateTransaction as any).mockResolvedValue({
+        ...alreadyFlagged,
+        is_hsa_eligible: true,
+      })
+      render(<Transactions />)
+      await waitFor(() => screen.getByText('NASHBIRD CHICKEN'))
+
+      fireEvent.click(screen.getByTitle('Tag this transaction'))
+      await waitFor(() => screen.getByText('Mark as HSA eligible'))
+      fireEvent.click(screen.getByText('Mark as HSA eligible'))
+
+      await waitFor(() => {
+        expect(screen.queryByText(/flag future/i)).not.toBeInTheDocument()
+        expect(screen.queryByText('Tag transaction')).not.toBeInTheDocument()
+      })
+    })
   })
 })

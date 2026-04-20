@@ -292,21 +292,32 @@ interface TagDialogProps {
   onCreateHsaRule: () => void
   onCreateHideRule: () => void
   onClose: () => void
+  merchantRulesCreated: Set<string>
+  onMerchantRuleCreated: (merchant: string) => void
 }
 
-function TagDialog({ txn, onChange, onHidden, onCreateHsaRule, onCreateHideRule, onClose }: TagDialogProps) {
+function TagDialog({ txn, onChange, onHidden, onCreateHsaRule, onCreateHideRule, onClose, merchantRulesCreated, onMerchantRuleCreated }: TagDialogProps) {
   const [step, setStep] = useState<'options' | 'remember-hide' | 'remember-hsa'>('options')
   const [merchantName, setMerchantName] = useState<string | null>(null)
   const [ruleCreating, setRuleCreating] = useState(false)
 
   const amount = parseFloat(txn.amount)
 
+  const _shouldOfferMerchantRule = (merchant: string) => {
+    // Skip if already flagged by the system (keyword match or existing rule)
+    if (txn.auto_flag === 'potential_hsa') return false
+    // Skip if we already offered (and possibly created) a rule for this merchant this session
+    if (merchantRulesCreated.has(merchant.toLowerCase())) return false
+    return true
+  }
+
   const handleMarkHsa = async () => {
     const updated = await bankService.annotateTransaction(txn.id, { is_hsa_eligible: true })
     onChange(updated)
     const merchant = extractMerchantName(txn)
-    if (merchant) {
+    if (merchant && _shouldOfferMerchantRule(merchant)) {
       setMerchantName(merchant)
+      onMerchantRuleCreated(merchant)
       setStep('remember-hsa')
     } else {
       onClose()
@@ -317,8 +328,9 @@ function TagDialog({ txn, onChange, onHidden, onCreateHsaRule, onCreateHideRule,
     const updated = await bankService.annotateTransaction(txn.id, { is_hsa_eligible: false })
     onChange(updated)
     const merchant = extractMerchantName(txn)
-    if (merchant) {
+    if (merchant && _shouldOfferMerchantRule(merchant)) {
       setMerchantName(merchant)
+      onMerchantRuleCreated(merchant)
       setStep('remember-hide')
     } else {
       onClose()
@@ -1074,6 +1086,7 @@ export default function Transactions() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sentinelRef = useRef<HTMLDivElement | null>(null)
+  const merchantRulesCreated = useRef<Set<string>>(new Set())
   const loadingMoreRef = useRef(false)
   const handleSearchChange = (value: string) => {
     setSearch(value)
@@ -1258,6 +1271,8 @@ export default function Transactions() {
         onCreateHsaRule={() => { setRuleEditorAction('mark_hsa'); setRuleEditorTxn(tagPromptTxn); setTagPromptTxn(null) }}
         onCreateHideRule={() => { setRuleEditorAction('hide'); setRuleEditorTxn(tagPromptTxn); setTagPromptTxn(null) }}
         onClose={() => setTagPromptTxn(null)}
+        merchantRulesCreated={merchantRulesCreated.current}
+        onMerchantRuleCreated={m => merchantRulesCreated.current.add(m.toLowerCase())}
       />
     )}
 
