@@ -35,7 +35,7 @@ export default function MerchantManager({ onClose, onHidden }: Props) {
   // Group by likelihood, preserving backend sort order within each group
   const sections = (['unlikely', 'unknown', 'likely'] as const).map(likelihood => ({
     likelihood,
-    items: filtered.filter(m => m.hsa_likelihood === likelihood),
+    items: filtered.filter(m => m.hsa_likelihood === likelihood && !m.has_hsa),
   })).filter(s => s.items.length > 0)
 
   const handleHideAll = useCallback(async (merchant: MerchantSummary) => {

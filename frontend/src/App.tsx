@@ -82,8 +82,8 @@ function Nav({ unreviewedCount }: { unreviewedCount: number }) {
         className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 flex"
         style={{
           paddingBottom: 'env(safe-area-inset-bottom)',
-          paddingLeft: 'env(safe-area-inset-left)',
-          paddingRight: 'env(safe-area-inset-right)',
+          paddingLeft: 'max(env(safe-area-inset-left), 0.625rem)',
+          paddingRight: 'max(env(safe-area-inset-right), 0.625rem)',
         }}
       >
         <NavLink to="/" end className={tabClass}>
