@@ -22,7 +22,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.dependencies import get_current_user
@@ -229,6 +229,7 @@ async def refresh_prices(
     owner_ids = get_readable_owner_ids(current_user, db)
     accounts = (
         db.query(HsaAccount)
+        .options(joinedload(HsaAccount.holdings))
         .filter(HsaAccount.user_id.in_(owner_ids), HsaAccount.is_active == True)
         .all()
     )
