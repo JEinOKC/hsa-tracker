@@ -69,6 +69,7 @@ from app.models.user import User, UserPasskey, RegistrationToken, FamilyInvite, 
 from app.models.access import AccountRole, AccountAccess  # noqa: F401
 from app.models.household import Household, HouseholdRole, HouseholdMembership  # noqa: F401
 from app.models.bank import BankConnection, BankTransaction, TransactionDocument, UserCategoryOverride, PharmacyImportBatch, PharmacyFill, ReceiptLineItem  # noqa: F401
+from app.models.portfolio import HsaAccount, HsaHolding  # noqa: F401
 from app.utils.security import create_access_token
 
 

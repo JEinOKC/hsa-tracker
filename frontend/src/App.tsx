@@ -14,6 +14,7 @@ import InvitePage from './pages/InvitePage'
 import Settings from './pages/Settings'
 import Rules from './pages/Rules'
 import ReviewQueue from './pages/ReviewQueue'
+import Portfolio from './pages/Portfolio'
 import ProtectedRoute from './components/ProtectedRoute'
 
 function Nav({ unreviewedCount }: { unreviewedCount: number }) {
@@ -45,6 +46,7 @@ function Nav({ unreviewedCount }: { unreviewedCount: number }) {
               <NavLink to="/bank" className={linkClass}>Bank Accounts</NavLink>
               <NavLink to="/family" className={linkClass}>Family</NavLink>
               <NavLink to="/transactions" className={linkClass}>Transactions</NavLink>
+              <NavLink to="/portfolio" className={linkClass}>Portfolio</NavLink>
             </div>
             {/* Header icon buttons — bell (alerts) + gear (settings) */}
             <div className="ml-auto flex items-center gap-1">
@@ -109,7 +111,13 @@ function Nav({ unreviewedCount }: { unreviewedCount: number }) {
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
           </svg>
-          Transactions
+          Txns
+        </NavLink>
+        <NavLink to="/portfolio" className={tabClass}>
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+          </svg>
+          Portfolio
         </NavLink>
       </nav>
     </>
@@ -158,6 +166,7 @@ function App() {
         <Route path="/settings" element={<ProtectedLayout><Settings /></ProtectedLayout>} />
         <Route path="/settings/rules" element={<ProtectedLayout><Rules /></ProtectedLayout>} />
         <Route path="/review" element={<ProtectedLayout><ReviewQueue /></ProtectedLayout>} />
+        <Route path="/portfolio" element={<ProtectedLayout><Portfolio /></ProtectedLayout>} />
       </Routes>
     </div>
     </ToastProvider>

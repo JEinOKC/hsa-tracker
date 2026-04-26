@@ -17,6 +17,7 @@ HSA Tracker is a self-hosted application designed to help families track Health 
 - 👨‍👩‍👧‍👦 **Family Support**: Track expenses for multiple family members with tax dependent tracking
 - 🔐 **Modern Authentication**: Passkey (WebAuthn) and TOTP 2FA support
 - 📈 **Reports & Analytics**: Spending trends, tax summaries, and contribution tracking
+- 💼 **Investment Portfolio Tracker**: Manually track HSA investment holdings across multiple institutions with live price updates and growth projections
 - 🏠 **Self-Hosted**: Complete control over your data and infrastructure
 - 🐳 **Easy Deployment**: Docker-based setup with one-command deployment
 - 🔧 **Extensible**: Customizable UI themes and future Databricks integration
@@ -163,9 +164,25 @@ AWS_SECRET_ACCESS_KEY=your-secret-key
 # Authentication
 JWT_SECRET_KEY=your-secret-key
 WEBAUTHN_RP_ID=localhost  # Your domain in production
+
+# HSA Portfolio — stock price fetching (optional)
+PRICE_PROVIDER=finnhub       # or alphavantage (default: finnhub)
+FINNHUB_API_KEY=             # required when PRICE_PROVIDER=finnhub
 ```
 
 See [.env.example](./.env.example) for all available options.
+
+### HSA Portfolio price fetching
+
+The portfolio tracker can fetch live stock prices to keep your holding values up to date. This is optional — holdings without prices still display with shares and a manual value entry.
+
+**Finnhub** (default, recommended):
+1. Sign up for a free account at [finnhub.io](https://finnhub.io) — no credit card required
+2. Copy your API key from the dashboard
+3. Add `FINNHUB_API_KEY=your_key_here` to your `.env` file
+4. Free tier: 60 API calls/minute, no expiry
+
+The provider is configurable via `PRICE_PROVIDER` env var. To add a new provider, implement the `PriceProvider` protocol in `backend/app/services/price_fetcher.py` and register it in the `PROVIDERS` dict — no other code changes needed.
 
 ### UI Customization
 
