@@ -214,6 +214,97 @@ function AddHoldingRow({
   )
 }
 
+// ─── Holding Row ──────────────────────────────────────────────────────────────
+
+function HoldingRow({
+  holding,
+  accountId,
+  onPriceUpdated,
+  onDelete,
+}: {
+  holding: HsaHolding
+  accountId: string
+  onPriceUpdated: (updated: HsaHolding) => void
+  onDelete: () => void
+}) {
+  const [editingPrice, setEditingPrice] = useState(false)
+  const [manualPrice, setManualPrice] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const value =
+    holding.last_known_price != null
+      ? parseFloat(holding.shares) * parseFloat(holding.last_known_price)
+      : null
+
+  const saveManualPrice = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!manualPrice) return
+    setSaving(true)
+    try {
+      const updated = await portfolioService.updateHolding(accountId, holding.id, {
+        last_known_price: manualPrice,
+      })
+      onPriceUpdated(updated)
+      setEditingPrice(false)
+      setManualPrice('')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <tr className="border-b border-gray-50">
+      <td className="py-1 font-medium text-gray-800">{holding.ticker}</td>
+      <td className="py-1 text-right text-gray-600">{parseFloat(holding.shares).toFixed(4)}</td>
+      <td className="py-1 text-right text-gray-600">
+        {holding.last_known_price != null ? (
+          formatDollars(holding.last_known_price)
+        ) : editingPrice ? (
+          <form onSubmit={saveManualPrice} className="flex items-center justify-end gap-1">
+            <input
+              type="number"
+              value={manualPrice}
+              onChange={e => setManualPrice(e.target.value)}
+              placeholder="0.00"
+              min="0"
+              step="0.0001"
+              className="w-20 border border-gray-300 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500"
+              autoFocus
+            />
+            <button type="submit" disabled={saving} className="text-xs text-sky-600 hover:text-sky-800 disabled:opacity-50">
+              {saving ? '…' : '✓'}
+            </button>
+            <button type="button" onClick={() => setEditingPrice(false)} className="text-xs text-gray-400 hover:text-gray-600">
+              ✕
+            </button>
+          </form>
+        ) : (
+          <button
+            onClick={() => setEditingPrice(true)}
+            className="text-xs text-gray-300 hover:text-sky-500"
+            title="Enter price manually"
+          >
+            + price
+          </button>
+        )}
+      </td>
+      <td className="py-1 text-right text-gray-700">
+        {value != null ? formatDollars(String(value.toFixed(2))) : <span className="text-gray-300">—</span>}
+      </td>
+      <td className="py-1 text-right text-gray-400">{formatRelativeTime(holding.last_price_fetched_at)}</td>
+      <td className="py-1 text-right">
+        <button
+          onClick={onDelete}
+          className="text-red-300 hover:text-red-500 leading-none"
+          aria-label={`Delete ${holding.ticker}`}
+        >
+          ×
+        </button>
+      </td>
+    </tr>
+  )
+}
+
 // ─── Account Card ─────────────────────────────────────────────────────────────
 
 function AccountCard({
@@ -422,34 +513,15 @@ function AccountCard({
             </tr>
           </thead>
           <tbody>
-            {holdings.map(h => {
-              const value =
-                h.last_known_price != null
-                  ? parseFloat(h.shares) * parseFloat(h.last_known_price)
-                  : null
-              return (
-                <tr key={h.id} className="border-b border-gray-50">
-                  <td className="py-1 font-medium text-gray-800">{h.ticker}</td>
-                  <td className="py-1 text-right text-gray-600">{parseFloat(h.shares).toFixed(4)}</td>
-                  <td className="py-1 text-right text-gray-600">
-                    {h.last_known_price != null ? formatDollars(h.last_known_price) : <span className="text-gray-300">—</span>}
-                  </td>
-                  <td className="py-1 text-right text-gray-700">
-                    {value != null ? formatDollars(String(value.toFixed(2))) : <span className="text-gray-300">—</span>}
-                  </td>
-                  <td className="py-1 text-right text-gray-400">{formatRelativeTime(h.last_price_fetched_at)}</td>
-                  <td className="py-1 text-right">
-                    <button
-                      onClick={() => handleDeleteHolding(h.id)}
-                      className="text-red-300 hover:text-red-500 leading-none"
-                      aria-label={`Delete ${h.ticker}`}
-                    >
-                      ×
-                    </button>
-                  </td>
-                </tr>
-              )
-            })}
+            {holdings.map(h => (
+              <HoldingRow
+                key={h.id}
+                holding={h}
+                accountId={account.id}
+                onPriceUpdated={updated => setHoldings(prev => prev.map(x => x.id === updated.id ? updated : x))}
+                onDelete={() => handleDeleteHolding(h.id)}
+              />
+            ))}
           </tbody>
         </table>
       )}
@@ -569,8 +641,11 @@ export default function Portfolio() {
     setRefreshMsg(null)
     try {
       const result = await portfolioService.refreshPrices()
-      setRefreshMsg(`Updated ${result.updated} holding${result.updated !== 1 ? 's' : ''}.`)
-      // Reload accounts to pick up new prices
+      let msg = `Updated ${result.updated} holding${result.updated !== 1 ? 's' : ''}.`
+      if (result.not_found?.length > 0) {
+        msg += ` Could not price: ${result.not_found.join(', ')} — enter manually below.`
+      }
+      setRefreshMsg(msg)
       const updated = await portfolioService.listAccounts()
       setAccounts(updated)
     } catch {

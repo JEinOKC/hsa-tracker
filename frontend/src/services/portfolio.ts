@@ -100,6 +100,7 @@ export const portfolioService = {
   updateHolding(accountId: string, holdingId: string, data: Partial<{
     ticker: string
     shares: string
+    last_known_price: string | null
   }>): Promise<HsaHolding> {
     return api.patch(`/portfolio/accounts/${accountId}/holdings/${holdingId}`, data).then(r => r.data)
   },
@@ -109,7 +110,7 @@ export const portfolioService = {
   },
 
   // Prices
-  refreshPrices(): Promise<{ updated: number; tickers_fetched: number }> {
+  refreshPrices(): Promise<{ updated: number; tickers_fetched: number; not_found: string[] }> {
     return api.post('/portfolio/prices/refresh').then(r => r.data)
   },
 

@@ -249,6 +249,7 @@ async def refresh_prices(
 
     now = datetime.utcnow()
     updated = 0
+    not_found: list[str] = []
     for holding in all_holdings:
         price = prices.get(holding.ticker)
         if price is not None:
@@ -256,9 +257,11 @@ async def refresh_prices(
             holding.last_price_fetched_at = now
             holding.updated_at = now
             updated += 1
+        elif holding.ticker not in not_found:
+            not_found.append(holding.ticker)
 
     db.commit()
-    return {"updated": updated, "tickers_fetched": len(tickers)}
+    return {"updated": updated, "tickers_fetched": len(tickers), "not_found": not_found}
 
 
 # ─── Summary ─────────────────────────────────────────────────────────────────

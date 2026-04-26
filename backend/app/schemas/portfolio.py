@@ -18,6 +18,7 @@ class HsaHoldingCreate(BaseModel):
 class HsaHoldingUpdate(BaseModel):
     ticker: Optional[str] = None
     shares: Optional[Decimal] = None
+    last_known_price: Optional[Decimal] = None
 
 
 class HsaHoldingOut(BaseModel):
