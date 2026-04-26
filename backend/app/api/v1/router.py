@@ -17,6 +17,7 @@ from app.api.v1.endpoints import (
     households,
     push,
     rules,
+    portfolio,
 )
 
 api_router = APIRouter()
@@ -36,3 +37,4 @@ api_router.include_router(households.router, prefix="/households", tags=["Househ
 api_router.include_router(push.router, prefix="/push", tags=["Push Notifications"])
 api_router.include_router(rules.router, prefix="/bank", tags=["HSA Rules Engine"])
 api_router.include_router(receipts.router, prefix="/bank", tags=["Retailer Import"])
+api_router.include_router(portfolio.router, prefix="/portfolio", tags=["Portfolio"])

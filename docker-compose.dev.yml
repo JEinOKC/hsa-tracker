@@ -56,6 +56,9 @@ services:
       - TELLER_CERT_B64=${TELLER_CERT_B64:-}
       - TELLER_PRIVATE_KEY_B64=${TELLER_PRIVATE_KEY_B64:-}
       - TELLER_ENV=${TELLER_ENV:-sandbox}
+      # Portfolio price fetching (optional — set FINNHUB_API_KEY for live prices)
+      - PRICE_PROVIDER=${PRICE_PROVIDER:-finnhub}
+      - FINNHUB_API_KEY=${FINNHUB_API_KEY:-}
       - REQUIRE_INVITE=${REQUIRE_INVITE:-false}
       # Web Push / VAPID (optional, set in Doppler)
       - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}

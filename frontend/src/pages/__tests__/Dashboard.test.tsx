@@ -129,6 +129,25 @@ describe('Dashboard', () => {
     })
   })
 
+  it('shows "why waiting pays off" tip link when pending_reimbursement > 0', async () => {
+    ;(bankService.getDashboardSummary as any).mockResolvedValue({
+      ...fullSummary,
+      pending_reimbursement: 150.00,
+    })
+    render(<Dashboard />)
+    await waitFor(() => {
+      const link = screen.getByTestId('pending-reimburse-tip')
+      expect(link).toBeInTheDocument()
+      expect(link.closest('a')).toHaveAttribute('href', '/transactions?tab=reimbursed')
+    })
+  })
+
+  it('does not show the tip link when pending_reimbursement is 0', async () => {
+    render(<Dashboard />)
+    await waitFor(() => expect(screen.getByText('All caught up!')).toBeInTheDocument())
+    expect(screen.queryByTestId('pending-reimburse-tip')).not.toBeInTheDocument()
+  })
+
   describe('Needs Documentation card', () => {
     it('shows 0 and all-documented message when count is 0', async () => {
       render(<Dashboard />)

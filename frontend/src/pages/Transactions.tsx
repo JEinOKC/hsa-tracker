@@ -193,6 +193,62 @@ function ReimburseToggle({ txn, onChange }: ReimburseToggleProps) {
   )
 }
 
+// ─── Reimbursement education banner ──────────────────────────────────────────
+
+function ReimbursementEducationBanner() {
+  const [dismissed, setDismissed] = useState(
+    () => localStorage.getItem('hsa_reimburse_banner_dismissed') === 'true'
+  )
+
+  if (dismissed) return null
+
+  const dismiss = () => {
+    localStorage.setItem('hsa_reimburse_banner_dismissed', 'true')
+    setDismissed(true)
+  }
+
+  return (
+    <div data-testid="reimburse-education-banner" className="mb-3 p-3 bg-sky-50 border border-sky-200 rounded-lg text-sm text-sky-900">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-start gap-2 flex-1">
+          <span className="shrink-0 text-sky-500 font-bold">ℹ</span>
+          <div>
+            <p className="font-semibold text-sky-800 mb-1">Did you know? Waiting to reimburse yourself is often the smarter move.</p>
+            <ul className="space-y-1 text-sky-800">
+              <li>• HSA money grows <strong>tax-free</strong> — reimbursing yourself now forfeits compounding growth, potentially thousands of dollars over time.</li>
+              <li>• There is <strong>no IRS deadline</strong> — you can reimburse yourself for a 2024 expense in 2034 as long as you keep the receipt.</li>
+              <li>• Think of your receipts as a <strong>future financial weapon</strong>: let the HSA compound, then withdraw tax-free in retirement against old documented expenses.</li>
+            </ul>
+            <p className="mt-2 text-xs text-sky-600">
+              Learn more:{' '}
+              <a href="https://www.irs.gov/publications/p969" target="_blank" rel="noopener noreferrer" className="underline hover:text-sky-800">IRS Pub. 969</a>
+              {' · '}
+              <a href="https://www.whitecoatinvestor.com/hsa-as-a-stealth-ira/" target="_blank" rel="noopener noreferrer" className="underline hover:text-sky-800">HSA as a Stealth IRA</a>
+              {' · '}
+              <a href="https://www.madfientist.com/ultimate-retirement-account/" target="_blank" rel="noopener noreferrer" className="underline hover:text-sky-800">The Ultimate Retirement Account</a>
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={dismiss}
+          aria-label="Dismiss"
+          className="shrink-0 text-sky-400 hover:text-sky-600 text-lg leading-none"
+        >
+          ×
+        </button>
+      </div>
+      <div className="mt-2 pl-5">
+        <button
+          onClick={dismiss}
+          className="text-xs font-medium text-sky-700 hover:text-sky-900 underline"
+        >
+          Got it, don't show again
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Eligible amount editor ───────────────────────────────────────────────────
 
 interface EligibleAmountEditorProps {
@@ -1560,6 +1616,9 @@ export default function Transactions() {
           <button onClick={() => setRuleSuccessMsg(null)} className="text-green-500 hover:text-green-700 shrink-0 text-base leading-none">&times;</button>
         </div>
       )}
+
+      {/* Reimbursement education banner */}
+      {tab === 'reimbursed' && <ReimbursementEducationBanner />}
 
       {/* Column headers — desktop only */}
       <div className="hidden sm:flex items-center gap-3 px-4 py-2 text-xs font-medium text-gray-400 uppercase tracking-wide">

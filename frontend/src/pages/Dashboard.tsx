@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { bankService, DashboardSummary } from '../services/bank'
+import { portfolioService, PortfolioSummary } from '../services/portfolio'
 
 function formatDollars(amount: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Math.abs(amount))
@@ -41,6 +42,7 @@ export default function Dashboard() {
   const [range, setRange] = useState<RangeKey>('YTD')
   const [summary, setSummary] = useState<DashboardSummary | null>(null)
   const [loading, setLoading] = useState(true)
+  const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -48,6 +50,10 @@ export default function Dashboard() {
       .then(setSummary)
       .finally(() => setLoading(false))
   }, [range])
+
+  useEffect(() => {
+    portfolioService.getSummary().then(setPortfolio).catch(() => {})
+  }, [])
 
   const steps: SetupStep[] = summary ? [
     {
@@ -107,7 +113,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6 mb-8">
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-sm font-medium text-gray-500 mb-2">HSA Spending</h3>
           <p className={`text-3xl font-bold ${loading ? 'text-gray-200' : 'text-gray-900'}`}>
@@ -127,7 +133,7 @@ export default function Dashboard() {
           </p>
           <p className="text-sm text-gray-500 mt-2">
             {!loading && (summary?.pending_reimbursement
-              ? 'Not yet marked as reimbursed'
+              ? <Link data-testid="pending-reimburse-tip" to="/transactions?tab=reimbursed" className="text-sky-600 hover:text-sky-800">Not yet reimbursed · why waiting pays off →</Link>
               : 'All caught up!')}
           </p>
         </div>
@@ -141,6 +147,24 @@ export default function Dashboard() {
             <Link to="/transactions?tab=hsa" className="text-sky-600 hover:text-sky-800">
               View HSA transactions →
             </Link>
+          </p>
+        </div>
+
+        {/* Portfolio value card */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-sm font-medium text-gray-500 mb-2">HSA Portfolio</h3>
+          <p className="text-3xl font-bold text-gray-900">
+            {portfolio?.total_value != null
+              ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
+                  Math.abs(parseFloat(portfolio.total_value))
+                )
+              : '—'}
+          </p>
+          <p className="text-sm text-gray-500 mt-2">
+            {portfolio?.accounts.length
+              ? <Link data-testid="portfolio-link" to="/portfolio" className="text-sky-600 hover:text-sky-800">View portfolio →</Link>
+              : <Link data-testid="portfolio-setup-link" to="/portfolio" className="text-sky-600 hover:text-sky-800">Set up portfolio →</Link>
+            }
           </p>
         </div>
 

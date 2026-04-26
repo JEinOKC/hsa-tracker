@@ -1436,4 +1436,58 @@ describe('Transactions page', () => {
       })
     })
   })
+
+  describe('ReimbursementEducationBanner', () => {
+    beforeEach(() => {
+      localStorage.removeItem('hsa_reimburse_banner_dismissed')
+    })
+
+    it('shows banner when on Reimbursed tab and not dismissed', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ is_hsa_eligible: true, reimbursement_status: 'reimbursed' }),
+      ])
+      ;(bankService.countTransactions as any).mockResolvedValue(1)
+      render(<Transactions />)
+      await waitFor(() => screen.getByRole('button', { name: 'Reimbursed' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Reimbursed' }))
+      await waitFor(() => {
+        expect(screen.getByTestId('reimburse-education-banner')).toBeInTheDocument()
+      })
+    })
+
+    it('does not show banner on HSA Transactions tab', async () => {
+      render(<Transactions />)
+      await waitFor(() => screen.getByRole('button', { name: 'HSA Transactions' }))
+      fireEvent.click(screen.getByRole('button', { name: 'HSA Transactions' }))
+      await waitFor(() => expect(bankService.listAllTransactions).toHaveBeenCalledTimes(2))
+      expect(screen.queryByTestId('reimburse-education-banner')).not.toBeInTheDocument()
+    })
+
+    it('hides banner and writes to localStorage when dismissed', async () => {
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ is_hsa_eligible: true, reimbursement_status: 'reimbursed' }),
+      ])
+      ;(bankService.countTransactions as any).mockResolvedValue(1)
+      render(<Transactions />)
+      await waitFor(() => screen.getByRole('button', { name: 'Reimbursed' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Reimbursed' }))
+      await waitFor(() => screen.getByTestId('reimburse-education-banner'))
+      fireEvent.click(screen.getByText(/got it, don't show again/i))
+      expect(screen.queryByTestId('reimburse-education-banner')).not.toBeInTheDocument()
+      expect(localStorage.getItem('hsa_reimburse_banner_dismissed')).toBe('true')
+    })
+
+    it('does not show banner when localStorage flag is already set', async () => {
+      localStorage.setItem('hsa_reimburse_banner_dismissed', 'true')
+      ;(bankService.listAllTransactions as any).mockResolvedValue([
+        makeTxn({ is_hsa_eligible: true, reimbursement_status: 'reimbursed' }),
+      ])
+      ;(bankService.countTransactions as any).mockResolvedValue(1)
+      render(<Transactions />)
+      await waitFor(() => screen.getByRole('button', { name: 'Reimbursed' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Reimbursed' }))
+      await waitFor(() => expect(bankService.listAllTransactions).toHaveBeenCalledTimes(2))
+      expect(screen.queryByTestId('reimburse-education-banner')).not.toBeInTheDocument()
+    })
+  })
 })
