@@ -234,10 +234,20 @@ function AccountCard({
   const [deleting, setDeleting] = useState(false)
   const [holdings, setHoldings] = useState<HsaHolding[]>(account.holdings)
 
-  // Sync when parent reloads account data (e.g. after price refresh)
+  // Sync when parent reloads account data (e.g. after price refresh).
+  // Use the most recent last_price_fetched_at across all holdings as a
+  // stable change signal in addition to the array reference, so a fresh
+  // API response always propagates even if React's ref-equality check
+  // on the array itself were to be skipped.
+  const latestPriceFetch = account.holdings
+    .map(h => h.last_price_fetched_at)
+    .filter(Boolean)
+    .sort()
+    .slice(-1)[0] ?? null
   useEffect(() => {
     setHoldings(account.holdings)
-  }, [account.holdings])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [latestPriceFetch, account.holdings])
 
   const totalInvested = holdings.reduce((sum, h) => {
     if (h.last_known_price == null) return sum

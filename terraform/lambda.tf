@@ -114,6 +114,8 @@ resource "aws_lambda_function" "backend" {
       VAPID_CLAIMS_EMAIL               = var.vapid_claims_email
       TELLER_SECRET_ARN                = aws_secretsmanager_secret.teller_credentials.arn
       TELLER_ENV                       = var.teller_env
+      PRICE_PROVIDER                   = var.price_provider
+      FINNHUB_API_KEY                  = var.finnhub_api_key
     }
   }
 

@@ -201,3 +201,16 @@ variable "teller_env" {
   type        = string
   default     = "sandbox"
 }
+
+variable "price_provider" {
+  description = "Stock price provider: finnhub or alphavantage"
+  type        = string
+  default     = "finnhub"
+}
+
+variable "finnhub_api_key" {
+  description = "Finnhub API key for live stock price fetching (optional)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}

@@ -333,6 +333,8 @@ tf-plan: ## Plan Terraform changes
 		TF_VAR_teller_private_key_b64="$$TELLER_PRIVATE_KEY_B64" \
 		TF_VAR_teller_env="$$TELLER_ENV" \
 		TF_VAR_require_invite="$${REQUIRE_INVITE:-true}" \
+		TF_VAR_price_provider="$${PRICE_PROVIDER:-finnhub}" \
+		TF_VAR_finnhub_api_key="$$FINNHUB_API_KEY" \
 		terraform -chdir=terraform plan'
 
 tf-apply: ## Apply Terraform changes (create AWS infrastructure)
@@ -360,6 +362,8 @@ tf-apply: ## Apply Terraform changes (create AWS infrastructure)
 		TF_VAR_teller_private_key_b64="$$TELLER_PRIVATE_KEY_B64" \
 		TF_VAR_teller_env="$$TELLER_ENV" \
 		TF_VAR_require_invite="$${REQUIRE_INVITE:-true}" \
+		TF_VAR_price_provider="$${PRICE_PROVIDER:-finnhub}" \
+		TF_VAR_finnhub_api_key="$$FINNHUB_API_KEY" \
 		terraform -chdir=terraform apply'
 	@echo "$(GREEN)✓ AWS infrastructure created$(NC)"
 	@echo "$(YELLOW)Remember to update your secrets with the output values!$(NC)"
