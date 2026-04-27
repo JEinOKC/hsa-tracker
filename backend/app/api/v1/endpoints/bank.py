@@ -7,6 +7,7 @@ Endpoints:
   PATCH  /bank/transactions/{id}               - update HSA annotations on a transaction
   GET    /bank/accounts                         - list connected accounts (DB)
   GET    /bank/accounts/{id}                    - account details + live balance
+  POST   /bank/accounts/sync-all               - sync all active connected accounts
   POST   /bank/accounts/{id}/sync              - sync transactions for one account
   GET    /bank/accounts/{id}/transactions      - list synced transactions for one account (DB)
   DELETE /bank/accounts/{id}                   - deactivate connection
@@ -30,6 +31,7 @@ from app.models.family import FamilyMember, HsaEligibilityPeriod
 from app.models.household import Household, HouseholdMembership
 from app.models.user import User
 from app.providers import get_teller_provider, is_teller_configured
+from app.providers.teller.client import TellerAPIError, TellerAuthError, TellerDisconnectedError
 from app.utils.access import get_readable_owner_ids, check_permission
 from app.services.rules_engine import (
     apply_auto_flag, apply_rules_to_transaction, get_active_rules_for_user,
@@ -69,6 +71,8 @@ class BankAccountResponse(BaseModel):
     last_synced_at: Optional[datetime]
     created_at: datetime
     owner_display_name: Optional[str] = None  # Set for shared accounts
+    connection_status: str = "connected"
+    connection_error: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -150,6 +154,22 @@ class SyncResult(BaseModel):
     potential_hsa_count: int = 0
 
 
+class AccountSyncOutcome(BaseModel):
+    account_id: str
+    account_name: str
+    status: str  # "ok" | "disconnected" | "error"
+    added: int = 0
+    skipped: int = 0
+    error: Optional[str] = None
+
+
+class SyncAllResult(BaseModel):
+    total: int
+    succeeded: int
+    failed: int
+    outcomes: list[AccountSyncOutcome]
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -161,6 +181,13 @@ def _get_connection_or_404(account_id: UUID, user, db: Session, operation: str =
     if not check_permission(user, connection.user_id, "bank_accounts", operation, db):
         raise HTTPException(status_code=403, detail="Access denied.")
     return connection
+
+
+def _mark_connection_error(connection: BankConnection, status: str, message: str, db: Session) -> None:
+    """Record a provider error on the connection and commit."""
+    connection.connection_status = status
+    connection.connection_error = message
+    db.commit()
 
 
 def _txn_to_response(
@@ -290,6 +317,7 @@ async def connect_bank(
             .first()
         )
         if existing:
+            # Exact match — update in place
             existing.account_name = acct.name
             existing.account_type = acct.type
             existing.account_subtype = acct.subtype
@@ -298,23 +326,55 @@ async def connect_bank(
             existing.enrollment_token = payload.access_token
             existing.user_id = current_user.id
             existing.is_active = True
+            existing.connection_status = "connected"
+            existing.connection_error = None
             existing.updated_at = datetime.utcnow()
             results.append(existing)
         else:
-            connection = BankConnection(
-                user_id=current_user.id,
-                provider=acct.provider,
-                provider_account_id=acct.id,
-                account_name=acct.name,
-                account_type=acct.type,
-                account_subtype=acct.subtype,
-                institution_name=acct.institution_name,
-                last_four=acct.last_four,
-                currency=acct.currency,
-                enrollment_token=payload.access_token,
+            # Fuzzy match: same user + institution + last_four + subtype, previously disconnected.
+            # Teller issues new account IDs on re-enrollment, so we can't match on provider_account_id.
+            fuzzy = (
+                db.query(BankConnection)
+                .filter(
+                    BankConnection.user_id == current_user.id,
+                    BankConnection.provider == acct.provider,
+                    BankConnection.institution_name == acct.institution_name,
+                    BankConnection.last_four == acct.last_four,
+                    BankConnection.account_subtype == acct.subtype,
+                    BankConnection.connection_status.in_(["disconnected", "error"]),
+                )
+                .first()
             )
-            db.add(connection)
-            results.append(connection)
+            if fuzzy:
+                # Re-connect: reuse the existing row, preserving all transaction history
+                fuzzy.provider_account_id = acct.id
+                fuzzy.account_name = acct.name
+                fuzzy.account_type = acct.type
+                fuzzy.account_subtype = acct.subtype
+                fuzzy.institution_name = acct.institution_name
+                fuzzy.last_four = acct.last_four
+                fuzzy.enrollment_token = payload.access_token
+                fuzzy.user_id = current_user.id
+                fuzzy.is_active = True
+                fuzzy.connection_status = "connected"
+                fuzzy.connection_error = None
+                fuzzy.updated_at = datetime.utcnow()
+                results.append(fuzzy)
+            else:
+                connection = BankConnection(
+                    user_id=current_user.id,
+                    provider=acct.provider,
+                    provider_account_id=acct.id,
+                    account_name=acct.name,
+                    account_type=acct.type,
+                    account_subtype=acct.subtype,
+                    institution_name=acct.institution_name,
+                    last_four=acct.last_four,
+                    currency=acct.currency,
+                    enrollment_token=payload.access_token,
+                )
+                db.add(connection)
+                results.append(connection)
 
     db.commit()
     for r in results:
@@ -997,54 +1057,30 @@ async def get_bank_account(
             balance = provider.get_balance(connection.provider_account_id)
             response.balance_ledger = balance.ledger
             response.balance_available = balance.available
+        except TellerDisconnectedError as exc:
+            _mark_connection_error(connection, "disconnected", str(exc), db)
+        except TellerAuthError as exc:
+            _mark_connection_error(connection, "disconnected", str(exc), db)
+        except TellerAPIError as exc:
+            _mark_connection_error(connection, "error", str(exc), db)
         except Exception:
-            pass  # Return account data without balance if live fetch fails
+            pass  # Non-Teller errors: return account without balance
 
     return response
 
 
-@router.post("/accounts/{account_id}/sync", response_model=SyncResult)
-async def sync_account_transactions(
-    account_id: UUID,
-    from_date: Optional[date] = Query(None, description="Only fetch transactions on or after this date"),
-    count: int = Query(250, le=500, description="Max transactions to fetch from provider"),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Fetch recent transactions from the provider and store new ones.
+def _sync_one_connection(
+    connection: BankConnection,
+    from_date,
+    count: int,
+    current_user: User,
+    db: Session,
+) -> tuple[int, int, list]:
+    """Fetch and store transactions for one connection.
 
-    Existing transactions (matched by provider_transaction_id) are skipped.
+    Returns (added, skipped, new_txns). Raises TellerAPIError subclasses on provider failure.
+    Callers are responsible for committing or rolling back.
     """
-    connection = _get_connection_or_404(account_id, current_user, db, operation="write")
-
-    if not is_teller_configured():
-        raise HTTPException(status_code=503, detail="Bank provider not configured.")
-    if not connection.enrollment_token:
-        raise HTTPException(status_code=422, detail="Account has no enrollment token. Reconnect via Teller Connect.")
-
-    # Auto-determine from_date when not explicitly provided
-    if from_date is None:
-        household = _get_user_household(current_user.id, db)
-        hsa_start = _earliest_hsa_start(household.id, db) if household else None
-        oldest_in_db = (
-            db.query(func.min(BankTransaction.transaction_date))
-            .filter(BankTransaction.connection_id == connection.id)
-            .scalar()
-        )
-        if hsa_start:
-            history_complete = oldest_in_db is not None and oldest_in_db <= hsa_start
-            if history_complete:
-                lookback = (
-                    connection.last_synced_at.date() - timedelta(days=7)
-                    if connection.last_synced_at else hsa_start
-                )
-                from_date = max(lookback, hsa_start)
-            else:
-                from_date = hsa_start
-        elif connection.last_synced_at:
-            from_date = connection.last_synced_at.date() - timedelta(days=7)
-        # else: first-ever sync, no HSA periods — fetch whatever Teller returns
-
     provider = get_teller_provider(access_token=connection.enrollment_token)
     external_txns = provider.list_transactions(
         connection.provider_account_id,
@@ -1097,8 +1133,151 @@ async def sync_account_transactions(
             apply_rules_to_transaction(new_txn, rules)
 
     connection.last_synced_at = datetime.utcnow()
-    db.commit()
+    connection.connection_status = "connected"
+    connection.connection_error = None
+    return added, skipped, new_txns
 
+
+@router.post("/accounts/sync-all", response_model=SyncAllResult)
+async def sync_all_accounts(
+    count: int = Query(250, le=500, description="Max transactions per account"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Sync all active, connected accounts for the current user in one request."""
+    if not is_teller_configured():
+        raise HTTPException(status_code=503, detail="Bank provider not configured.")
+
+    readable_owner_ids = get_readable_owner_ids(current_user, db, resource="bank_accounts")
+    connections = (
+        db.query(BankConnection)
+        .filter(
+            BankConnection.user_id.in_(readable_owner_ids),
+            BankConnection.is_active == True,
+            BankConnection.connection_status == "connected",
+            BankConnection.enrollment_token.isnot(None),
+        )
+        .all()
+    )
+
+    outcomes = []
+    for connection in connections:
+        household = _get_user_household(current_user.id, db)
+        hsa_start = _earliest_hsa_start(household.id, db) if household else None
+        oldest_in_db = (
+            db.query(func.min(BankTransaction.transaction_date))
+            .filter(BankTransaction.connection_id == connection.id)
+            .scalar()
+        )
+        from_date = None
+        if hsa_start:
+            history_complete = oldest_in_db is not None and oldest_in_db <= hsa_start
+            if history_complete:
+                lookback = (
+                    connection.last_synced_at.date() - timedelta(days=7)
+                    if connection.last_synced_at else hsa_start
+                )
+                from_date = max(lookback, hsa_start)
+            else:
+                from_date = hsa_start
+        elif connection.last_synced_at:
+            from_date = connection.last_synced_at.date() - timedelta(days=7)
+
+        try:
+            added, skipped, _ = _sync_one_connection(connection, from_date, count, current_user, db)
+            db.commit()
+            outcomes.append(AccountSyncOutcome(
+                account_id=str(connection.id),
+                account_name=connection.account_name,
+                status="ok",
+                added=added,
+                skipped=skipped,
+            ))
+        except (TellerDisconnectedError, TellerAuthError) as exc:
+            # The error is raised before any DB writes in _sync_one_connection,
+            # so no rollback is needed — just record the failure and move on.
+            _mark_connection_error(connection, "disconnected", str(exc), db)
+            outcomes.append(AccountSyncOutcome(
+                account_id=str(connection.id),
+                account_name=connection.account_name,
+                status="disconnected",
+                error=str(exc),
+            ))
+        except TellerAPIError as exc:
+            _mark_connection_error(connection, "error", str(exc), db)
+            outcomes.append(AccountSyncOutcome(
+                account_id=str(connection.id),
+                account_name=connection.account_name,
+                status="error",
+                error=str(exc),
+            ))
+
+    succeeded = sum(1 for o in outcomes if o.status == "ok")
+    failed = len(outcomes) - succeeded
+    return SyncAllResult(total=len(outcomes), succeeded=succeeded, failed=failed, outcomes=outcomes)
+
+
+@router.post("/accounts/{account_id}/sync", response_model=SyncResult)
+async def sync_account_transactions(
+    account_id: UUID,
+    from_date: Optional[date] = Query(None, description="Only fetch transactions on or after this date"),
+    count: int = Query(250, le=500, description="Max transactions to fetch from provider"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Fetch recent transactions from the provider and store new ones.
+
+    Existing transactions (matched by provider_transaction_id) are skipped.
+    """
+    connection = _get_connection_or_404(account_id, current_user, db, operation="write")
+
+    if not is_teller_configured():
+        raise HTTPException(status_code=503, detail="Bank provider not configured.")
+    if not connection.enrollment_token:
+        raise HTTPException(status_code=422, detail="Account has no enrollment token. Reconnect via Teller Connect.")
+
+    # Auto-determine from_date when not explicitly provided
+    if from_date is None:
+        household = _get_user_household(current_user.id, db)
+        hsa_start = _earliest_hsa_start(household.id, db) if household else None
+        oldest_in_db = (
+            db.query(func.min(BankTransaction.transaction_date))
+            .filter(BankTransaction.connection_id == connection.id)
+            .scalar()
+        )
+        if hsa_start:
+            history_complete = oldest_in_db is not None and oldest_in_db <= hsa_start
+            if history_complete:
+                lookback = (
+                    connection.last_synced_at.date() - timedelta(days=7)
+                    if connection.last_synced_at else hsa_start
+                )
+                from_date = max(lookback, hsa_start)
+            else:
+                from_date = hsa_start
+        elif connection.last_synced_at:
+            from_date = connection.last_synced_at.date() - timedelta(days=7)
+        # else: first-ever sync, no HSA periods — fetch whatever Teller returns
+
+    try:
+        added, skipped, new_txns = _sync_one_connection(connection, from_date, count, current_user, db)
+    except TellerDisconnectedError as exc:
+        _mark_connection_error(connection, "disconnected", str(exc), db)
+        raise HTTPException(
+            status_code=409,
+            detail="Account is disconnected from Teller. Re-connect via the Connect Bank button.",
+        )
+    except TellerAuthError as exc:
+        _mark_connection_error(connection, "disconnected", str(exc), db)
+        raise HTTPException(
+            status_code=409,
+            detail="Enrollment token is invalid or revoked. Re-connect via the Connect Bank button.",
+        )
+    except TellerAPIError as exc:
+        _mark_connection_error(connection, "error", str(exc), db)
+        raise HTTPException(status_code=422, detail=f"Provider error: {exc}")
+
+    db.commit()
     potential_hsa_count = sum(1 for t in new_txns if t.auto_flag == "potential_hsa")
     return SyncResult(added=added, skipped=skipped, account_id=str(account_id), potential_hsa_count=potential_hsa_count)
 

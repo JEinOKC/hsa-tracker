@@ -45,6 +45,8 @@ class BankConnection(Base):
     currency = Column(String(3), default="USD", nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     last_synced_at = Column(DateTime, nullable=True)
+    connection_status = Column(String(20), nullable=False, default="connected")  # 'connected' | 'disconnected' | 'error'
+    connection_error = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -56,6 +58,10 @@ class BankConnection(Base):
 
     __table_args__ = (
         UniqueConstraint("provider", "provider_account_id", name="uq_bank_connection_provider_account"),
+        CheckConstraint(
+            "connection_status IN ('connected', 'disconnected', 'error')",
+            name="ck_bank_connection_status",
+        ),
     )
 
     def __repr__(self):

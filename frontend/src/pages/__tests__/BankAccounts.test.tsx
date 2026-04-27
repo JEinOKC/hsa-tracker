@@ -8,6 +8,7 @@ vi.mock('../../services/bank', () => ({
     listAccounts: vi.fn(),
     connect: vi.fn(),
     syncAccount: vi.fn(),
+    syncAllAccounts: vi.fn(),
     listTransactions: vi.fn(),
     disconnectAccount: vi.fn(),
   },
@@ -30,6 +31,8 @@ const mockAccount = {
   is_active: true,
   last_synced_at: null,
   created_at: '2026-03-22T00:00:00',
+  connection_status: 'connected' as const,
+  connection_error: null,
 }
 
 const mockTransaction = {
@@ -238,6 +241,144 @@ describe('BankAccounts page', () => {
     render(<BankAccounts />)
     await waitFor(() => {
       expect(screen.getByText(/select an account to view transactions/i)).toBeInTheDocument()
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // Connection health: badges
+  // ---------------------------------------------------------------------------
+
+  it('shows Disconnected badge on disconnected account', async () => {
+    const disconnected = { ...mockAccount, id: 'acct-dis-1', connection_status: 'disconnected' as const }
+    ;(bankService.listAccounts as any).mockResolvedValue([disconnected])
+    render(<BankAccounts />)
+    await waitFor(() => {
+      expect(screen.getByText('Disconnected')).toBeInTheDocument()
+    })
+  })
+
+  it('shows Sync Error badge on error account', async () => {
+    const errored = { ...mockAccount, id: 'acct-err-1', connection_status: 'error' as const }
+    ;(bankService.listAccounts as any).mockResolvedValue([errored])
+    render(<BankAccounts />)
+    await waitFor(() => {
+      expect(screen.getByText('Sync Error')).toBeInTheDocument()
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // Connection health: alert banner
+  // ---------------------------------------------------------------------------
+
+  it('shows reconnect alert banner when an account is disconnected', async () => {
+    const disconnected = { ...mockAccount, id: 'acct-dis-2', account_name: 'Amex Gold', connection_status: 'disconnected' as const }
+    ;(bankService.listAccounts as any).mockResolvedValue([disconnected])
+    render(<BankAccounts />)
+    await waitFor(() => {
+      expect(screen.getByText(/needs to be reconnected/i)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /re-connect/i })).toBeInTheDocument()
+    })
+  })
+
+  it('does not show reconnect banner when all accounts are connected', async () => {
+    ;(bankService.listAccounts as any).mockResolvedValue([mockAccount])
+    render(<BankAccounts />)
+    await waitFor(() => screen.getByText('HSA Checking'))
+    expect(screen.queryByRole('button', { name: /re-connect/i })).not.toBeInTheDocument()
+  })
+
+  // ---------------------------------------------------------------------------
+  // Connection health: sync button disabled on disconnected
+  // ---------------------------------------------------------------------------
+
+  it('disables sync button on disconnected account', async () => {
+    const disconnected = { ...mockAccount, id: 'acct-dis-3', connection_status: 'disconnected' as const }
+    ;(bankService.listAccounts as any).mockResolvedValue([disconnected])
+    render(<BankAccounts />)
+    await waitFor(() => {
+      const syncBtn = screen.getByRole('button', { name: /^sync$/i })
+      expect(syncBtn).toBeDisabled()
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // Sync: specific 409 error message
+  // ---------------------------------------------------------------------------
+
+  it('shows specific error detail on sync 409', async () => {
+    ;(bankService.listAccounts as any).mockResolvedValue([mockAccount])
+    const err = Object.assign(new Error('409'), {
+      response: { data: { detail: 'Account is disconnected from Teller. Re-connect via the Connect Bank button.' } },
+    })
+    ;(bankService.syncAccount as any).mockRejectedValue(err)
+
+    render(<BankAccounts />)
+    await waitFor(() => screen.getByText('HSA Checking'))
+
+    fireEvent.click(screen.getByRole('button', { name: /^sync$/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/account is disconnected from teller/i)).toBeInTheDocument()
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // Sync All
+  // ---------------------------------------------------------------------------
+
+  it('shows Sync All button', async () => {
+    ;(bankService.listAccounts as any).mockResolvedValue([mockAccount])
+    render(<BankAccounts />)
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /sync all/i })).toBeInTheDocument()
+    })
+  })
+
+  it('disables Sync All button when no connected accounts exist', async () => {
+    const disconnected = { ...mockAccount, id: 'acct-dis-4', connection_status: 'disconnected' as const }
+    ;(bankService.listAccounts as any).mockResolvedValue([disconnected])
+    render(<BankAccounts />)
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /sync all/i })).toBeDisabled()
+    })
+  })
+
+  it('calls syncAllAccounts and shows result summary', async () => {
+    ;(bankService.listAccounts as any).mockResolvedValue([mockAccount])
+    ;(bankService.syncAllAccounts as any).mockResolvedValue({
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+      outcomes: [{ account_id: 'acct-uuid-1', account_name: 'HSA Checking', status: 'ok', added: 3, skipped: 0, error: null }],
+    })
+
+    render(<BankAccounts />)
+    await waitFor(() => screen.getByRole('button', { name: /sync all/i }))
+
+    fireEvent.click(screen.getByRole('button', { name: /sync all/i }))
+
+    await waitFor(() => {
+      expect(bankService.syncAllAccounts).toHaveBeenCalled()
+      expect(screen.getByText(/last bulk sync: 1\/1/i)).toBeInTheDocument()
+    })
+  })
+
+  it('shows failed count in Sync All result when some accounts fail', async () => {
+    const disconnected = { ...mockAccount, id: 'acct-dis-5', account_name: 'Amex', connection_status: 'connected' as const }
+    ;(bankService.listAccounts as any).mockResolvedValue([mockAccount, disconnected])
+    ;(bankService.syncAllAccounts as any).mockResolvedValue({
+      total: 2,
+      succeeded: 1,
+      failed: 1,
+      outcomes: [],
+    })
+
+    render(<BankAccounts />)
+    await waitFor(() => screen.getByRole('button', { name: /sync all/i }))
+    fireEvent.click(screen.getByRole('button', { name: /sync all/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/1 failed/i)).toBeInTheDocument()
     })
   })
 })

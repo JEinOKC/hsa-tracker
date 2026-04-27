@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { bankService, BankAccount, BankTransaction } from '../services/bank'
+import { bankService, BankAccount, BankTransaction, SyncAllResult } from '../services/bank'
 import { useToast } from '../components/Toast'
 
 // Teller Connect is loaded as a global from the CDN script in index.html
@@ -36,6 +36,8 @@ export default function BankAccounts() {
   const [tellerConfigured, setTellerConfigured] = useState(false)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
+  const [syncingAll, setSyncingAll] = useState(false)
+  const [syncAllResult, setSyncAllResult] = useState<SyncAllResult | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [txLoading, setTxLoading] = useState(false)
@@ -85,10 +87,31 @@ export default function BankAccounts() {
         const updated = accounts.find(a => a.id === accountId)
         if (updated) loadTransactions(updated)
       }
-    } catch {
-      setError('Sync failed. Check that the account is still connected.')
+    } catch (err: unknown) {
+      const detail = (err as any)?.response?.data?.detail
+      setError(detail ?? 'Sync failed. Check that the account is still connected.')
     } finally {
       setSyncing(null)
+    }
+  }
+
+  const handleSyncAll = async () => {
+    setSyncingAll(true)
+    setSyncAllResult(null)
+    setError(null)
+    try {
+      const result = await bankService.syncAllAccounts()
+      setSyncAllResult(result)
+      if (result.failed > 0) {
+        toast(`Sync complete: ${result.succeeded}/${result.total} accounts synced, ${result.failed} failed.`)
+      } else {
+        toast(`Sync complete: all ${result.total} accounts updated.`)
+      }
+      await loadAccounts()
+    } catch {
+      setError('Sync All failed. Please try again.')
+    } finally {
+      setSyncingAll(false)
     }
   }
 
@@ -110,12 +133,8 @@ export default function BankAccounts() {
       onSuccess: async ({ accessToken }) => {
         try {
           const newAccounts = await bankService.connect(accessToken)
-          setAccounts(prev => {
-            const existingIds = new Set(prev.map(a => a.id))
-            const fresh = newAccounts.filter(a => !existingIds.has(a.id))
-            return [...prev, ...fresh]
-          })
           toast(`Connected! ${newAccounts.length} account(s) linked.`)
+          await loadAccounts()
         } catch {
           setError('Connection failed. Try again.')
         } finally {
@@ -150,21 +169,39 @@ export default function BankAccounts() {
     )
   }
 
+  const disconnectedAccounts = accounts.filter(a => a.connection_status !== 'connected')
+  const hasConnectedAccounts = accounts.some(a => a.connection_status === 'connected')
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex items-start justify-between gap-3 mb-6 flex-wrap">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Bank Accounts</h1>
           <p className="text-gray-500 mt-1">Connect your bank to import transactions automatically.</p>
+          {syncAllResult && (
+            <p className="text-sm text-gray-500 mt-1">
+              Last bulk sync: {syncAllResult.succeeded}/{syncAllResult.total} accounts updated
+              {syncAllResult.failed > 0 && <span className="text-red-600"> · {syncAllResult.failed} failed</span>}
+            </p>
+          )}
         </div>
-        <button
-          onClick={handleConnect}
-          disabled={connecting || !tellerConfigured}
-          className="bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white font-medium px-5 py-2 rounded-lg shrink-0"
-          title={!tellerConfigured ? 'Teller is not configured on this server.' : undefined}
-        >
-          {connecting ? 'Connecting…' : '+ Connect Bank'}
-        </button>
+        <div className="flex gap-2 flex-wrap shrink-0">
+          <button
+            onClick={handleSyncAll}
+            disabled={syncingAll || !hasConnectedAccounts}
+            className="bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 font-medium px-5 py-2 rounded-lg"
+          >
+            {syncingAll ? 'Syncing…' : 'Sync All'}
+          </button>
+          <button
+            onClick={handleConnect}
+            disabled={connecting || !tellerConfigured}
+            className="bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white font-medium px-5 py-2 rounded-lg"
+            title={!tellerConfigured ? 'Teller is not configured on this server.' : undefined}
+          >
+            {connecting ? 'Connecting…' : '+ Connect Bank'}
+          </button>
+        </div>
       </div>
 
       {!tellerConfigured && (
@@ -176,6 +213,23 @@ export default function BankAccounts() {
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-red-700 text-sm">
           {error}
+        </div>
+      )}
+
+      {disconnectedAccounts.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-red-700 text-sm flex items-start justify-between gap-4">
+          <span>
+            {disconnectedAccounts.length === 1
+              ? `${disconnectedAccounts[0].account_name} needs to be reconnected.`
+              : `${disconnectedAccounts.length} accounts need reconnecting: ${disconnectedAccounts.map(a => a.account_name).join(', ')}.`
+            }
+          </span>
+          <button
+            onClick={handleConnect}
+            className="underline shrink-0 font-medium"
+          >
+            Re-connect
+          </button>
         </div>
       )}
 
@@ -214,6 +268,16 @@ export default function BankAccounts() {
                           HSA
                         </span>
                       )}
+                      {account.connection_status === 'disconnected' && (
+                        <span className="inline-block text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded font-medium">
+                          Disconnected
+                        </span>
+                      )}
+                      {account.connection_status === 'error' && (
+                        <span className="inline-block text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-medium">
+                          Sync Error
+                        </span>
+                      )}
                       {account.owner_display_name && (
                         <span className="inline-block text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">
                           {account.owner_display_name}'s account
@@ -232,8 +296,9 @@ export default function BankAccounts() {
                 <div className="flex gap-2 mt-3">
                   <button
                     onClick={e => { e.stopPropagation(); handleSync(account.id) }}
-                    disabled={syncing === account.id}
+                    disabled={syncing === account.id || account.connection_status !== 'connected'}
                     className="flex-1 text-xs bg-sky-50 hover:bg-sky-100 text-sky-700 font-medium py-1.5 rounded disabled:opacity-50"
+                    title={account.connection_status !== 'connected' ? 'Re-connect this account before syncing.' : undefined}
                   >
                     {syncing === account.id ? 'Syncing…' : 'Sync'}
                   </button>

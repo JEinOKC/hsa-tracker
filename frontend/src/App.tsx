@@ -17,7 +17,7 @@ import ReviewQueue from './pages/ReviewQueue'
 import Portfolio from './pages/Portfolio'
 import ProtectedRoute from './components/ProtectedRoute'
 
-function Nav({ unreviewedCount }: { unreviewedCount: number }) {
+function Nav({ unreviewedCount, disconnectedCount }: { unreviewedCount: number; disconnectedCount: number }) {
   const navigate = useNavigate()
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -43,7 +43,14 @@ function Nav({ unreviewedCount }: { unreviewedCount: number }) {
             {/* Desktop nav links — hidden on mobile */}
             <div className="hidden md:flex items-center gap-1">
               <NavLink to="/" end className={linkClass}>Dashboard</NavLink>
-              <NavLink to="/bank" className={linkClass}>Bank Accounts</NavLink>
+              <NavLink to="/bank" className={linkClass}>
+                <span className="relative inline-flex items-center">
+                  Bank Accounts
+                  {disconnectedCount > 0 && (
+                    <span className="absolute -top-1 -right-3 h-2 w-2 rounded-full bg-red-400" />
+                  )}
+                </span>
+              </NavLink>
               <NavLink to="/family" className={linkClass}>Family</NavLink>
               <NavLink to="/transactions" className={linkClass}>Transactions</NavLink>
               <NavLink to="/portfolio" className={linkClass}>Portfolio</NavLink>
@@ -95,10 +102,15 @@ function Nav({ unreviewedCount }: { unreviewedCount: number }) {
           Dashboard
         </NavLink>
         <NavLink to="/bank" className={tabClass}>
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 10l9-7 9 7v11a1 1 0 01-1 1H4a1 1 0 01-1-1V10z" />
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 21V12h6v9" />
-          </svg>
+          <span className="relative">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 10l9-7 9 7v11a1 1 0 01-1 1H4a1 1 0 01-1-1V10z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 21V12h6v9" />
+            </svg>
+            {disconnectedCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-red-500" />
+            )}
+          </span>
           Bank
         </NavLink>
         <NavLink to="/family" className={tabClass}>
@@ -127,6 +139,7 @@ function Nav({ unreviewedCount }: { unreviewedCount: number }) {
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   useAutoSync()
   const [unreviewedCount, setUnreviewedCount] = useState(0)
+  const [disconnectedCount, setDisconnectedCount] = useState(0)
 
   useEffect(() => {
     bankService.listAllTransactions({ auto_flag: 'potential_hsa' })
@@ -136,10 +149,18 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
       .catch(() => {})
   }, [])
 
+  useEffect(() => {
+    bankService.listAccounts()
+      .then(accts => setDisconnectedCount(
+        accts.filter(a => a.connection_status === 'disconnected' || a.connection_status === 'error').length
+      ))
+      .catch(() => {})
+  }, [])
+
   return (
     <ProtectedRoute>
       <>
-        <Nav unreviewedCount={unreviewedCount} />
+        <Nav unreviewedCount={unreviewedCount} disconnectedCount={disconnectedCount} />
         {/* Extra bottom padding on mobile so content clears the fixed tab bar */}
         <div className="pb-20 md:pb-0">
           {children}

@@ -20,6 +20,21 @@ import httpx
 TELLER_BASE_URL = "https://api.teller.io"
 
 
+class TellerAPIError(Exception):
+    """Raised when Teller returns an unexpected HTTP error."""
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class TellerDisconnectedError(TellerAPIError):
+    """Raised when Teller returns 404 — the enrollment/account no longer exists."""
+
+
+class TellerAuthError(TellerAPIError):
+    """Raised when Teller returns 401 — the enrollment token is invalid or revoked."""
+
+
 class TellerClient:
     def __init__(self, cert_b64: str, key_b64: str, access_token: Optional[str] = None):
         ssl_ctx = self._build_ssl_context(cert_b64, key_b64)
@@ -57,6 +72,16 @@ class TellerClient:
 
     def get(self, path: str, params: dict | None = None) -> Any:
         response = self._client.get(path, params=params or {})
+        if response.status_code == 401:
+            raise TellerAuthError(
+                f"Teller returned 401 for {path}. Enrollment token is invalid or revoked.",
+                status_code=401,
+            )
+        if response.status_code == 404:
+            raise TellerDisconnectedError(
+                f"Teller returned 404 for {path}. Account or enrollment no longer exists.",
+                status_code=404,
+            )
         response.raise_for_status()
         return response.json()
 
