@@ -66,56 +66,52 @@ class FinnhubProvider:
         return results
 
 
-# ─── Stooq provider ──────────────────────────────────────────────────────────
+# ─── Yahoo Finance provider ───────────────────────────────────────────────────
 
-class StooqProvider:
-    """Fetches prices from Stooq (https://stooq.com).
+class YahooFinanceProvider:
+    """Fetches prices from Yahoo Finance's public JSON API.
 
-    No API key required. Covers US stocks, ETFs, and mutual fund NAVs that
-    Finnhub misses (e.g. FDEWX, FDRXX). Appends '.US' suffix for US securities.
+    No API key required. Covers US stocks, ETFs, and mutual fund NAVs
+    (including Fidelity funds like FDEWX, FDRXX) that Finnhub misses.
+    Uses the same data endpoint as Morningstar, MarketWatch, etc.
     """
 
-    BASE_URL = "https://stooq.com/q/l/"
+    BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+    HEADERS = {"User-Agent": "Mozilla/5.0"}
 
     async def fetch_prices(self, tickers: list[str]) -> dict[str, Optional[Decimal]]:
         results: dict[str, Optional[Decimal]] = {}
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0, headers=self.HEADERS) as client:
             for ticker in tickers:
                 try:
-                    resp = await client.get(
-                        self.BASE_URL,
-                        params={"s": f"{ticker}.US", "f": "c", "e": "csv"},
-                    )
+                    resp = await client.get(self.BASE_URL.format(ticker=ticker))
                     resp.raise_for_status()
-                    # Response: "Close\n45.23\n" (header + value)
-                    lines = [ln.strip() for ln in resp.text.strip().splitlines() if ln.strip()]
-                    if len(lines) >= 2 and lines[1] not in ("N/D", ""):
-                        results[ticker] = Decimal(lines[1])
-                    else:
-                        results[ticker] = None
+                    data = resp.json()
+                    price = data["chart"]["result"][0]["meta"]["regularMarketPrice"]
+                    results[ticker] = Decimal(str(price)) if price else None
                 except Exception:
                     results[ticker] = None
         return results
 
 
-# ─── Finnhub + Stooq combined provider ───────────────────────────────────────
+# ─── Finnhub + Yahoo Finance combined provider ────────────────────────────────
 
-class FinnhubWithStooqFallbackProvider:
-    """Tries Finnhub first; falls back to Stooq for tickers Finnhub can't price.
+class FinnhubWithYahooFallbackProvider:
+    """Tries Finnhub first; falls back to Yahoo Finance for tickers Finnhub can't price.
 
-    This handles both exchange-listed securities (Finnhub) and US mutual fund
-    NAVs (Stooq), with no extra configuration required beyond FINNHUB_API_KEY.
+    Handles both exchange-listed securities (Finnhub) and US mutual fund NAVs
+    (Yahoo Finance), with no extra configuration beyond FINNHUB_API_KEY.
     """
 
     def __init__(self) -> None:
         self._finnhub = FinnhubProvider()
-        self._stooq = StooqProvider()
+        self._yahoo = YahooFinanceProvider()
 
     async def fetch_prices(self, tickers: list[str]) -> dict[str, Optional[Decimal]]:
         results = await self._finnhub.fetch_prices(tickers)
         missed = [t for t, p in results.items() if p is None]
         if missed:
-            fallback = await self._stooq.fetch_prices(missed)
+            fallback = await self._yahoo.fetch_prices(missed)
             results.update(fallback)
         return results
 
@@ -149,9 +145,9 @@ class AlphaVantageProvider:
 # ─── Registry and factory ────────────────────────────────────────────────────
 
 PROVIDERS: dict[str, type] = {
-    "finnhub": FinnhubWithStooqFallbackProvider,  # Finnhub + Stooq fallback for mutual funds
+    "finnhub": FinnhubWithYahooFallbackProvider,  # Finnhub + Yahoo Finance fallback for mutual funds
     "finnhub-only": FinnhubProvider,              # Finnhub only, no fallback
-    "stooq": StooqProvider,                       # Stooq only, no API key needed
+    "yahoo": YahooFinanceProvider,                # Yahoo Finance only, no API key needed
     "alphavantage": AlphaVantageProvider,
 }
 
@@ -160,7 +156,7 @@ def get_price_provider() -> PriceProvider:
     """Return the configured price provider instance.
 
     Reads PRICE_PROVIDER env var (default: "finnhub").
-    "finnhub" uses Finnhub with automatic Stooq fallback for mutual fund NAVs.
+    "finnhub" uses Finnhub with automatic Yahoo Finance fallback for mutual fund NAVs.
     Raises RuntimeError for unknown provider names or missing env vars.
     """
     name = os.environ.get("PRICE_PROVIDER", "finnhub").lower()
