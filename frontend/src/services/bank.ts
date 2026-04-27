@@ -21,6 +21,8 @@ export interface BankAccount {
   balance_ledger?: string | null
   balance_available?: string | null
   owner_display_name?: string | null
+  connection_status: 'connected' | 'disconnected' | 'error'
+  connection_error: string | null
 }
 
 export interface MerchantSummary {
@@ -130,6 +132,22 @@ export interface SyncResult {
   potential_hsa_count: number
 }
 
+export interface AccountSyncOutcome {
+  account_id: string
+  account_name: string
+  status: 'ok' | 'disconnected' | 'error'
+  added: number
+  skipped: number
+  error: string | null
+}
+
+export interface SyncAllResult {
+  total: number
+  succeeded: number
+  failed: number
+  outcomes: AccountSyncOutcome[]
+}
+
 export const HSA_CATEGORIES = [
   { value: 'medical', label: 'Medical Care' },
   { value: 'dental', label: 'Dental Care' },
@@ -192,6 +210,9 @@ export const bankService = {
 
   syncAccount: (id: string) =>
     api.post<SyncResult>(`/bank/accounts/${id}/sync`).then(r => r.data),
+
+  syncAllAccounts: () =>
+    api.post<SyncAllResult>('/bank/accounts/sync-all').then(r => r.data),
 
   listTransactions: (id: string, params?: { start_date?: string; end_date?: string; status?: string; limit?: number; offset?: number }) =>
     api.get<BankTransaction[]>(`/bank/accounts/${id}/transactions`, { params }).then(r => r.data),
