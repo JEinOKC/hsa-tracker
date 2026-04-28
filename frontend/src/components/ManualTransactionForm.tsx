@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { bankService, BankTransaction, MatchCandidate } from '../services/bank'
+import { XIcon } from './icons'
 
 interface Props {
   onClose: () => void
@@ -184,7 +185,7 @@ function ModalShell({ children, onClose, title }: { children: React.ReactNode; o
       <div className="relative bg-white rounded-lg shadow-xl p-5 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold text-gray-900">{title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><XIcon className="w-5 h-5" /></button>
         </div>
         {children}
       </div>

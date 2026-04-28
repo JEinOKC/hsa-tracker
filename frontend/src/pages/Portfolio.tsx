@@ -6,6 +6,7 @@ import {
   AccountType,
   ProjectionPoint,
 } from '../services/portfolio'
+import { PencilIcon, TrashIcon, XIcon, CheckIcon } from '../components/icons'
 
 function formatDollars(value: string | null | undefined): string {
   if (value == null) return '—'
@@ -219,16 +220,18 @@ function AddHoldingRow({
 function HoldingRow({
   holding,
   accountId,
-  onPriceUpdated,
+  onUpdated,
   onDelete,
 }: {
   holding: HsaHolding
   accountId: string
-  onPriceUpdated: (updated: HsaHolding) => void
+  onUpdated: (updated: HsaHolding) => void
   onDelete: () => void
 }) {
   const [editingPrice, setEditingPrice] = useState(false)
   const [manualPrice, setManualPrice] = useState('')
+  const [editingShares, setEditingShares] = useState(false)
+  const [manualShares, setManualShares] = useState('')
   const [saving, setSaving] = useState(false)
 
   const value =
@@ -244,9 +247,25 @@ function HoldingRow({
       const updated = await portfolioService.updateHolding(accountId, holding.id, {
         last_known_price: manualPrice,
       })
-      onPriceUpdated(updated)
+      onUpdated(updated)
       setEditingPrice(false)
       setManualPrice('')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveManualShares = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!manualShares) return
+    setSaving(true)
+    try {
+      const updated = await portfolioService.updateHolding(accountId, holding.id, {
+        shares: manualShares,
+      })
+      onUpdated(updated)
+      setEditingShares(false)
+      setManualShares('')
     } finally {
       setSaving(false)
     }
@@ -255,7 +274,37 @@ function HoldingRow({
   return (
     <tr className="border-b border-gray-50">
       <td className="py-1 font-medium text-gray-800">{holding.ticker}</td>
-      <td className="py-1 text-right text-gray-600">{parseFloat(holding.shares).toFixed(4)}</td>
+      <td className="py-1 text-right text-gray-600">
+        {editingShares ? (
+          <form onSubmit={saveManualShares} className="flex items-center justify-end gap-1">
+            <input
+              type="number"
+              value={manualShares}
+              onChange={e => setManualShares(e.target.value)}
+              min="0.000001"
+              step="any"
+              aria-label={`Shares for ${holding.ticker}`}
+              className="w-20 border border-gray-300 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500"
+              autoFocus
+            />
+            <button type="submit" disabled={saving} aria-label="Save" className="text-xs text-sky-600 hover:text-sky-800 disabled:opacity-50">
+              {saving ? '…' : <CheckIcon className="w-3.5 h-3.5" />}
+            </button>
+            <button type="button" onClick={() => setEditingShares(false)} aria-label="Cancel" className="text-xs text-gray-400 hover:text-gray-600">
+              <XIcon className="w-3.5 h-3.5" />
+            </button>
+          </form>
+        ) : (
+          <button
+            onClick={() => { setManualShares(parseFloat(holding.shares).toString()); setEditingShares(true) }}
+            className="text-gray-600 hover:text-sky-600"
+            aria-label={`Edit shares for ${holding.ticker}`}
+            title="Click to edit shares"
+          >
+            {parseFloat(holding.shares).toFixed(4)}
+          </button>
+        )}
+      </td>
       <td className="py-1 text-right text-gray-600">
         {holding.last_known_price != null ? (
           formatDollars(holding.last_known_price)
@@ -272,10 +321,10 @@ function HoldingRow({
               autoFocus
             />
             <button type="submit" disabled={saving} className="text-xs text-sky-600 hover:text-sky-800 disabled:opacity-50">
-              {saving ? '…' : '✓'}
+              {saving ? '…' : <CheckIcon className="w-3.5 h-3.5" />}
             </button>
             <button type="button" onClick={() => setEditingPrice(false)} className="text-xs text-gray-400 hover:text-gray-600">
-              ✕
+              <XIcon className="w-3.5 h-3.5" />
             </button>
           </form>
         ) : (
@@ -298,7 +347,7 @@ function HoldingRow({
           className="text-red-300 hover:text-red-500 leading-none"
           aria-label={`Delete ${holding.ticker}`}
         >
-          ×
+          <XIcon className="w-3.5 h-3.5" />
         </button>
       </td>
     </tr>
@@ -399,18 +448,18 @@ function AccountCard({
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => setEditing(!editing)}
-            className="text-xs text-gray-400 hover:text-gray-700"
+            className="text-base text-gray-400 hover:text-gray-700"
             aria-label="Edit account"
           >
-            ✏️
+            <PencilIcon />
           </button>
           <button
             onClick={handleDelete}
             disabled={deleting}
-            className="text-xs text-red-400 hover:text-red-600 disabled:opacity-50"
+            className="text-base text-red-400 hover:text-red-600 disabled:opacity-50"
             aria-label="Delete account"
           >
-            🗑
+            <TrashIcon />
           </button>
         </div>
       </div>
@@ -518,7 +567,7 @@ function AccountCard({
                 key={h.id}
                 holding={h}
                 accountId={account.id}
-                onPriceUpdated={updated => setHoldings(prev => prev.map(x => x.id === updated.id ? updated : x))}
+                onUpdated={updated => setHoldings(prev => prev.map(x => x.id === updated.id ? updated : x))}
                 onDelete={() => handleDeleteHolding(h.id)}
               />
             ))}
@@ -670,12 +719,12 @@ export default function Portfolio() {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-5xl">
-      <header className="flex items-center justify-between mb-6 gap-4">
+      <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-3">
         <div>
           <h1 className="text-2xl sm:text-4xl font-bold text-gray-900 mb-1">HSA Portfolio</h1>
           <p className="text-gray-500">Manually track your HSA investments across institutions</p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2">
           <button
             onClick={handleRefreshPrices}
             disabled={refreshing}

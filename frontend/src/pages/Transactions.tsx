@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { bankService, BankTransaction, CategorySmartStatus, HSA_CATEGORIES } from '../services/bank'
+import { XIcon, CheckIcon, WarningIcon, PaperclipIcon, ChevronDownIcon, ChevronRightIcon, InfoIcon, ArrowUpIcon } from '../components/icons'
 import { familyService, FamilyMember } from '../services/family'
 import { rulesService, HsaRule } from '../services/rules'
 import { householdService, Household } from '../services/household'
@@ -73,7 +74,7 @@ function MemberPicker({ txn, members, onChange }: MemberPickerProps) {
           className="text-amber-500 text-xs font-bold leading-none select-none"
           aria-label="Outside coverage window"
         >
-          ⚠
+          <WarningIcon className="w-3.5 h-3.5" />
         </span>
       )}
     </span>
@@ -179,8 +180,8 @@ function ReimburseToggle({ txn, onChange }: ReimburseToggleProps) {
           <button onClick={confirm} className="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-600 text-white hover:bg-purple-700">
             Save
           </button>
-          <button onClick={() => setPickingDate(false)} className="text-xs text-gray-400 hover:text-gray-600">
-            ✕
+          <button onClick={() => setPickingDate(false)} aria-label="Cancel" className="text-gray-400 hover:text-gray-600">
+            <XIcon className="w-3.5 h-3.5" />
           </button>
         </span>
       </span>
@@ -211,7 +212,7 @@ function ReimbursementEducationBanner() {
     <div data-testid="reimburse-education-banner" className="mb-3 p-3 bg-sky-50 border border-sky-200 rounded-lg text-sm text-sky-900">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-start gap-2 flex-1">
-          <span className="shrink-0 text-sky-500 font-bold">ℹ</span>
+          <InfoIcon className="w-4 h-4 shrink-0 text-sky-500" />
           <div>
             <p className="font-semibold text-sky-800 mb-1">Did you know? Waiting to reimburse yourself is often the smarter move.</p>
             <ul className="space-y-1 text-sky-800">
@@ -309,7 +310,7 @@ function EligibleAmountEditor({ txn, onChange }: EligibleAmountEditorProps) {
           autoFocus
         />
         <button onClick={save} className="text-xs font-medium px-1.5 py-0.5 rounded bg-green-600 text-white hover:bg-green-700">Save</button>
-        <button onClick={() => setEditing(false)} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+        <button onClick={() => setEditing(false)} className="text-gray-400 hover:text-gray-600"><XIcon className="w-3.5 h-3.5" /></button>
       </span>
     )
   }
@@ -607,7 +608,7 @@ function CvsImportModal({ onClose }: { onClose: () => void }) {
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900">Import CVS Pharmacy CSV</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><XIcon className="w-5 h-5" /></button>
         </div>
         <div className="px-5 py-4">
           <p className="text-sm text-gray-500 mb-4">
@@ -741,9 +742,9 @@ function PharmacyFillsPanel({ transactionId }: { transactionId: string }) {
             <button
               onClick={() => handleUnlink(fill.id)}
               title="Unlink this fill"
-              className="text-xs text-gray-300 hover:text-red-400 shrink-0 transition-colors"
+              className="text-gray-300 hover:text-red-400 shrink-0 transition-colors"
             >
-              ✕
+              <XIcon className="w-3.5 h-3.5" />
             </button>
           </div>
         ))}
@@ -889,16 +890,16 @@ function LineItemsPanel({ transactionId, onEligibleAmountChange }: {
                       : 'bg-white border-gray-200 text-gray-200'
                 }`}
               >
-                {item.is_hsa_eligible === true ? '✓' : ''}
+                {item.is_hsa_eligible === true ? <CheckIcon className="w-3.5 h-3.5" /> : null}
               </button>
               <span className="flex-1 text-gray-900 truncate">{item.description}</span>
               <span className="text-gray-500 shrink-0 text-xs">${parseFloat(item.amount).toFixed(2)}</span>
               <button
                 onClick={() => handleDelete(item.id)}
                 title="Remove item"
-                className="text-xs text-gray-200 hover:text-red-400 shrink-0 transition-colors"
+                className="text-gray-200 hover:text-red-400 shrink-0 transition-colors"
               >
-                ✕
+                <XIcon className="w-3.5 h-3.5" />
               </button>
             </div>
           ))}
@@ -983,9 +984,9 @@ function TxnRow({ txn, members, tab, onChange, onTag }: TxnRowProps) {
 
         {/* Description + account (includes date on mobile) */}
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-gray-900 truncate">{txn.description || '(no description)'}</p>
+          <p className={`text-sm text-gray-900 ${expanded ? '' : 'truncate'}`}>{txn.description || '(no description)'}</p>
           {/* Account info on sm+; date + account on mobile */}
-          <p className="text-xs text-gray-400 truncate">
+          <p className={`text-xs text-gray-400 ${expanded ? '' : 'truncate'}`}>
             <span className="sm:hidden">{formatDate(txn.transaction_date)} · </span>
             {txn.institution_name || txn.account_name || ''}
             {txn.account_name && txn.institution_name ? ` · ${txn.account_name}` : ''}
@@ -1029,7 +1030,7 @@ function TxnRow({ txn, members, tab, onChange, onTag }: TxnRowProps) {
 
         {/* Expand chevron — mobile only hint */}
         <span className="sm:hidden text-gray-300 text-xs shrink-0 select-none">
-          {expanded ? '▾' : '›'}
+          {expanded ? <ChevronDownIcon className="w-3 h-3" /> : <ChevronRightIcon className="w-3 h-3" />}
         </span>
 
         {/* Attachment toggle — stopPropagation so row click doesn't double-toggle */}
@@ -1044,7 +1045,7 @@ function TxnRow({ txn, members, tab, onChange, onTag }: TxnRowProps) {
                 : 'text-gray-300 hover:text-gray-500'
           }`}
         >
-          📎{docCount > 0 ? ` ${docCount}` : ''}
+          <span className="inline-flex items-center gap-0.5"><PaperclipIcon className="w-3.5 h-3.5" />{docCount > 0 ? docCount : null}</span>
         </button>
 
         {/* Tag button */}
@@ -1391,7 +1392,7 @@ export default function Transactions() {
               title="More options"
               data-testid="add-menu-toggle"
             >
-              ▾
+              <ChevronDownIcon className="w-4 h-4" />
             </button>
           </div>
           {showAddMenu && (
@@ -1407,7 +1408,7 @@ export default function Transactions() {
                 className="block w-full text-left text-sm px-4 py-2 hover:bg-gray-50 text-gray-700"
                 data-testid="open-import-button"
               >
-                ↑ Import CVS pharmacy CSV
+                <ArrowUpIcon className="w-3.5 h-3.5 inline-block mr-1" /> Import CVS pharmacy CSV
               </button>
             </div>
           )}
@@ -1550,7 +1551,7 @@ export default function Transactions() {
         return (
           <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
             <div className="flex items-start gap-2">
-              <span className="shrink-0">⚠</span>
+              <WarningIcon className="w-4 h-4 shrink-0" />
               <span>
                 Filtering by <strong>{catLabel}</strong>.
                 Older transactions may not have bank-provided category data and won&apos;t appear here even if they are of the same type.
@@ -1601,7 +1602,7 @@ export default function Transactions() {
       {/* Potential HSA review callout */}
       {tab === 'hsa' && transactions.some(t => t.is_hsa_eligible === null) && (
         <div className="mb-3 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
-          <span className="shrink-0">⚠</span>
+          <WarningIcon className="w-4 h-4 shrink-0" />
           <span>
             Some transactions below are flagged as <strong>Potential HSA</strong> and need your review.
             Click a row to confirm or reject each one.
@@ -1629,7 +1630,7 @@ export default function Transactions() {
         <span className="w-[110px] shrink-0">Person</span>
         {(tab === 'hsa' || tab === 'reimbursed') && <span className="w-[130px] shrink-0">Category</span>}
         {(tab === 'hsa' || tab === 'reimbursed') && <span className="w-24 shrink-0">Reimbursed?</span>}
-        <span className="shrink-0">📎</span>
+        <span className="shrink-0"><PaperclipIcon className="w-4 h-4" /></span>
       </div>
 
       {/* Body */}
@@ -1697,7 +1698,7 @@ export default function Transactions() {
         onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
         className="fixed bottom-20 md:bottom-6 right-6 z-40 bg-white border border-gray-200 shadow-md rounded-full px-4 py-2 text-sm text-gray-600 hover:text-sky-600 hover:border-sky-300 transition-colors"
       >
-        ↑ Back to top
+        <ArrowUpIcon className="w-3.5 h-3.5 inline-block mr-1" /> Back to top
       </button>
     )}
     </>

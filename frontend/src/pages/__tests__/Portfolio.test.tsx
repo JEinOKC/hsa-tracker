@@ -151,6 +151,58 @@ describe('Portfolio page', () => {
     })
   })
 
+  it('clicking shares value enters edit mode with current value pre-filled', async () => {
+    const account = makeAccount({ holdings: [makeHolding()] })
+    ;(portfolioService.listAccounts as any).mockResolvedValue([account])
+    render(<Portfolio />)
+    await waitFor(() => screen.getByText('VTI'))
+
+    fireEvent.click(screen.getByRole('button', { name: /edit shares for vti/i }))
+
+    const input = screen.getByRole('spinbutton', { name: /shares for vti/i })
+    expect(input).toBeInTheDocument()
+    expect((input as HTMLInputElement).value).toBe('10')
+  })
+
+  it('saving shares edit calls updateHolding and updates the display', async () => {
+    const account = makeAccount({ holdings: [makeHolding()] })
+    const updatedHolding = makeHolding({ shares: '15.000000' })
+    ;(portfolioService.listAccounts as any).mockResolvedValue([account])
+    ;(portfolioService.updateHolding as any).mockResolvedValue(updatedHolding)
+    render(<Portfolio />)
+    await waitFor(() => screen.getByText('VTI'))
+
+    fireEvent.click(screen.getByRole('button', { name: /edit shares for vti/i }))
+    const input = screen.getByRole('spinbutton', { name: /shares for vti/i })
+    fireEvent.change(input, { target: { value: '15' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(portfolioService.updateHolding).toHaveBeenCalledWith(
+        'acc-1',
+        'hold-1',
+        expect.objectContaining({ shares: '15' })
+      )
+    })
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /edit shares for vti/i })).toHaveTextContent('15.0000')
+    })
+  })
+
+  it('cancelling shares edit restores read-only display', async () => {
+    const account = makeAccount({ holdings: [makeHolding()] })
+    ;(portfolioService.listAccounts as any).mockResolvedValue([account])
+    render(<Portfolio />)
+    await waitFor(() => screen.getByText('VTI'))
+
+    fireEvent.click(screen.getByRole('button', { name: /edit shares for vti/i }))
+    expect(screen.getByRole('spinbutton', { name: /shares for vti/i })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('spinbutton', { name: /shares for vti/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /edit shares for vti/i })).toBeInTheDocument()
+  })
+
   it('projection table renders rows when accounts exist', async () => {
     ;(portfolioService.listAccounts as any).mockResolvedValue([makeAccount()])
     ;(portfolioService.getProjection as any).mockResolvedValue({

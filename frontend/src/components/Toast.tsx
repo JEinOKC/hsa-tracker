@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useRef } from 'react'
+import { XIcon } from './icons'
 
 export type ToastType = 'success' | 'error'
 
@@ -68,7 +69,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               aria-label="Dismiss"
               className="shrink-0 opacity-60 hover:opacity-100 transition-opacity"
             >
-              ✕
+              <XIcon className="w-4 h-4" />
             </button>
           </div>
         ))}
