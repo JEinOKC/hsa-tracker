@@ -834,7 +834,7 @@ describe('Transactions page', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Reimburse' }))
 
       await waitFor(() => screen.getByRole('button', { name: 'Save' }))
-      fireEvent.click(screen.getByRole('button', { name: '✕' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: 'Reimburse' })).toBeInTheDocument()

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { bankService, DashboardSummary } from '../services/bank'
 import { portfolioService, PortfolioSummary } from '../services/portfolio'
+import { CheckIcon } from '../components/icons'
 
 function formatDollars(amount: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Math.abs(amount))
@@ -203,7 +204,7 @@ export default function Dashboard() {
                 <div className={`mt-0.5 flex-shrink-0 h-6 w-6 rounded-full flex items-center justify-center text-sm font-medium ${
                   step.done ? 'bg-green-100 text-green-600' : 'bg-sky-500 text-white'
                 }`}>
-                  {step.done ? '✓' : i + 1}
+                  {step.done ? <CheckIcon className="w-3.5 h-3.5" /> : i + 1}
                 </div>
                 <div>
                   <h3 className={`text-base font-medium ${step.done ? 'text-gray-400 line-through' : 'text-gray-900'}`}>

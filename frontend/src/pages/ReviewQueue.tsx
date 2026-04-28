@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { bankService, BankTransaction } from '../services/bank'
+import { CheckIcon } from '../components/icons'
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
@@ -72,7 +73,7 @@ export default function ReviewQueue() {
 
       {done ? (
         <div className="text-center py-16">
-          <div className="text-4xl mb-4">✓</div>
+          <CheckIcon className="w-16 h-16 mx-auto mb-4 text-sky-500" />
           <h2 className="text-lg font-semibold text-gray-900 mb-2">All caught up!</h2>
           <p className="text-sm text-gray-500 mb-6">
             No more transactions to review right now.

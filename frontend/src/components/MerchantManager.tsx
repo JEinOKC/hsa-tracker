@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { XIcon, MedicalIcon } from './icons'
 import { bankService, MerchantSummary } from '../services/bank'
 import { rulesService } from '../services/rules'
 
@@ -85,10 +86,10 @@ export default function MerchantManager({ onClose, onHidden }: Props) {
           <h2 className="text-base font-semibold text-gray-900">Manage Merchants</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+            className="text-gray-400 hover:text-gray-600"
             aria-label="Close"
           >
-            ×
+            <XIcon className="w-5 h-5" />
           </button>
         </div>
 
@@ -199,11 +200,8 @@ function MerchantRow({
         <div className="flex items-center gap-1.5">
           <span className="text-sm text-gray-900 truncate">{merchant.normalized_name}</span>
           {merchant.hsa_likelihood === 'likely' && (
-            <span
-              title="This merchant may have HSA-eligible expenses"
-              className="text-green-600 text-xs"
-            >
-              ⚕
+            <span title="This merchant may have HSA-eligible expenses">
+              <MedicalIcon className="w-3.5 h-3.5 text-green-600 shrink-0" />
             </span>
           )}
           {merchant.has_hsa && (

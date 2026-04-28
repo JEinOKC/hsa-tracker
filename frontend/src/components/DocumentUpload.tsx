@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { XIcon } from './icons'
 import { useDropzone } from 'react-dropzone'
 import imageCompression from 'browser-image-compression'
 import { documentService, TransactionDocument } from '../services/documents'
@@ -158,7 +159,7 @@ export default function DocumentUpload({ transactionId, onCountChange }: Props) 
                 className="text-xs text-red-500 hover:text-red-700 shrink-0"
                 aria-label={`Delete ${doc.original_filename}`}
               >
-                ✕
+                <XIcon className="w-3.5 h-3.5" />
               </button>
             </li>
           ))}
