@@ -41,6 +41,7 @@ certifi==2024.2.2
 
 # Web Push Notifications (VAPID)
 pywebpush==2.0.0
+cbor2==5.4.6  # Pin to last pure-Python version; >=5.5.0 requires Rust compiler to build
 
 # Rate Limiting
 slowapi==0.1.9
