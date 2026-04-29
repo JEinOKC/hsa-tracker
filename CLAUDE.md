@@ -1,5 +1,14 @@
 # HSA Tracker — Claude Guidelines
 
+## Branch discipline — non-negotiable
+
+**Never commit directly to main.** This means every change — features, bug fixes, one-line dependency updates, build fixes, anything.
+
+Before writing or editing any file:
+1. Run `git branch --show-current`
+2. If the answer is `main`, run `git checkout -b <type>/<description>` first
+3. There is no exception for "it's a small fix"
+
 ## Test coverage requirement
 
 **Any bug fix or new feature must include unit tests.** This is non-negotiable.

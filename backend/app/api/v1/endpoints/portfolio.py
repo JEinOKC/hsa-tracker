@@ -13,10 +13,11 @@ Endpoints:
 
   POST   /portfolio/prices/refresh                    - fetch current prices for all holdings
   GET    /portfolio/summary                           - aggregate portfolio value
+  GET    /portfolio/history                           - daily portfolio value over time (for charts)
   GET    /portfolio/projection                        - future-value projection
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID
@@ -26,12 +27,13 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models.portfolio import HsaAccount, HsaHolding
+from app.models.portfolio import HsaAccount, HsaHolding, HoldingSnapshot
 from app.models.user import User
 from app.schemas.portfolio import (
     HsaAccountCreate, HsaAccountOut, HsaAccountUpdate,
     HsaHoldingCreate, HsaHoldingOut, HsaHoldingUpdate,
     AccountSummary, PortfolioSummaryOut,
+    PortfolioHistoryOut, PortfolioHistoryPoint,
     ProjectionOut, ProjectionPoint,
 )
 from app.services.price_fetcher import get_price_provider
@@ -56,6 +58,45 @@ def _get_account_or_404(account_id: UUID, owner_ids: list, db: Session) -> HsaAc
 def _require_write(user: User, account: HsaAccount, db: Session) -> None:
     if not check_permission(user, account.user_id, "bank_accounts", "write", db):
         raise HTTPException(status_code=403, detail="Not allowed to modify this account")
+
+
+def _upsert_snapshot(
+    db: Session,
+    holding: HsaHolding,
+    user_id,
+    price: Decimal,
+    now: datetime,
+) -> None:
+    """Insert or update today's snapshot for a holding (one row per holding per day)."""
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+    value = (holding.shares * price).quantize(Decimal("0.01"))
+
+    existing = (
+        db.query(HoldingSnapshot)
+        .filter(
+            HoldingSnapshot.holding_id == holding.id,
+            HoldingSnapshot.snapshotted_at >= day_start,
+            HoldingSnapshot.snapshotted_at <= day_end,
+        )
+        .first()
+    )
+    if existing:
+        existing.shares = holding.shares
+        existing.price = price
+        existing.value = value
+        existing.snapshotted_at = now
+    else:
+        db.add(HoldingSnapshot(
+            holding_id=holding.id,
+            account_id=holding.account_id,
+            user_id=user_id,
+            ticker=holding.ticker,
+            shares=holding.shares,
+            price=price,
+            value=value,
+            snapshotted_at=now,
+        ))
 
 
 # ─── Accounts ────────────────────────────────────────────────────────────────
@@ -186,11 +227,16 @@ def update_holding(
     if not holding:
         raise HTTPException(status_code=404, detail="Holding not found")
 
+    now = datetime.utcnow()
     for field, value in body.model_dump(exclude_unset=True).items():
         if field == "ticker" and value:
             value = value.upper().strip()
         setattr(holding, field, value)
-    holding.updated_at = datetime.utcnow()
+    holding.updated_at = now
+
+    # Snapshot if we have a price — captures the new share count against the latest price
+    if holding.last_known_price is not None:
+        _upsert_snapshot(db, holding, account.user_id, holding.last_known_price, now)
 
     db.commit()
     db.refresh(holding)
@@ -248,6 +294,7 @@ async def refresh_prices(
         raise HTTPException(status_code=503, detail=str(e))
 
     now = datetime.utcnow()
+    account_by_id = {a.id: a for a in accounts}
     updated = 0
     not_found: list[str] = []
     for holding in all_holdings:
@@ -256,6 +303,8 @@ async def refresh_prices(
             holding.last_known_price = price
             holding.last_price_fetched_at = now
             holding.updated_at = now
+            user_id = account_by_id[holding.account_id].user_id
+            _upsert_snapshot(db, holding, user_id, price, now)
             updated += 1
         elif holding.ticker not in not_found:
             not_found.append(holding.ticker)
@@ -311,6 +360,45 @@ def get_summary(
     return PortfolioSummaryOut(
         accounts=account_summaries,
         total_value=grand_total if accounts else None,
+    )
+
+
+# ─── History ─────────────────────────────────────────────────────────────────
+
+@router.get("/history", response_model=PortfolioHistoryOut)
+def get_history(
+    days: int = Query(default=90, ge=1, le=365),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return daily total holding value for the past N days, suitable for charting."""
+    from sqlalchemy import func
+
+    owner_ids = get_readable_owner_ids(current_user, db)
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    # func.date() is supported by both SQLite (tests) and PostgreSQL (prod).
+    # SQLite returns a string; PostgreSQL returns a datetime.date — str() normalises both.
+    date_fn = func.date(HoldingSnapshot.snapshotted_at)
+    rows = (
+        db.query(
+            date_fn.label("snap_date"),
+            func.sum(HoldingSnapshot.value).label("total_value"),
+        )
+        .filter(
+            HoldingSnapshot.user_id.in_(owner_ids),
+            HoldingSnapshot.snapshotted_at >= cutoff,
+        )
+        .group_by(date_fn)
+        .order_by(date_fn)
+        .all()
+    )
+
+    return PortfolioHistoryOut(
+        points=[
+            PortfolioHistoryPoint(date=str(row.snap_date), total_value=row.total_value)
+            for row in rows
+        ]
     )
 
 
