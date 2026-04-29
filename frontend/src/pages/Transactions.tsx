@@ -1495,28 +1495,28 @@ export default function Transactions() {
             />
             <span className="text-sm text-gray-600 whitespace-nowrap">Show hidden</span>
           </label>
-          <div className="col-span-2 sm:col-span-1 min-w-0">
+          <div className="min-w-0">
             <label className="block text-xs text-gray-400 mb-1 pl-1">From</label>
             <input
               type="date"
               value={startDate}
               onChange={e => setStartDate(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
             />
           </div>
-          <div className="col-span-2 sm:col-span-1 min-w-0">
+          <div className="min-w-0">
             <label className="block text-xs text-gray-400 mb-1 pl-1">To</label>
             <input
               type="date"
               value={endDate}
               onChange={e => setEndDate(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
             />
           </div>
           {hasFilters && (
             <button
               onClick={clearFilters}
-              className="col-span-2 sm:col-span-1 text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 border border-gray-200 rounded-lg sm:border-0"
+              className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 border border-gray-200 rounded-lg sm:border-0"
             >
               Clear filters
             </button>
