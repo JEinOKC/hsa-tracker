@@ -159,6 +159,9 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <ProtectedRoute>
+      {/* Safe-area fill: position:fixed guarantees y=0, covers white gap behind Dynamic Island */}
+      <div className="fixed top-0 left-0 right-0 bg-sky-600 z-40"
+           style={{ height: 'env(safe-area-inset-top)' }} />
       {/* flex column fills the full viewport height; only the middle area scrolls */}
       <div className="flex flex-col h-full">
         <Nav unreviewedCount={unreviewedCount} disconnectedCount={disconnectedCount} />
