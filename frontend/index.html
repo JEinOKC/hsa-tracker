@@ -4,13 +4,23 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
     <meta name="description" content="Self-hosted HSA expense tracking application for families" />
     <meta name="theme-color" content="#0284c7" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>HSA Tracker</title>
     <script src="https://cdn.teller.io/connect/connect.js"></script>
+    <style>
+      /* Native app shell: body doesn't scroll — only the inner content area does.
+         This keeps position:fixed elements (top nav, bottom tab bar) truly fixed
+         on iOS Safari/PWA, prevents horizontal overscroll, and makes the safe-area
+         background fill work correctly with viewport-fit=cover. */
+      html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+      #root { height: 100%; }
+      /* Remove tap highlight on interactive elements for a native feel */
+      * { -webkit-tap-highlight-color: transparent; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

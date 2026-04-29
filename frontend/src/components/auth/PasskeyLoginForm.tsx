@@ -5,6 +5,7 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import passkeyService from '../../services/passkey'
+import { LockClosedIcon } from '../icons'
 
 export default function PasskeyLoginForm() {
   const [username, setUsername] = useState('')
@@ -44,7 +45,10 @@ export default function PasskeyLoginForm() {
   return (
     <div className="space-y-6">
       <div className="bg-sky-50 border border-sky-200 rounded-lg p-4">
-        <h3 className="font-semibold text-sky-900 mb-2">🔐 Passwordless Login</h3>
+        <h3 className="font-semibold text-sky-900 mb-2 flex items-center gap-1.5">
+          <LockClosedIcon className="h-4 w-4 flex-shrink-0" />
+          Passwordless Login
+        </h3>
         <p className="text-sm text-sky-700">
           Login securely with your device's biometric authentication. No password needed!
         </p>
@@ -79,7 +83,14 @@ export default function PasskeyLoginForm() {
           disabled={isLoading}
           className="w-full bg-sky-600 hover:bg-sky-700 disabled:bg-sky-300 text-white font-medium py-2 px-4 rounded-lg transition-colors"
         >
-          {isLoading ? 'Authenticating...' : '🔐 Login with Passkey'}
+          {isLoading ? (
+            'Authenticating...'
+          ) : (
+            <span className="flex items-center justify-center gap-2">
+              <LockClosedIcon className="h-4 w-4" />
+              Login with Passkey
+            </span>
+          )}
         </button>
 
         <div className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3">

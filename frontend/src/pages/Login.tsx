@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import PasskeyLoginForm from '../components/auth/PasskeyLoginForm'
+import { LockClosedIcon } from '../components/icons'
 
 export default function Login() {
   return (
@@ -23,7 +24,10 @@ export default function Login() {
           </div>
 
           <div className="mt-6 bg-green-50 border border-green-200 rounded-lg p-4">
-            <h3 className="text-sm font-medium text-green-900 mb-1">🔐 Passkey Authentication!</h3>
+            <h3 className="text-sm font-medium text-green-900 mb-1 flex items-center gap-1.5">
+              <LockClosedIcon className="h-4 w-4 flex-shrink-0" />
+              Passkey Authentication
+            </h3>
             <p className="text-sm text-green-700">
               No email or password required. Login securely with your device's biometric authentication!
             </p>

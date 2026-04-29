@@ -159,13 +159,14 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <ProtectedRoute>
-      <>
+      {/* flex column fills the full viewport height; only the middle area scrolls */}
+      <div className="flex flex-col h-full">
         <Nav unreviewedCount={unreviewedCount} disconnectedCount={disconnectedCount} />
-        {/* Extra bottom padding on mobile so content clears the fixed tab bar */}
-        <div className="pb-20 md:pb-0">
+        {/* This is the only scrollable region — body stays locked */}
+        <main className="flex-1 overflow-y-auto pb-20 md:pb-0" style={{ WebkitOverflowScrolling: 'touch' }}>
           {children}
-        </div>
-      </>
+        </main>
+      </div>
     </ProtectedRoute>
   )
 }
@@ -181,7 +182,7 @@ function App() {
   return (
     <ToastProvider>
     <UpdatePrompt />
-    <div className="min-h-screen bg-gray-50">
+    <div className="h-full bg-gray-50">
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
