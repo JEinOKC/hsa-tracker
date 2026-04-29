@@ -43,6 +43,7 @@ export default function Dashboard() {
   const [range, setRange] = useState<RangeKey>('YTD')
   const [summary, setSummary] = useState<DashboardSummary | null>(null)
   const [loading, setLoading] = useState(true)
+  const [lifetimeSummary, setLifetimeSummary] = useState<DashboardSummary | null>(null)
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
 
   useEffect(() => {
@@ -51,6 +52,11 @@ export default function Dashboard() {
       .then(setSummary)
       .finally(() => setLoading(false))
   }, [range])
+
+  // Separate all-time fetch — unaffected by the range selector
+  useEffect(() => {
+    bankService.getDashboardSummary({}).then(setLifetimeSummary).catch(() => {})
+  }, [])
 
   useEffect(() => {
     portfolioService.getSummary().then(setPortfolio).catch(() => {})
@@ -90,14 +96,39 @@ export default function Dashboard() {
   const allDone = steps.length > 0 && steps.every(s => s.done)
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-5xl">
-      <header className="mb-6">
-        <h1 className="text-2xl sm:text-4xl font-bold text-gray-900 mb-1">HSA Tracker</h1>
-        <p className="text-gray-500">Your self-hosted HSA expense tracker</p>
-      </header>
+    <div className="container mx-auto px-4 py-4 max-w-5xl">
+
+      {/* Hero — lifetime totals always visible above the fold */}
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="bg-sky-600 text-white rounded-xl p-4 shadow">
+          <p className="text-xs font-semibold text-sky-200 uppercase tracking-wider mb-1">Lifetime HSA Spend</p>
+          <p className="text-2xl font-bold leading-tight">
+            {lifetimeSummary ? formatDollars(lifetimeSummary.hsa_spending) : '—'}
+          </p>
+          <p className="text-xs text-sky-300 mt-1">
+            {lifetimeSummary
+              ? `${lifetimeSummary.hsa_transaction_count} expense${lifetimeSummary.hsa_transaction_count !== 1 ? 's' : ''}`
+              : ''}
+          </p>
+        </div>
+        <div className="bg-white rounded-xl p-4 shadow">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Portfolio Value</p>
+          <p className="text-2xl font-bold text-gray-900 leading-tight">
+            {portfolio?.total_value != null
+              ? formatDollars(Math.abs(parseFloat(portfolio.total_value)))
+              : '—'}
+          </p>
+          <p className="text-xs text-gray-400 mt-1">
+            {portfolio?.accounts.length
+              ? <Link data-testid="portfolio-link" to="/portfolio" className="text-sky-600 hover:text-sky-800">View portfolio →</Link>
+              : <Link data-testid="portfolio-setup-link" to="/portfolio" className="text-sky-600 hover:text-sky-800">Set up →</Link>
+            }
+          </p>
+        </div>
+      </div>
 
       {/* Range selector — horizontally scrollable on mobile */}
-      <div className="flex gap-1 mb-6 border-b border-gray-200 pb-3 overflow-x-auto">
+      <div className="flex gap-1 mb-4 border-b border-gray-200 pb-3 overflow-x-auto">
         {RANGES.map(r => (
           <button
             key={r}
@@ -113,8 +144,8 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6 mb-8">
+      {/* Range-filtered stat cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-sm font-medium text-gray-500 mb-2">HSA Spending</h3>
           <p className={`text-3xl font-bold ${loading ? 'text-gray-200' : 'text-gray-900'}`}>
@@ -148,24 +179,6 @@ export default function Dashboard() {
             <Link to="/transactions?tab=hsa" className="text-sky-600 hover:text-sky-800">
               View HSA transactions →
             </Link>
-          </p>
-        </div>
-
-        {/* Portfolio value card */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-sm font-medium text-gray-500 mb-2">HSA Portfolio</h3>
-          <p className="text-3xl font-bold text-gray-900">
-            {portfolio?.total_value != null
-              ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
-                  Math.abs(parseFloat(portfolio.total_value))
-                )
-              : '—'}
-          </p>
-          <p className="text-sm text-gray-500 mt-2">
-            {portfolio?.accounts.length
-              ? <Link data-testid="portfolio-link" to="/portfolio" className="text-sky-600 hover:text-sky-800">View portfolio →</Link>
-              : <Link data-testid="portfolio-setup-link" to="/portfolio" className="text-sky-600 hover:text-sky-800">Set up portfolio →</Link>
-            }
           </p>
         </div>
 

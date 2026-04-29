@@ -8,7 +8,14 @@ vi.mock('../../services/bank', () => ({
   },
 }))
 
+vi.mock('../../services/portfolio', () => ({
+  portfolioService: {
+    getSummary: vi.fn(),
+  },
+}))
+
 import { bankService } from '../../services/bank'
+import { portfolioService } from '../../services/portfolio'
 
 const fullSummary = {
   hsa_spending: 0,
@@ -24,12 +31,46 @@ const fullSummary = {
 beforeEach(() => {
   vi.clearAllMocks()
   ;(bankService.getDashboardSummary as any).mockResolvedValue(fullSummary)
+  ;(portfolioService.getSummary as any).mockResolvedValue({ total_value: null, accounts: [] })
 })
 
 describe('Dashboard', () => {
-  it('renders page title', async () => {
+  it('renders the hero section labels', async () => {
     render(<Dashboard />)
-    expect(screen.getByText('HSA Tracker')).toBeInTheDocument()
+    expect(screen.getByText('Lifetime HSA Spend')).toBeInTheDocument()
+    expect(screen.getByText('Portfolio Value')).toBeInTheDocument()
+  })
+
+  it('shows lifetime HSA spend from the all-time API call', async () => {
+    ;(bankService.getDashboardSummary as any).mockResolvedValue({
+      ...fullSummary,
+      hsa_spending: 1500.00,
+      hsa_transaction_count: 12,
+    })
+    render(<Dashboard />)
+    await waitFor(() => {
+      expect(screen.getAllByText('$1,500.00').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getByText('12 expenses')).toBeInTheDocument()
+    })
+  })
+
+  it('shows portfolio value in the hero when available', async () => {
+    ;(portfolioService.getSummary as any).mockResolvedValue({
+      total_value: '8250.50',
+      accounts: [{ id: '1' }],
+    })
+    render(<Dashboard />)
+    await waitFor(() => {
+      expect(screen.getByText('$8,250.50')).toBeInTheDocument()
+      expect(screen.getByTestId('portfolio-link')).toBeInTheDocument()
+    })
+  })
+
+  it('shows set-up link in hero when no portfolio accounts', async () => {
+    render(<Dashboard />)
+    await waitFor(() => {
+      expect(screen.getByTestId('portfolio-setup-link')).toBeInTheDocument()
+    })
   })
 
   it('shows all time-range buttons', async () => {
@@ -79,7 +120,8 @@ describe('Dashboard', () => {
     })
     render(<Dashboard />)
     await waitFor(() => {
-      expect(screen.getByText('$250.75')).toBeInTheDocument()
+      // $250.75 appears in both the lifetime hero and the period card (same mock)
+      expect(screen.getAllByText('$250.75').length).toBeGreaterThanOrEqual(1)
       expect(screen.getByText(/3 flagged transactions/i)).toBeInTheDocument()
     })
   })
