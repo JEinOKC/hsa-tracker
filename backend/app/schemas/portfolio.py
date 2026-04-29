@@ -91,6 +91,31 @@ class PortfolioSummaryOut(BaseModel):
     total_value: Optional[Decimal] = None
 
 
+# ─── Holding snapshots / history ─────────────────────────────────────────────
+
+class HoldingSnapshotOut(BaseModel):
+    id: UUID
+    holding_id: Optional[UUID] = None
+    account_id: UUID
+    ticker: str
+    shares: Decimal
+    price: Decimal
+    value: Decimal
+    snapshotted_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PortfolioHistoryPoint(BaseModel):
+    date: str          # "YYYY-MM-DD"
+    total_value: Decimal
+
+
+class PortfolioHistoryOut(BaseModel):
+    points: List[PortfolioHistoryPoint]
+
+
 # ─── Projection ──────────────────────────────────────────────────────────────
 
 class ProjectionPoint(BaseModel):

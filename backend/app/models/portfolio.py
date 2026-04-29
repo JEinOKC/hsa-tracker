@@ -89,6 +89,61 @@ class HsaHolding(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     account = relationship("HsaAccount", back_populates="holdings")
+    snapshots = relationship(
+        "HoldingSnapshot",
+        back_populates="holding",
+        foreign_keys="HoldingSnapshot.holding_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     def __repr__(self):
         return f"<HsaHolding({self.ticker} × {self.shares})>"
+
+
+class HoldingSnapshot(Base):
+    """A point-in-time record of a holding's shares, price, and total value.
+
+    Created/updated whenever prices are refreshed or shares are edited.
+    At most one snapshot per holding per calendar day (upserted by the endpoint).
+    holding_id is nullable so history survives if the holding is later deleted.
+    """
+
+    __tablename__ = "holding_snapshots"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    holding_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("hsa_holdings.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    account_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("hsa_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Denormalized so history is readable even after the holding is deleted
+    ticker = Column(String(20), nullable=False)
+    shares = Column(Numeric(16, 6), nullable=False)
+    price = Column(Numeric(12, 4), nullable=False)
+    value = Column(Numeric(14, 2), nullable=False)  # shares * price
+
+    snapshotted_at = Column(DateTime, nullable=False, index=True)
+
+    holding = relationship(
+        "HsaHolding",
+        back_populates="snapshots",
+        foreign_keys=[holding_id],
+    )
+
+    def __repr__(self):
+        return f"<HoldingSnapshot({self.ticker} @ {self.price} × {self.shares} on {self.snapshotted_at.date()})>"
