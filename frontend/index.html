@@ -15,5 +15,63 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <!--
+      Pre-React SW update fallback.
+      Problem: on iOS, the service worker is killed when the PWA is backgrounded.
+      After a new deploy, reopening the PWA fetches assets straight from the
+      network (no SW to serve the cache yet). If that's slow, React never mounts
+      and the in-app update banner (UpdatePrompt.tsx) never appears, leaving the
+      user stuck on a spinner indefinitely.
+      Fix: after a timeout, if the React root is still empty and a new SW version
+      is already waiting, show a minimal native overlay so the user can reload
+      without having to force-quit the app.
+      When React does mount it removes this overlay (see App.tsx).
+    -->
+    <script>
+      (function () {
+        var TIMEOUT_MS = 7000
+        var OVERLAY_ID = 'sw-update-overlay'
+
+        function buildOverlay(reg) {
+          var el = document.createElement('div')
+          el.id = OVERLAY_ID
+          el.style.cssText = [
+            'position:fixed;inset:0;z-index:9999',
+            'display:flex;flex-direction:column;align-items:center;justify-content:center',
+            'background:#fbbf24;padding:24px;text-align:center',
+            'font-family:system-ui,-apple-system,sans-serif',
+          ].join(';')
+          el.innerHTML =
+            '<p style="font-size:1.1rem;font-weight:600;color:#78350f;margin:0 0 20px">' +
+            'A new version is available.' +
+            '</p>' +
+            '<button id="sw-update-btn" style="' +
+            'background:#78350f;color:#fffbeb;border:none;border-radius:6px;' +
+            'padding:12px 28px;font-size:1rem;font-weight:600;cursor:pointer' +
+            '">Reload</button>'
+          document.body.appendChild(el)
+
+          document.getElementById('sw-update-btn').addEventListener('click', function () {
+            navigator.serviceWorker.addEventListener('controllerchange', function () {
+              window.location.reload()
+            })
+            reg.waiting.postMessage({ type: 'SKIP_WAITING' })
+          })
+        }
+
+        setTimeout(function () {
+          // If React mounted successfully, it will have populated #root.
+          var root = document.getElementById('root')
+          if (root && root.children.length > 0) return
+          // Already showing the overlay (shouldn't happen, but guard anyway).
+          if (document.getElementById(OVERLAY_ID)) return
+
+          if (!('serviceWorker' in navigator)) return
+          navigator.serviceWorker.getRegistration('/').then(function (reg) {
+            if (reg && reg.waiting) buildOverlay(reg)
+          })
+        }, TIMEOUT_MS)
+      })()
+    </script>
   </body>
 </html>
