@@ -17,6 +17,8 @@
          on iOS Safari/PWA, prevents horizontal overscroll, and makes the safe-area
          background fill work correctly with viewport-fit=cover. */
       html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+      /* body background-color bleeds into the iOS status bar with black-translucent */
+      body { background-color: #0284c7; }
       #root { height: 100%; }
       /* Remove tap highlight on interactive elements for a native feel */
       * { -webkit-tap-highlight-color: transparent; }
