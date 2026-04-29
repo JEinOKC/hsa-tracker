@@ -90,7 +90,7 @@ function Nav({ unreviewedCount, disconnectedCount }: { unreviewedCount: number; 
       <nav
         className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 flex"
         style={{
-          paddingBottom: 'env(safe-area-inset-bottom)',
+          paddingBottom: 'max(env(safe-area-inset-bottom), 0.75rem)',
           paddingLeft: 'max(env(safe-area-inset-left), 0.625rem)',
           paddingRight: 'max(env(safe-area-inset-right), 0.625rem)',
         }}
@@ -171,6 +171,13 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
+  // Remove the pre-React native overlay (index.html) if React mounted
+  // successfully — it means assets loaded fine and the in-app UpdatePrompt
+  // will handle any waiting service worker from here.
+  useEffect(() => {
+    document.getElementById('sw-update-overlay')?.remove()
+  }, [])
+
   return (
     <ToastProvider>
     <UpdatePrompt />
