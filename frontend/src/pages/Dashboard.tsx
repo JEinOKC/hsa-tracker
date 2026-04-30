@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { LineChart, Line, ResponsiveContainer } from 'recharts'
 import { bankService, DashboardSummary } from '../services/bank'
-import { portfolioService, PortfolioSummary } from '../services/portfolio'
+import { portfolioService, PortfolioSummary, PortfolioHistoryPoint } from '../services/portfolio'
 import { CheckIcon } from '../components/icons'
 
 function formatDollars(amount: number): string {
@@ -45,6 +46,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [lifetimeSummary, setLifetimeSummary] = useState<DashboardSummary | null>(null)
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
+  const [historyPoints, setHistoryPoints] = useState<PortfolioHistoryPoint[]>([])
 
   useEffect(() => {
     setLoading(true)
@@ -60,6 +62,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     portfolioService.getSummary().then(setPortfolio).catch(() => {})
+    portfolioService.getHistory(30).then(r => setHistoryPoints(r.points)).catch(() => {})
   }, [])
 
   const steps: SetupStep[] = summary ? [
@@ -113,17 +116,44 @@ export default function Dashboard() {
         </div>
         <div className="bg-white rounded-xl p-4 shadow">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Portfolio Value</p>
-          <p className="text-2xl font-bold text-gray-900 leading-tight">
+          <p className="text-xl font-bold text-gray-900 leading-tight">
             {portfolio?.total_value != null
               ? formatDollars(Math.abs(parseFloat(portfolio.total_value)))
               : '—'}
           </p>
-          <p className="text-xs text-gray-400 mt-1">
-            {portfolio?.accounts.length
-              ? <Link data-testid="portfolio-link" to="/portfolio" className="text-sky-600 hover:text-sky-800">View portfolio →</Link>
-              : <Link data-testid="portfolio-setup-link" to="/portfolio" className="text-sky-600 hover:text-sky-800">Set up →</Link>
-            }
-          </p>
+          {historyPoints.length >= 2 ? (() => {
+            const first = parseFloat(historyPoints[0].total_value)
+            const last  = parseFloat(historyPoints[historyPoints.length - 1].total_value)
+            const delta = last - first
+            const sparkData = historyPoints.map(p => ({ v: parseFloat(p.total_value) }))
+            const positive = delta >= 0
+            return (
+              <>
+                <ResponsiveContainer width="100%" height={36}>
+                  <LineChart data={sparkData} margin={{ top: 2, right: 0, left: 0, bottom: 2 }}>
+                    <Line
+                      type="monotone"
+                      dataKey="v"
+                      stroke={positive ? '#10b981' : '#ef4444'}
+                      strokeWidth={1.5}
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+                <p className={`text-xs font-medium mt-0.5 ${positive ? 'text-emerald-600' : 'text-red-500'}`}>
+                  {positive ? '▲' : '▼'} {formatDollars(Math.abs(delta))} <span className="text-gray-400 font-normal">30d</span>
+                </p>
+              </>
+            )
+          })() : (
+            <p className="text-xs text-gray-400 mt-1">
+              {portfolio?.accounts.length
+                ? <Link data-testid="portfolio-link" to="/portfolio" className="text-sky-600 hover:text-sky-800">View portfolio →</Link>
+                : <Link data-testid="portfolio-setup-link" to="/portfolio" className="text-sky-600 hover:text-sky-800">Set up →</Link>
+              }
+            </p>
+          )}
         </div>
       </div>
 

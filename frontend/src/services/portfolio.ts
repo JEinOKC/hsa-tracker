@@ -57,6 +57,15 @@ export interface ProjectionResult {
   points: ProjectionPoint[]
 }
 
+export interface PortfolioHistoryPoint {
+  date: string
+  total_value: string
+}
+
+export interface PortfolioHistoryOut {
+  points: PortfolioHistoryPoint[]
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export const portfolioService = {
@@ -125,5 +134,10 @@ export const portfolioService = {
     annual_return?: number
   }): Promise<ProjectionResult> {
     return api.get('/portfolio/projection', { params }).then(r => r.data)
+  },
+
+  // History
+  getHistory(days: number): Promise<PortfolioHistoryOut> {
+    return api.get('/portfolio/history', { params: { days } }).then(r => r.data)
   },
 }
