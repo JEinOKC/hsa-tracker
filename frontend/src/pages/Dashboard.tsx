@@ -121,12 +121,13 @@ export default function Dashboard() {
               ? formatDollars(Math.abs(parseFloat(portfolio.total_value)))
               : '—'}
           </p>
-          {historyPoints.length >= 2 ? (() => {
+          {historyPoints.length >= 1 ? (() => {
             const first = parseFloat(historyPoints[0].total_value)
             const last  = parseFloat(historyPoints[historyPoints.length - 1].total_value)
             const delta = last - first
             const sparkData = historyPoints.map(p => ({ v: parseFloat(p.total_value) }))
             const positive = delta >= 0
+            const hasLine = historyPoints.length >= 2
             return (
               <>
                 <ResponsiveContainer width="100%" height={36}>
@@ -136,14 +137,18 @@ export default function Dashboard() {
                       dataKey="v"
                       stroke={positive ? '#10b981' : '#ef4444'}
                       strokeWidth={1.5}
-                      dot={false}
+                      dot={hasLine ? false : { r: 3, strokeWidth: 0, fill: '#10b981' }}
                       isAnimationActive={false}
                     />
                   </LineChart>
                 </ResponsiveContainer>
-                <p className={`text-xs font-medium mt-0.5 ${positive ? 'text-emerald-600' : 'text-red-500'}`}>
-                  {positive ? '▲' : '▼'} {formatDollars(Math.abs(delta))} <span className="text-gray-400 font-normal">30d</span>
-                </p>
+                {hasLine ? (
+                  <p className={`text-xs font-medium mt-0.5 ${positive ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {positive ? '▲' : '▼'} {formatDollars(Math.abs(delta))} <span className="text-gray-400 font-normal">30d</span>
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-400 mt-0.5">Tracking started · trend tomorrow</p>
+                )}
               </>
             )
           })() : (

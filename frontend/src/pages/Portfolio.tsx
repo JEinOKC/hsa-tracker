@@ -618,8 +618,10 @@ function PortfolioHistoryChart() {
 
   const minVal = chartData.length ? Math.min(...chartData.map(p => p.value)) : 0
   const maxVal = chartData.length ? Math.max(...chartData.map(p => p.value)) : 0
-  const yMin = Math.floor(minVal * 0.98 / 100) * 100
-  const yMax = Math.ceil(maxVal * 1.02 / 100) * 100
+  // For a single point min===max; pad by 5% so the axis and dot render sensibly
+  const padding = minVal === maxVal ? Math.max(minVal * 0.05, 100) : 0
+  const yMin = Math.floor((minVal - padding) * 0.98 / 100) * 100
+  const yMax = Math.ceil((maxVal + padding) * 1.02 / 100) * 100
 
   return (
     <div className="bg-white rounded-lg shadow p-5 mb-8">
@@ -644,9 +646,9 @@ function PortfolioHistoryChart() {
 
       {loading ? (
         <div className="h-48 flex items-center justify-center text-sm text-gray-400">Loading…</div>
-      ) : chartData.length < 2 ? (
+      ) : chartData.length < 1 ? (
         <div className="h-48 flex items-center justify-center text-sm text-gray-400">
-          Not enough history yet — refresh prices over multiple days to see a chart.
+          No history yet — refresh prices to start tracking.
         </div>
       ) : (
         <ResponsiveContainer width="100%" height={200}>
@@ -686,7 +688,7 @@ function PortfolioHistoryChart() {
               stroke="#0284c7"
               strokeWidth={2}
               fill="url(#portfolioGradient)"
-              dot={false}
+              dot={chartData.length === 1 ? { r: 4, strokeWidth: 0, fill: '#0284c7' } : false}
               activeDot={{ r: 4, strokeWidth: 0, fill: '#0284c7' }}
             />
           </AreaChart>
