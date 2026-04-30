@@ -15,6 +15,7 @@ vi.mock('../../services/portfolio', () => ({
     refreshPrices: vi.fn(),
     getSummary: vi.fn(),
     getProjection: vi.fn(),
+    getHistory: vi.fn(),
   },
 }))
 
@@ -60,6 +61,7 @@ beforeEach(() => {
   ;(portfolioService.getProjection as any).mockResolvedValue(emptyProjection)
   ;(portfolioService.refreshPrices as any).mockResolvedValue({ updated: 0, tickers_fetched: 0 })
   ;(portfolioService.createAccount as any).mockResolvedValue(makeAccount())
+  ;(portfolioService.getHistory as any).mockResolvedValue({ points: [] })
 })
 
 describe('Portfolio page', () => {

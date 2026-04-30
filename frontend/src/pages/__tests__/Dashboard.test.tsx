@@ -11,6 +11,7 @@ vi.mock('../../services/bank', () => ({
 vi.mock('../../services/portfolio', () => ({
   portfolioService: {
     getSummary: vi.fn(),
+    getHistory: vi.fn(),
   },
 }))
 
@@ -32,6 +33,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   ;(bankService.getDashboardSummary as any).mockResolvedValue(fullSummary)
   ;(portfolioService.getSummary as any).mockResolvedValue({ total_value: null, accounts: [] })
+  ;(portfolioService.getHistory as any).mockResolvedValue({ points: [] })
 })
 
 describe('Dashboard', () => {

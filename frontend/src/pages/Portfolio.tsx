@@ -1,10 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from 'recharts'
+import {
   portfolioService,
   HsaAccount,
   HsaHolding,
   AccountType,
   ProjectionPoint,
+  PortfolioHistoryPoint,
 } from '../services/portfolio'
 import { PencilIcon, TrashIcon, XIcon, CheckIcon } from '../components/icons'
 
@@ -584,6 +588,114 @@ function AccountCard({
   )
 }
 
+// ─── Portfolio History Chart ───────────────────────────────────────────────────
+
+const RANGE_OPTIONS = [
+  { label: '30d', days: 30 },
+  { label: '90d', days: 90 },
+  { label: '180d', days: 180 },
+  { label: '1yr', days: 365 },
+]
+
+function PortfolioHistoryChart() {
+  const [days, setDays] = useState(90)
+  const [points, setPoints] = useState<PortfolioHistoryPoint[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    portfolioService.getHistory(days)
+      .then(r => setPoints(r.points))
+      .catch(() => setPoints([]))
+      .finally(() => setLoading(false))
+  }, [days])
+
+  const chartData = points.map(p => ({
+    date: p.date,
+    value: parseFloat(p.total_value),
+    label: new Date(p.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+  }))
+
+  const minVal = chartData.length ? Math.min(...chartData.map(p => p.value)) : 0
+  const maxVal = chartData.length ? Math.max(...chartData.map(p => p.value)) : 0
+  const yMin = Math.floor(minVal * 0.98 / 100) * 100
+  const yMax = Math.ceil(maxVal * 1.02 / 100) * 100
+
+  return (
+    <div className="bg-white rounded-lg shadow p-5 mb-8">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-base font-semibold text-gray-900">Portfolio Value Over Time</h2>
+        <div className="flex gap-1">
+          {RANGE_OPTIONS.map(opt => (
+            <button
+              key={opt.days}
+              onClick={() => setDays(opt.days)}
+              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                days === opt.days
+                  ? 'bg-sky-600 text-white'
+                  : 'text-gray-500 hover:bg-gray-100'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="h-48 flex items-center justify-center text-sm text-gray-400">Loading…</div>
+      ) : chartData.length < 2 ? (
+        <div className="h-48 flex items-center justify-center text-sm text-gray-400">
+          Not enough history yet — refresh prices over multiple days to see a chart.
+        </div>
+      ) : (
+        <ResponsiveContainer width="100%" height={200}>
+          <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="portfolioGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#0284c7" stopOpacity={0.15} />
+                <stop offset="95%" stopColor="#0284c7" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis
+              dataKey="label"
+              tick={{ fontSize: 11, fill: '#9ca3af' }}
+              tickLine={false}
+              axisLine={false}
+              interval="preserveStartEnd"
+            />
+            <YAxis
+              domain={[yMin, yMax]}
+              tick={{ fontSize: 11, fill: '#9ca3af' }}
+              tickLine={false}
+              axisLine={false}
+              tickFormatter={v => `$${(v / 1000).toFixed(0)}k`}
+              width={44}
+            />
+            <Tooltip
+              formatter={(value: number) =>
+                new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value)
+              }
+              labelFormatter={label => label}
+              contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
+            />
+            <Area
+              type="monotone"
+              dataKey="value"
+              stroke="#0284c7"
+              strokeWidth={2}
+              fill="url(#portfolioGradient)"
+              dot={false}
+              activeDot={{ r: 4, strokeWidth: 0, fill: '#0284c7' }}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      )}
+    </div>
+  )
+}
+
 // ─── Projection Calculator ─────────────────────────────────────────────────────
 
 function ProjectionCalculator() {
@@ -773,6 +885,8 @@ export default function Portfolio() {
         </div>
       ) : (
         <>
+          <PortfolioHistoryChart />
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
             {accounts.map(account => (
               <AccountCard
