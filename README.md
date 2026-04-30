@@ -11,16 +11,6 @@ A self-hosted application for tracking HSA-eligible expenses, managing receipts,
 
 HSA Tracker connects to your bank via [Teller.io](https://teller.io), automatically surfaces potential HSA-eligible transactions, and helps you build a paper trail for tax time. Your financial data stays in your own infrastructure — S3 for receipts, PostgreSQL for records, and your own AWS account for compute.
 
-## Screenshots
-
-| Dashboard | Transactions | Portfolio |
-|-----------|-------------|-----------|
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Transactions](docs/screenshots/transactions.png) | ![Portfolio](docs/screenshots/portfolio.png) |
-
-| Bank Accounts | Family Members | Rules Engine |
-|---------------|----------------|--------------|
-| ![Bank](docs/screenshots/bank.png) | ![Family](docs/screenshots/family.png) | ![Rules](docs/screenshots/rules.png) |
-
 ## Features
 
 ### Expense Tracking
