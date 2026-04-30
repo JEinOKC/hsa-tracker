@@ -1,307 +1,290 @@
 # HSA Tracker
 
-A self-hosted solution for tracking and managing HSA-eligible spending for families.
+A self-hosted application for tracking HSA-eligible expenses, managing receipts, and monitoring HSA investments — built for families.
 
 ![Status](https://img.shields.io/badge/status-alpha-orange)
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue)
+![Python](https://img.shields.io/badge/python-3.11+-green)
+![React](https://img.shields.io/badge/react-18+-61DAFB)
 
 ## Overview
 
-HSA Tracker is a self-hosted application designed to help families track Health Savings Account (HSA) eligible expenses, manage receipts, and prepare for tax reporting. Built with privacy and data ownership in mind, all your financial data stays under your control.
+HSA Tracker connects to your bank via [Teller.io](https://teller.io), automatically surfaces potential HSA-eligible transactions, and helps you build a paper trail for tax time. Your financial data stays in your own infrastructure — S3 for receipts, PostgreSQL for records, and your own AWS account for compute.
 
-### Key Features
+## Screenshots
 
-- 📊 **Expense Tracking**: Record and categorize HSA-eligible expenses
-- 📸 **Receipt Management**: Upload and store receipts securely in your own AWS S3 bucket
-- 👨‍👩‍👧‍👦 **Family Support**: Track expenses for multiple family members with tax dependent tracking
-- 🔐 **Modern Authentication**: Passkey (WebAuthn) and TOTP 2FA support
-- 📈 **Reports & Analytics**: Spending trends, tax summaries, and contribution tracking
-- 💼 **Investment Portfolio Tracker**: Manually track HSA investment holdings across multiple institutions with live price updates and growth projections
-- 🏠 **Self-Hosted**: Complete control over your data and infrastructure
-- 🐳 **Easy Deployment**: Docker-based setup with one-command deployment
-- 🔧 **Extensible**: Customizable UI themes and future Databricks integration
+| Dashboard | Transactions | Portfolio |
+|-----------|-------------|-----------|
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Transactions](docs/screenshots/transactions.png) | ![Portfolio](docs/screenshots/portfolio.png) |
+
+| Bank Accounts | Family Members | Rules Engine |
+|---------------|----------------|--------------|
+| ![Bank](docs/screenshots/bank.png) | ![Family](docs/screenshots/family.png) | ![Rules](docs/screenshots/rules.png) |
+
+## Features
+
+### Expense Tracking
+- Automatic bank sync via Teller.io (transactions pulled directly from your bank)
+- Manual transaction entry for cash or non-linked accounts
+- Tag transactions as HSA-eligible, ineligible, or pending review
+- Assign transactions to family members and expense categories
+- Review queue for unreviewed potential HSA expenses
+
+### Receipt & Document Management
+- Upload receipts and EOBs directly to your S3 bucket
+- Attach multiple documents to a single transaction
+- CVS pharmacy import (parse prescription fill history)
+- Bulk CSV receipt import
+
+### HSA Rules Engine
+- Build rules to automatically flag transactions as HSA-eligible (e.g. "any transaction at CVS over $10")
+- Conditions: merchant name, category, amount, description patterns
+- Rule preview before applying
+- Reorderable priority queue
+
+### Investment Portfolio Tracker
+- Manually track HSA investment accounts across multiple institutions
+- Live price updates via Finnhub (free tier, no credit card)
+- Portfolio history chart and projected growth
+- Holdings snapshots for charting over time
+
+### Family Support
+- Add family members with HSA eligibility periods
+- Track which transactions are for which family member
+- Invite family members to share a household
+- Role-based access control
+
+### Authentication
+- Passkey / WebAuthn (phishing-resistant, no password required)
+- Email + password with TOTP 2FA
+- Backup codes for account recovery
+- Rate limiting and account lockout
+
+### Progressive Web App
+- Install to home screen on iOS and Android
+- Mobile-first UI with native-feeling navigation
+- Web Push notifications for HSA review reminders
 
 ## Quick Start
 
-**New to AWS or Terraform? No problem!** We have an interactive setup wizard that guides you through everything.
+### Prerequisites
 
-### Super Simple Setup (Recommended)
+- **Docker Desktop** — [Download](https://www.docker.com/products/docker-desktop)
+- **AWS Account** — [Sign up](https://aws.amazon.com) (free tier covers S3)
+- **Teller.io Account** — [Sign up](https://teller.io) (for bank sync; optional)
+- **Doppler** (optional but recommended) — [Sign up](https://www.doppler.com)
+
+### Setup
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/JEinOKC/hsa-tracker.git
 cd hsa-tracker
-
-# 2. Run the setup wizard
 make setup-wizard
 ```
 
-That's it! The wizard will:
-- ✅ Check prerequisites and guide you to install what's missing
-- ✅ Help you choose between Doppler (secure secrets) or .env files (simple)
-- ✅ Guide you through creating an AWS account (if needed)
-- ✅ Automatically create your S3 bucket with Terraform
-- ✅ Generate all secrets and configure everything
-- ✅ Start the application
+The wizard checks prerequisites, configures secrets (Doppler or `.env`), provisions your S3 bucket via Terraform, and starts the app.
 
-**Time to complete:** 5-10 minutes (first time)
+**Time to complete:** ~10 minutes on first run.
 
-📖 **[See the complete setup guide →](./SETUP_GUIDE.md)**
-
-### Prerequisites
-
-- **Docker Desktop** - [Download here](https://www.docker.com/products/docker-desktop)
-- **AWS Account** - [Sign up here](https://aws.amazon.com) (free tier available)
-- **Doppler Account** (optional but recommended) - [Sign up here](https://www.doppler.com)
-
-Everything else is optional - the wizard will guide you!
-
-### After Setup
+### Daily use
 
 ```bash
-# Access the application
-open http://localhost:3000
-
-# Create your first user
-# Click "Create one" → Fill in the form → Start tracking!
+make dev-up     # Start the dev environment
+make dev-down   # Stop it
+make dev-logs   # Tail logs
+make help       # All available commands
 ```
 
-**Daily use:**
-```bash
-make dev-up    # Start the app
-make dev-down  # Stop the app
-make dev-logs  # View logs
-make help      # See all commands
-```
+Once running:
+- Frontend: `http://localhost:3001`
+- Backend API: `http://localhost:8001`
+- API docs (dev only): `http://localhost:8001/docs`
 
 ## Architecture
 
-### Technology Stack
+### Stack
 
-- **Backend**: Python 3.11+ with FastAPI
-- **Frontend**: React 18+ with TypeScript
-- **Database**: PostgreSQL 16 (or SQLite for simple deployments)
-- **Storage**: AWS S3 (self-managed bucket)
-- **Deployment**: Docker & Docker Compose
-- **Infrastructure**: Terraform for AWS provisioning
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 18 + TypeScript + Vite + Tailwind CSS |
+| Backend | Python 3.11 + FastAPI + SQLAlchemy |
+| Database | PostgreSQL 16 (Neon in production) |
+| Storage | AWS S3 |
+| Auth | WebAuthn + JWT (PyJWT) + TOTP |
+| Bank sync | Teller.io |
+| Stock prices | Finnhub |
+
+### Production Deployment
+
+The production stack runs serverless on AWS + Cloudflare:
+
+```
+Browser → Cloudflare Pages (frontend)
+              ↓
+        API Gateway (HTTP API v2)
+              ↓
+        AWS Lambda (FastAPI via Mangum)
+              ↓
+        Neon PostgreSQL + AWS S3
+```
+
+Terraform manages all infrastructure. See [terraform/README.md](./terraform/README.md).
 
 ### Project Structure
 
 ```
 hsa-tracker/
-├── backend/              # FastAPI backend application
-├── frontend/             # React frontend application
-├── terraform/            # AWS infrastructure as code
-├── docker-compose.yml    # Production setup
-├── docker-compose.dev.yml # Development setup
-├── Makefile              # Helper commands
-└── .env                  # Configuration (create from .env.example)
-```
-
-## Documentation
-
-- [Installation Guide](./INSTALL.md) - Detailed installation instructions
-- [Architecture](./ARCHITECTURE.md) - Technical architecture and design decisions
-- [Features](./FEATURES.md) - Complete feature requirements and roadmap
-- [Contributing](./CONTRIBUTING.md) - Development setup and contribution guidelines
-- [Terraform Setup](./terraform/README.md) - AWS infrastructure setup
-
-## Development
-
-### Start Development Environment
-
-```bash
-make dev-up
-```
-
-This starts all services with hot-reloading enabled:
-- Frontend dev server (Vite) on port 3000
-- Backend dev server (uvicorn with reload) on port 8000
-- PostgreSQL database on port 5432
-
-### Useful Commands
-
-```bash
-make help                # Show all available commands
-make dev-logs           # View development logs
-make db-migrate         # Create a new database migration
-make db-upgrade         # Apply database migrations
-make test-all           # Run all tests
-make format             # Format code (black + prettier)
-make lint               # Lint code (flake8 + eslint)
-```
-
-### Running Tests
-
-```bash
-# Backend tests
-make test-backend
-
-# Frontend tests
-make test-frontend
-
-# All tests
-make test-all
+├── backend/                # FastAPI application
+│   ├── app/
+│   │   ├── api/v1/        # API endpoints
+│   │   ├── models/        # SQLAlchemy models (27 models)
+│   │   ├── schemas/       # Pydantic schemas
+│   │   └── services/      # Business logic, rules engine
+│   ├── alembic/           # Database migrations
+│   ├── Dockerfile.lambda  # Lambda container image
+│   └── requirements.txt
+├── frontend/               # React application
+│   ├── src/
+│   │   ├── pages/         # 12 page components
+│   │   ├── components/    # Shared UI components
+│   │   └── services/      # API client layer
+│   └── vite.config.ts
+├── terraform/              # AWS + Cloudflare infrastructure
+├── docker-compose.yml      # Production (self-hosted)
+├── docker-compose.dev.yml  # Development
+└── Makefile               # Build and deploy commands
 ```
 
 ## Configuration
 
-### Environment Variables
-
-Key configuration options in `.env`:
+Copy `.env.example` to `.env` and fill in your values:
 
 ```bash
 # Database
-DATABASE_TYPE=postgresql
 DATABASE_URL=postgresql://user:pass@db:5432/hsatracker
 
-# AWS S3 (from Terraform outputs)
+# AWS S3
 AWS_S3_BUCKET=your-bucket-name
 AWS_ACCESS_KEY_ID=your-access-key
 AWS_SECRET_ACCESS_KEY=your-secret-key
 
-# Authentication
-JWT_SECRET_KEY=your-secret-key
-WEBAUTHN_RP_ID=localhost  # Your domain in production
+# Auth
+SECRET_KEY=generate-with-openssl-rand-hex-32
+JWT_SECRET_KEY=generate-with-openssl-rand-hex-32
+WEBAUTHN_RP_ID=localhost        # your domain in production
+WEBAUTHN_ORIGIN=http://localhost:3001
 
-# HSA Portfolio — stock price fetching (optional)
-PRICE_PROVIDER=finnhub       # or alphavantage (default: finnhub)
-FINNHUB_API_KEY=             # required when PRICE_PROVIDER=finnhub
+# Bank sync (optional)
+TELLER_APP_ID=your-app-id
+
+# Stock prices (optional)
+PRICE_PROVIDER=finnhub
+FINNHUB_API_KEY=your-key        # free at finnhub.io
 ```
 
-See [.env.example](./.env.example) for all available options.
+See [.env.example](./.env.example) for all options.
 
-### HSA Portfolio price fetching
+### Stock price providers
 
-The portfolio tracker can fetch live stock prices to keep your holding values up to date. This is optional — holdings without prices still display with shares and a manual value entry.
+Finnhub is the default and recommended provider — free tier covers 60 calls/minute with no expiry. To add a new provider, implement the `PriceProvider` protocol in `backend/app/services/price_fetcher.py` and register it in the `PROVIDERS` dict.
 
-**Finnhub** (default, recommended):
-1. Sign up for a free account at [finnhub.io](https://finnhub.io) — no credit card required
-2. Copy your API key from the dashboard
-3. Add `FINNHUB_API_KEY=your_key_here` to your `.env` file
-4. Free tier: 60 API calls/minute, no expiry
+### UI themes
 
-The provider is configurable via `PRICE_PROVIDER` env var. To add a new provider, implement the `PriceProvider` protocol in `backend/app/services/price_fetcher.py` and register it in the `PROVIDERS` dict — no other code changes needed.
-
-### UI Customization
-
-Customize the UI by overriding CSS variables in `frontend/src/styles/custom-theme.css`:
+Override CSS variables in `frontend/src/styles/custom-theme.css`:
 
 ```css
 :root {
   --color-primary: #9333ea;
-  --font-family-base: 'Roboto', sans-serif;
+  --font-family-base: 'Inter', sans-serif;
 }
+```
+
+## Development
+
+```bash
+make dev-up          # Start all services with hot reload
+make test-backend    # Run backend tests (pytest)
+make test-frontend   # Run frontend tests (vitest)
+make test-all        # Run all tests
+make audit           # Check dependencies for CVEs
+make format          # Format code (ruff + prettier)
+make lint            # Lint (ruff + eslint)
+make db-migrate      # Create a new migration
+make db-upgrade      # Apply pending migrations
 ```
 
 ## Deployment
 
-### Production Deployment
+### Serverless (recommended)
 
-1. Update `.env` with production settings:
-   - Set `APP_ENV=production`
-   - Set `DEBUG=false`
-   - Generate strong secrets for `SECRET_KEY` and `JWT_SECRET_KEY`
-   - Update `WEBAUTHN_RP_ID` and `WEBAUTHN_ORIGIN` to your domain
+The app deploys to AWS Lambda + Cloudflare Pages via Terraform and `make deploy`.
 
-2. Start production containers:
-   ```bash
-   make prod-up
-   ```
-
-3. Set up a reverse proxy (nginx/Traefik) for SSL termination
-
-4. Configure DNS to point to your server
-
-### Backup & Restore
-
-**Database Backup:**
 ```bash
-docker-compose exec db pg_dump -U hsatracker hsatracker > backup.sql
+make tf-apply          # Provision AWS + Cloudflare infrastructure
+make deploy            # Build Lambda image, run migrations, deploy frontend
 ```
 
-**Database Restore:**
+See [terraform/README.md](./terraform/README.md) for first-time setup.
+
+### Self-hosted (Docker)
+
 ```bash
+# Copy and edit your production env
+cp .env.example .env
+
+# Start the stack
+make prod-up
+```
+
+Set up a reverse proxy (nginx/Traefik) for SSL in front of port 3001.
+
+### Database backup
+
+```bash
+docker-compose exec db pg_dump -U hsatracker hsatracker > backup.sql
 docker-compose exec -T db psql -U hsatracker hsatracker < backup.sql
 ```
 
-**Receipts Backup:**
-Your receipts are stored in AWS S3 with versioning enabled. Enable cross-region replication for additional redundancy.
-
-## Security Considerations
-
-- All data stored in your own AWS account and self-hosted infrastructure
-- Passkey authentication (FIDO2-compliant, phishing-resistant)
-- TOTP 2FA support (works offline with authenticator apps)
-- S3 bucket is private with encryption at rest
-- No third-party data sharing or tracking
-- Regular security updates recommended
-
 ## Roadmap
 
-### MVP (v0.1.0) - Current
-- [x] Basic expense tracking
+### Shipped
+- [x] Bank sync via Teller.io (transactions, accounts, connection health)
+- [x] Manual transaction entry
+- [x] HSA eligibility tagging and review queue
+- [x] HSA rules engine (auto-flag transactions by merchant, category, amount)
 - [x] Receipt upload to S3
-- [x] Family member management
-- [x] Simple dashboard
-- [ ] Authentication implementation (passkey + TOTP)
-- [ ] Database models and migrations
+- [x] CVS pharmacy import
+- [x] Bulk CSV receipt import
+- [x] Family member management with eligibility periods
+- [x] Multi-user households with roles and access control
+- [x] Investment portfolio tracker (manual holdings, live prices, history)
+- [x] Dashboard with sparkline chart
+- [x] Passkey (WebAuthn) + TOTP 2FA + backup codes
+- [x] Progressive Web App (installable, push notifications)
+- [x] AWS Lambda + Cloudflare Pages deployment via Terraform
 
-### v0.2.0 - Enhanced Features
-- [ ] Advanced filtering and search
-- [ ] CSV import/export
-- [ ] Tax year summaries (Form 8889 data prep)
-- [ ] Reimbursement tracking
-- [ ] Multiple HSA accounts
-
-### v0.3.0 - Analytics
-- [ ] Spending trends and visualizations
-- [ ] Budget planning
-- [ ] Category recommendations
-- [ ] Predictive analytics
-
-### v0.4.0 - Integrations
-- [ ] Databricks integration
-- [ ] OCR for receipts
-- [ ] Bank import (Plaid)
-- [ ] Mobile apps
+### Planned
+- [ ] Tax year summary export (Form 8889 data prep)
+- [ ] CSV export for transactions
+- [ ] Budget planning and annual contribution tracker
+- [ ] OCR for receipt scanning
+- [ ] Native mobile apps (currently PWA)
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup and guidelines.
-
-### Development Setup
-
 1. Fork the repository
 2. Clone your fork
-3. Run `make setup`
-4. Create a feature branch
-5. Make your changes
-6. Run tests: `make test-all`
-7. Submit a pull request
+3. Run `make setup-wizard`
+4. Create a feature branch (`git checkout -b feature/my-feature`)
+5. Make your changes with tests (`make test-all`)
+6. Submit a pull request
 
-## Support
-
-- **Issues**: [GitHub Issues](https://github.com/JEinOKC/hsa-tracker/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/JEinOKC/hsa-tracker/discussions)
-- **Documentation**: See the `docs/` directory
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
-
-## Acknowledgments
-
-- Built with [FastAPI](https://fastapi.tiangolo.com/)
-- Frontend powered by [React](https://react.dev/)
-- Infrastructure provisioning with [Terraform](https://www.terraform.io/)
-- Containerization with [Docker](https://www.docker.com/)
+PolyForm Noncommercial License 1.0.0 — free for personal use, not for commercial use. See [LICENSE](./LICENSE) for details.
 
 ## Disclaimer
 
-This software is provided for informational and organizational purposes. It is not a substitute for professional tax or financial advice. Always consult with qualified professionals regarding HSA eligibility, tax reporting, and financial planning.
-
----
-
-**Star this repo if you find it useful! ⭐**
+This software is for personal organizational use only. It is not a substitute for professional tax or financial advice. Consult a qualified professional for HSA eligibility determinations and tax filing.
