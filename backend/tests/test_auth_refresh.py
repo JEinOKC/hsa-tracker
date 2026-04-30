@@ -4,8 +4,10 @@ Covers the token refresh flow that keeps users logged in when their
 30-minute access token expires during normal app use.
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
+import jwt
+from app.config import settings
 from app.utils.security import create_access_token, create_refresh_token, decode_token
 
 
@@ -40,14 +42,7 @@ class TestRefreshToken:
         assert payload["sub"] == str(test_user.id)
 
     def test_rejects_expired_refresh_token(self, client, test_user):
-        expired = create_refresh_token.__wrapped__(
-            {"sub": str(test_user.id)}
-        ) if hasattr(create_refresh_token, "__wrapped__") else None
-
         # Create a token that expired in the past by passing a negative delta
-        from jose import jwt
-        from app.config import settings
-        from datetime import datetime
         payload = {
             "sub": str(test_user.id),
             "type": "refresh",

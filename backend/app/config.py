@@ -1,6 +1,7 @@
 """Application configuration using Pydantic Settings"""
 
 from typing import List, Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,7 +18,7 @@ class Settings(BaseSettings):
     # Application
     app_name: str = "HSA Tracker"
     app_env: str = "development"
-    debug: bool = True
+    debug: bool = False
     secret_key: str
 
     # Database

@@ -22,3 +22,15 @@ repos:
       - id: ruff
         args: [--select, "E,F,W,I", --ignore, "E501"]
         files: ^backend/
+
+  # ── Dependency vulnerability scanning ─────────────────────────────────────
+  # Runs pip-audit only when requirements.txt changes (makes network calls).
+  # Prerequisite: brew install libpq
+  - repo: local
+    hooks:
+      - id: pip-audit
+        name: pip-audit (backend)
+        entry: bash -c 'PATH="/opt/homebrew/opt/libpq/bin:/opt/homebrew/bin:$PATH" pip-audit -r backend/requirements.txt'
+        language: system
+        pass_filenames: false
+        files: ^backend/requirements\.txt$

@@ -19,8 +19,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/hsa-tracker"
-Repository = "https://github.com/yourusername/hsa-tracker"
+Homepage = "https://github.com/JEinOKC/hsa-tracker"
+Repository = "https://github.com/JEinOKC/hsa-tracker"
 
 [tool.black]
 line-length = 100

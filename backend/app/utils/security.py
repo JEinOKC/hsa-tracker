@@ -1,17 +1,17 @@
 """Security utilities for authentication"""
 
-import secrets
 import base64
+import secrets
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
-from passlib.context import CryptContext
-from jose import jwt, JWTError
+from io import BytesIO
+from typing import Any, Dict, Optional
+
+import jwt
 import pyotp
 import qrcode
 import qrcode.image.svg
-from io import BytesIO
-
 from app.config import settings
+from passlib.context import CryptContext
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -80,7 +80,7 @@ def decode_token(token: str) -> Optional[Dict[str, Any]]:
     try:
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         return payload
-    except JWTError:
+    except jwt.PyJWTError:
         return None
 
 

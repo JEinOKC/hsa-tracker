@@ -30,7 +30,7 @@ HSA Tracker is a self-hosted application designed to help families track Health 
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/yourusername/hsa-tracker.git
+git clone https://github.com/JEinOKC/hsa-tracker.git
 cd hsa-tracker
 
 # 2. Run the setup wizard
@@ -283,8 +283,8 @@ We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for de
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/hsa-tracker/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/hsa-tracker/discussions)
+- **Issues**: [GitHub Issues](https://github.com/JEinOKC/hsa-tracker/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/JEinOKC/hsa-tracker/discussions)
 - **Documentation**: See the `docs/` directory
 
 ## License
