@@ -394,6 +394,13 @@ test-frontend: ## Run frontend tests
 
 test-all: test-backend test-frontend ## Run all tests
 
+audit: ## Check dependencies for known vulnerabilities (requires: brew install libpq)
+	@echo "$(BLUE)Auditing backend dependencies...$(NC)"
+	@PATH="/opt/homebrew/opt/libpq/bin:/opt/homebrew/bin:$$PATH" pip-audit -r backend/requirements.txt
+	@echo "$(BLUE)Auditing frontend dependencies...$(NC)"
+	@cd frontend && npm audit --audit-level=high --omit=dev
+	@echo "$(GREEN)✓ No known vulnerabilities$(NC)"
+
 # ==========================================
 # Utility Commands
 # ==========================================
