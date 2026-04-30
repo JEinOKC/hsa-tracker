@@ -38,7 +38,3 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: '/language:${{ matrix.language }}'
-          # upload:false until repo is public — code scanning requires a public
-          # repo (or GitHub Advanced Security). Remove this line after going public
-          # so results appear in the Security tab.
-          upload: never
