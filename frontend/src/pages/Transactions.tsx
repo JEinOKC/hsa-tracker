@@ -1130,6 +1130,7 @@ export default function Transactions() {
   }, [])
 
   // Filters (all server-side)
+  const [showFilters, setShowFilters] = useState(false)
   const [search, setSearch] = useState('')
   const [filterMember, setFilterMember] = useState('')
   const [startDate, setStartDate] = useState('')
@@ -1440,91 +1441,118 @@ export default function Transactions() {
 
       {/* Filters */}
       <div className="flex flex-col gap-2 mb-4">
-        <input
-          type="text"
-          placeholder="Search description…"
-          value={search}
-          onChange={e => handleSearchChange(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-full sm:w-52 focus:outline-none focus:ring-2 focus:ring-sky-500"
-        />
-
-        {/* Dropdown filters — 2 per row on mobile */}
-        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
-          <select
-            value={filterMember}
-            onChange={e => setFilterMember(e.target.value)}
-            className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-          >
-            <option value="">All people</option>
-            {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
-          <select
-            value={filterDocs}
-            onChange={e => setDocsFilter(e.target.value)}
-            className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-          >
-            <option value="">Any docs</option>
-            <option value="missing">Missing receipts</option>
-            <option value="attached">Has receipts</option>
-          </select>
-          <select
-            value={filterAutoFlag}
-            onChange={e => setFilterAutoFlag(e.target.value)}
-            className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-          >
-            <option value="">All flags</option>
-            <option value="potential_hsa">Potential HSA only</option>
-          </select>
-          {availableCategories.length > 0 && (
-            <select
-              value={filterCategory}
-              onChange={e => setFilterCategory(e.target.value)}
-              className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-            >
-              <option value="">Smart</option>
-              <option value="__all__">All categories</option>
-              {availableCategories.map(c => (
-                <option key={c} value={c}>{c.replace(/_/g, ' ').replace(/^\w/, l => l.toUpperCase())}</option>
-              ))}
-            </select>
-          )}
+        {/* Search + mobile filter toggle — always visible */}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Search description…"
+            value={search}
+            onChange={e => handleSearchChange(e.target.value)}
+            className="flex-1 sm:flex-none border border-gray-300 rounded-lg px-3 py-1.5 text-sm sm:w-52 focus:outline-none focus:ring-2 focus:ring-sky-500"
+          />
+          {/* Mobile-only toggle */}
+          {(() => {
+            const activeCount = [filterMember, filterDocs, filterAutoFlag, filterCategory, startDate, endDate, showHidden ? '1' : ''].filter(Boolean).length
+            return (
+              <button
+                className="sm:hidden flex items-center gap-1.5 text-sm border border-gray-300 rounded-lg px-3 py-1.5 text-gray-600 hover:bg-gray-50 shrink-0"
+                onClick={() => setShowFilters(prev => !prev)}
+                aria-expanded={showFilters}
+              >
+                Filters
+                {activeCount > 0 && (
+                  <span className="bg-sky-600 text-white text-xs font-medium rounded-full w-4 h-4 flex items-center justify-center leading-none">
+                    {activeCount}
+                  </span>
+                )}
+                <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+              </button>
+            )
+          })()}
         </div>
 
-        {/* Show hidden */}
-        <label className="flex items-center gap-2 cursor-pointer px-1 w-fit">
-          <input
-            type="checkbox"
-            checked={showHidden}
-            onChange={e => setShowHidden(e.target.checked)}
-            className="rounded border-gray-300 text-sky-600 focus:ring-sky-500"
-          />
-          <span className="text-sm text-gray-600">Show hidden</span>
-        </label>
+        {/* Expanded filters — hidden on mobile until toggled; always visible on desktop */}
+        <div className={`${showFilters ? 'flex' : 'hidden'} sm:flex flex-col gap-2`}>
+          {/* Dropdowns — 2-col on mobile */}
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+            <select
+              value={filterMember}
+              onChange={e => setFilterMember(e.target.value)}
+              className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            >
+              <option value="">All people</option>
+              {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+            <select
+              value={filterDocs}
+              onChange={e => setDocsFilter(e.target.value)}
+              className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            >
+              <option value="">Any docs</option>
+              <option value="missing">Missing receipts</option>
+              <option value="attached">Has receipts</option>
+            </select>
+            <select
+              value={filterAutoFlag}
+              onChange={e => setFilterAutoFlag(e.target.value)}
+              className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            >
+              <option value="">All flags</option>
+              <option value="potential_hsa">Potential HSA only</option>
+            </select>
+            {availableCategories.length > 0 && (
+              <select
+                value={filterCategory}
+                onChange={e => setFilterCategory(e.target.value)}
+                className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              >
+                <option value="">Smart</option>
+                <option value="__all__">All categories</option>
+                {availableCategories.map(c => (
+                  <option key={c} value={c}>{c.replace(/_/g, ' ').replace(/^\w/, l => l.toUpperCase())}</option>
+                ))}
+              </select>
+            )}
+          </div>
 
-        {/* Date range — From and To side by side */}
-        <div className="flex gap-2 items-end">
-          <div className="flex-1 min-w-0">
-            <label className="block text-xs text-gray-400 mb-1 pl-1">From</label>
+          {/* Show hidden */}
+          <label className="flex items-center gap-2 cursor-pointer px-1 w-fit">
             <input
-              type="date"
-              value={startDate}
-              onChange={e => setStartDate(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              type="checkbox"
+              checked={showHidden}
+              onChange={e => setShowHidden(e.target.checked)}
+              className="rounded border-gray-300 text-sky-600 focus:ring-sky-500"
             />
+            <span className="text-sm text-gray-600">Show hidden</span>
+          </label>
+
+          {/* Date range — stacked on mobile, inline on desktop */}
+          <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1 pl-1">From</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={e => setStartDate(e.target.value)}
+                className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1 pl-1">To</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
+                className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              />
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <label className="block text-xs text-gray-400 mb-1 pl-1">To</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={e => setEndDate(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-            />
-          </div>
+
+          {/* Clear filters */}
           {hasFilters && (
             <button
               onClick={clearFilters}
-              className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 border border-gray-200 rounded-lg shrink-0"
+              className="self-start text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 border border-gray-200 rounded-lg"
             >
               Clear filters
             </button>
