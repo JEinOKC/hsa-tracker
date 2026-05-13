@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
@@ -9,8 +9,12 @@ import {
   AccountType,
   ProjectionPoint,
   PortfolioHistoryPoint,
+  AutoInvestSchedule,
+  AutoInvestFrequency,
 } from '../services/portfolio'
 import { PencilIcon, TrashIcon, XIcon, CheckIcon } from '../components/icons'
+
+const PRICE_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000 // 24 hours
 
 function formatDollars(value: string | null | undefined): string {
   if (value == null) return '—'
@@ -358,6 +362,294 @@ function HoldingRow({
   )
 }
 
+// ─── Auto-Invest Panel ────────────────────────────────────────────────────────
+
+const FREQUENCY_LABELS: Record<AutoInvestFrequency, string> = {
+  biweekly: 'Every 2 weeks',
+  weekly: 'Weekly',
+  monthly: 'Monthly',
+}
+
+function nextDateForFrequency(freq: AutoInvestFrequency): string {
+  const d = new Date()
+  if (freq === 'biweekly') d.setDate(d.getDate() + 14)
+  else if (freq === 'weekly') d.setDate(d.getDate() + 7)
+  else d.setMonth(d.getMonth() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
+function AutoInvestPanel({
+  accountId,
+  holdings,
+  onSharesUpdated,
+}: {
+  accountId: string
+  holdings: HsaHolding[]
+  onSharesUpdated: () => void
+}) {
+  const [schedules, setSchedules] = useState<AutoInvestSchedule[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [applying, setApplying] = useState<string | null>(null)
+  const [applyMsg, setApplyMsg] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  // Form state
+  const [amount, setAmount] = useState('')
+  const [frequency, setFrequency] = useState<AutoInvestFrequency>('biweekly')
+  const [nextDate, setNextDate] = useState(nextDateForFrequency('biweekly'))
+  const [allocations, setAllocations] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    portfolioService.listAutoInvestSchedules(accountId)
+      .then(setSchedules)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [accountId])
+
+  // When form opens, pre-fill allocations evenly across holdings
+  useEffect(() => {
+    if (!showForm || holdings.length === 0) return
+    const even = (100 / holdings.length).toFixed(2)
+    const init: Record<string, string> = {}
+    holdings.forEach((h, i) => {
+      // Last holding gets the remainder to ensure exactly 100
+      const isLast = i === holdings.length - 1
+      if (isLast) {
+        const soFar = holdings.slice(0, -1).reduce((s) => s + parseFloat(even), 0)
+        init[h.id] = (100 - soFar).toFixed(2)
+      } else {
+        init[h.id] = even
+      }
+    })
+    setAllocations(init)
+  }, [showForm, holdings])
+
+  const pctTotal = Object.values(allocations).reduce((s, v) => s + (parseFloat(v) || 0), 0)
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (Math.abs(pctTotal - 100) > 0.01) {
+      setError(`Allocations must sum to 100% (currently ${pctTotal.toFixed(2)}%)`)
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      const created = await portfolioService.createAutoInvestSchedule(accountId, {
+        contribution_amount: amount,
+        frequency,
+        next_contribution_date: nextDate,
+        allocations: holdings
+          .filter(h => allocations[h.id] && parseFloat(allocations[h.id]) > 0)
+          .map(h => ({ holding_id: h.id, ticker: h.ticker, percentage: allocations[h.id] })),
+      })
+      setSchedules(prev => [...prev, created])
+      setShowForm(false)
+      setAmount('')
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Failed to save schedule.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleApply = async (scheduleId: string) => {
+    setApplying(scheduleId)
+    setApplyMsg(null)
+    setError(null)
+    try {
+      const result = await portfolioService.applyAutoInvest(scheduleId)
+      const sharesDesc = result.shares_added
+        .map(s => `+${parseFloat(s.shares_added).toFixed(4)} ${s.ticker} @ $${parseFloat(s.price_used).toFixed(2)}`)
+        .join(', ')
+      setApplyMsg(`Applied $${parseFloat(result.applied_amount).toFixed(2)}: ${sharesDesc}. Next due ${result.next_contribution_date}.`)
+      // Reload schedules to get updated next_contribution_date / is_due
+      const updated = await portfolioService.listAutoInvestSchedules(accountId)
+      setSchedules(updated)
+      onSharesUpdated()
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Failed to apply contribution.')
+    } finally {
+      setApplying(null)
+    }
+  }
+
+  const handleDelete = async (scheduleId: string) => {
+    if (!confirm('Delete this auto-invest schedule?')) return
+    try {
+      await portfolioService.deleteAutoInvestSchedule(scheduleId)
+      setSchedules(prev => prev.filter(s => s.id !== scheduleId))
+    } catch {
+      setError('Failed to delete schedule.')
+    }
+  }
+
+  if (loading) return null
+
+  const dueSchedules = schedules.filter(s => s.is_active && s.is_due)
+
+  return (
+    <div className="mt-3 border-t border-gray-100 pt-3">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs font-medium text-gray-500">Auto-Invest</p>
+        {holdings.length > 0 && !showForm && (
+          <button
+            onClick={() => setShowForm(true)}
+            className="text-xs text-sky-600 hover:text-sky-800"
+          >
+            {schedules.length === 0 ? '+ Set up schedule' : '+ Add schedule'}
+          </button>
+        )}
+      </div>
+
+      {/* Pending contributions banner */}
+      {dueSchedules.map(s => (
+        <div key={s.id} className="mb-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between gap-2">
+          <div className="text-xs text-amber-800">
+            <span className="font-semibold">${parseFloat(s.contribution_amount).toFixed(2)}</span>
+            {' '}contribution due ({FREQUENCY_LABELS[s.frequency as AutoInvestFrequency]})
+            <span className="text-amber-600 ml-1">— was {s.next_contribution_date}</span>
+          </div>
+          <button
+            onClick={() => handleApply(s.id)}
+            disabled={applying === s.id}
+            className="shrink-0 text-xs px-2.5 py-1 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50"
+          >
+            {applying === s.id ? 'Applying…' : 'Apply now'}
+          </button>
+        </div>
+      ))}
+
+      {/* Apply result message */}
+      {applyMsg && (
+        <p className="mb-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded p-2">{applyMsg}</p>
+      )}
+
+      {/* Active (non-due) schedules */}
+      {schedules.filter(s => s.is_active && !s.is_due).map(s => (
+        <div key={s.id} className="mb-1 flex items-center justify-between text-xs text-gray-500">
+          <span>
+            <span className="font-medium text-gray-700">${parseFloat(s.contribution_amount).toFixed(2)}</span>
+            {' '}{FREQUENCY_LABELS[s.frequency as AutoInvestFrequency]}
+            {' '}— next {s.next_contribution_date}
+            {' '}({s.allocations.map(a => `${a.ticker} ${parseFloat(a.percentage).toFixed(0)}%`).join(' / ')})
+          </span>
+          <button
+            onClick={() => handleDelete(s.id)}
+            className="ml-2 text-red-300 hover:text-red-500"
+            aria-label="Delete schedule"
+          >
+            <XIcon className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
+
+      {holdings.length === 0 && schedules.length === 0 && (
+        <p className="text-xs text-gray-400">Add holdings first to set up auto-invest.</p>
+      )}
+
+      {/* Error */}
+      {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
+
+      {/* Create form */}
+      {showForm && (
+        <form
+          onSubmit={handleCreate}
+          data-testid="auto-invest-form"
+          className="mt-2 p-3 bg-gray-50 rounded border border-gray-200 text-xs"
+        >
+          <p className="text-xs font-medium text-gray-600 mb-2">New auto-invest schedule</p>
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <div>
+              <label className="block text-gray-500 mb-1">Amount per paycheck ($)</label>
+              <input
+                type="number"
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+                min="0.01"
+                step="0.01"
+                placeholder="e.g. 150.00"
+                required
+                className="w-full border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-500 mb-1">Frequency</label>
+              <select
+                value={frequency}
+                onChange={e => {
+                  const f = e.target.value as AutoInvestFrequency
+                  setFrequency(f)
+                  setNextDate(nextDateForFrequency(f))
+                }}
+                className="w-full border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              >
+                <option value="biweekly">Every 2 weeks</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-gray-500 mb-1">Next contribution date</label>
+              <input
+                type="date"
+                value={nextDate}
+                onChange={e => setNextDate(e.target.value)}
+                required
+                className="w-full border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              />
+            </div>
+          </div>
+
+          {/* Allocation inputs */}
+          <p className="text-gray-500 mb-1">
+            Allocation (must sum to 100%
+            {Math.abs(pctTotal - 100) > 0.01 && (
+              <span className="text-red-500 ml-1">— currently {pctTotal.toFixed(2)}%</span>
+            )}):
+          </p>
+          {holdings.map(h => (
+            <div key={h.id} className="flex items-center gap-2 mb-1">
+              <span className="w-16 font-medium text-gray-700">{h.ticker}</span>
+              <input
+                type="number"
+                value={allocations[h.id] ?? ''}
+                onChange={e => setAllocations(prev => ({ ...prev, [h.id]: e.target.value }))}
+                min="0"
+                max="100"
+                step="0.01"
+                placeholder="%"
+                required
+                className="w-20 border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              />
+              <span className="text-gray-400">%</span>
+            </div>
+          ))}
+
+          <div className="flex gap-2 mt-3">
+            <button
+              type="submit"
+              disabled={saving}
+              className="text-xs px-3 py-1 bg-sky-600 text-white rounded hover:bg-sky-700 disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save schedule'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowForm(false); setError(null) }}
+              className="text-xs text-gray-500 hover:text-gray-700"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  )
+}
+
 // ─── Account Card ─────────────────────────────────────────────────────────────
 
 function AccountCard({
@@ -601,6 +893,16 @@ function AccountCard({
       )}
 
       <AddHoldingRow accountId={account.id} onAdded={handleHoldingAdded} />
+
+      <AutoInvestPanel
+        accountId={account.id}
+        holdings={holdings}
+        onSharesUpdated={async () => {
+          const updated = await portfolioService.listAccounts()
+          const fresh = updated.find(a => a.id === account.id)
+          if (fresh) onUpdated(fresh)
+        }}
+      />
     </div>
   )
 }
@@ -801,6 +1103,17 @@ function ProjectionCalculator() {
 
 // ─── Portfolio Page ───────────────────────────────────────────────────────────
 
+function arePricesStale(accounts: HsaAccount[]): boolean {
+  const now = Date.now()
+  for (const account of accounts) {
+    for (const h of account.holdings) {
+      if (!h.last_price_fetched_at) return true
+      if (now - new Date(h.last_price_fetched_at).getTime() > PRICE_REFRESH_INTERVAL_MS) return true
+    }
+  }
+  return false
+}
+
 export default function Portfolio() {
   const [accounts, setAccounts] = useState<HsaAccount[]>([])
   const [loading, setLoading] = useState(true)
@@ -808,13 +1121,48 @@ export default function Portfolio() {
   const [error, setError] = useState<string | null>(null)
   const [refreshMsg, setRefreshMsg] = useState<string | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
+  const autoRefreshing = useRef(false)
+
+  const loadAccounts = useCallback(async () => {
+    const data = await portfolioService.listAccounts()
+    setAccounts(data)
+    return data
+  }, [])
+
+  // Auto-refresh prices if stale (on mount and on visibility change)
+  const maybeAutoRefreshPrices = useCallback(async (data: HsaAccount[]) => {
+    if (autoRefreshing.current) return
+    const hasHoldings = data.some(a => a.holdings.length > 0)
+    if (!hasHoldings || !arePricesStale(data)) return
+    autoRefreshing.current = true
+    try {
+      await portfolioService.refreshPrices()
+      const fresh = await portfolioService.listAccounts()
+      setAccounts(fresh)
+    } catch {
+      // silent — user can still manually refresh
+    } finally {
+      autoRefreshing.current = false
+    }
+  }, [])
 
   useEffect(() => {
     portfolioService.listAccounts()
-      .then(setAccounts)
+      .then(data => {
+        setAccounts(data)
+        maybeAutoRefreshPrices(data)
+      })
       .catch(() => setError('Failed to load portfolio.'))
       .finally(() => setLoading(false))
-  }, [])
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadAccounts().then(maybeAutoRefreshPrices).catch(() => {})
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [loadAccounts, maybeAutoRefreshPrices])
 
   const handleRefreshPrices = async () => {
     setRefreshing(true)
