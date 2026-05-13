@@ -2,6 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '../../test/utils'
 import Transactions from '../Transactions'
 
+vi.mock('react-datepicker', () => ({
+  default: ({ onChange, placeholderText, className }: any) => (
+    <input
+      placeholder={placeholderText}
+      className={className}
+      onChange={e => {
+        const [m, d, y] = e.target.value.split('/')
+        if (m && d && y) onChange(new Date(`${y}-${m}-${d}T00:00:00`))
+      }}
+    />
+  ),
+}))
+
 vi.mock('../../services/bank', () => ({
   bankService: {
     listAllTransactions: vi.fn(),
@@ -1062,12 +1075,13 @@ describe('Transactions page', () => {
 
     it('sends start_date to API when date filter changes', async () => {
       render(<Transactions />)
-      await waitFor(() => screen.getAllByDisplayValue(''))
 
-      const dateInput = screen.getAllByDisplayValue('').find(
-        el => el.getAttribute('type') === 'date'
-      )!
-      fireEvent.change(dateInput, { target: { value: '2026-03-01' } })
+      // Open the collapsible filter panel
+      const filtersBtn = await screen.findByRole('button', { name: /filters/i })
+      fireEvent.click(filtersBtn)
+
+      const fromInput = (await screen.findAllByPlaceholderText('MM/DD/YYYY'))[0]
+      fireEvent.change(fromInput, { target: { value: '03/01/2026' } })
 
       await waitFor(() => {
         expect(bankService.listAllTransactions).toHaveBeenCalledWith(
