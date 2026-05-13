@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
+import DatePicker from 'react-datepicker'
+import 'react-datepicker/dist/react-datepicker.css'
 import { useToast } from '../components/Toast'
 import { useSearchParams } from 'react-router-dom'
 import { familyService, FamilyMember, EligibilityPeriod, FamilyMemberCreate } from '../services/family'
@@ -99,11 +101,15 @@ function AddMemberForm({ onSave, onCancel, household }: AddMemberFormProps) {
 
         <div className="min-w-0">
           <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
-          <input
-            type="date"
-            value={form.date_of_birth || ''}
-            onChange={e => setForm(f => ({ ...f, date_of_birth: e.target.value || null }))}
-            className="w-full max-w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+          <DatePicker
+            selected={form.date_of_birth ? new Date(form.date_of_birth + 'T00:00:00') : null}
+            onChange={(d: Date | null) => setForm(f => ({ ...f, date_of_birth: d ? d.toISOString().slice(0, 10) : null }))}
+            dateFormat="MM/dd/yyyy"
+            placeholderText="MM/DD/YYYY"
+            popperPlacement="bottom-start"
+            popperProps={{ strategy: 'fixed' }}
+            wrapperClassName="w-full"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
           />
         </div>
 
@@ -126,20 +132,28 @@ function AddMemberForm({ onSave, onCancel, household }: AddMemberFormProps) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="min-w-0">
             <label className="block text-sm text-gray-600 mb-1">Start Date</label>
-            <input
-              type="date"
-              value={form.eligibility_start || ''}
-              onChange={e => setForm(f => ({ ...f, eligibility_start: e.target.value || null }))}
-              className="w-full max-w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            <DatePicker
+              selected={form.eligibility_start ? new Date(form.eligibility_start + 'T00:00:00') : null}
+              onChange={(d: Date | null) => setForm(f => ({ ...f, eligibility_start: d ? d.toISOString().slice(0, 10) : null }))}
+              dateFormat="MM/dd/yyyy"
+              placeholderText="MM/DD/YYYY"
+              popperPlacement="bottom-start"
+              popperProps={{ strategy: 'fixed' }}
+              wrapperClassName="w-full"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
             />
           </div>
           <div className="min-w-0">
             <label className="block text-sm text-gray-600 mb-1">End Date <span className="text-gray-400">(leave blank if currently eligible)</span></label>
-            <input
-              type="date"
-              value={form.eligibility_end || ''}
-              onChange={e => setForm(f => ({ ...f, eligibility_end: e.target.value || null }))}
-              className="w-full max-w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            <DatePicker
+              selected={form.eligibility_end ? new Date(form.eligibility_end + 'T00:00:00') : null}
+              onChange={(d: Date | null) => setForm(f => ({ ...f, eligibility_end: d ? d.toISOString().slice(0, 10) : null }))}
+              dateFormat="MM/dd/yyyy"
+              placeholderText="MM/DD/YYYY"
+              popperPlacement="bottom-start"
+              popperProps={{ strategy: 'fixed' }}
+              wrapperClassName="w-full"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
             />
           </div>
         </div>
@@ -288,21 +302,29 @@ function EligibilityManager({ member, onUpdated }: EligibilityManagerProps) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div className="min-w-0">
               <label className="block text-xs text-gray-500 mb-1">Start Date *</label>
-              <input
+              <DatePicker
                 required
-                type="date"
-                value={newPeriod.start_date}
-                onChange={e => setNewPeriod(p => ({ ...p, start_date: e.target.value }))}
-                className="w-full max-w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                selected={newPeriod.start_date ? new Date(newPeriod.start_date + 'T00:00:00') : null}
+                onChange={(d: Date | null) => setNewPeriod(p => ({ ...p, start_date: d ? d.toISOString().slice(0, 10) : '' }))}
+                dateFormat="MM/dd/yyyy"
+                placeholderText="MM/DD/YYYY"
+                popperPlacement="bottom-start"
+                popperProps={{ strategy: 'fixed' }}
+                wrapperClassName="w-full"
+                className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
               />
             </div>
             <div className="min-w-0">
               <label className="block text-xs text-gray-500 mb-1">End Date (blank = ongoing)</label>
-              <input
-                type="date"
-                value={newPeriod.end_date}
-                onChange={e => setNewPeriod(p => ({ ...p, end_date: e.target.value }))}
-                className="w-full max-w-full border border-gray-300 rounded px-2 py-1 text-sm"
+              <DatePicker
+                selected={newPeriod.end_date ? new Date(newPeriod.end_date + 'T00:00:00') : null}
+                onChange={(d: Date | null) => setNewPeriod(p => ({ ...p, end_date: d ? d.toISOString().slice(0, 10) : '' }))}
+                dateFormat="MM/dd/yyyy"
+                placeholderText="MM/DD/YYYY"
+                popperPlacement="bottom-start"
+                popperProps={{ strategy: 'fixed' }}
+                wrapperClassName="w-full"
+                className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
               />
             </div>
           </div>
@@ -491,10 +513,14 @@ function MemberCard({ member, currentUserId, viewerRelationship, householdMember
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Date of Birth</label>
-            <input
-              type="date"
-              value={editForm.date_of_birth}
-              onChange={e => setEditForm(f => ({ ...f, date_of_birth: e.target.value }))}
+            <DatePicker
+              selected={editForm.date_of_birth ? new Date(editForm.date_of_birth + 'T00:00:00') : null}
+              onChange={(d: Date | null) => setEditForm(f => ({ ...f, date_of_birth: d ? d.toISOString().slice(0, 10) : '' }))}
+              dateFormat="MM/dd/yyyy"
+              placeholderText="MM/DD/YYYY"
+              popperPlacement="bottom-start"
+              popperProps={{ strategy: 'fixed' }}
+              wrapperClassName="w-full"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
             />
           </div>
