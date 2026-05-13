@@ -1526,15 +1526,15 @@ export default function Transactions() {
             <span className="text-sm text-gray-600">Show hidden</span>
           </label>
 
-          {/* Date range — stacked on mobile, inline on desktop */}
-          <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
+          {/* Date range — auto-width so iOS date inputs don't stretch full-screen */}
+          <div className="flex flex-wrap gap-2">
             <div>
               <label className="block text-xs text-gray-400 mb-1 pl-1">From</label>
               <input
                 type="date"
                 value={startDate}
                 onChange={e => setStartDate(e.target.value)}
-                className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
               />
             </div>
             <div>
@@ -1543,7 +1543,7 @@ export default function Transactions() {
                 type="date"
                 value={endDate}
                 onChange={e => setEndDate(e.target.value)}
-                className="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
               />
             </div>
           </div>
