@@ -16,6 +16,11 @@ vi.mock('../../services/portfolio', () => ({
     getSummary: vi.fn(),
     getProjection: vi.fn(),
     getHistory: vi.fn(),
+    listAutoInvestSchedules: vi.fn(),
+    createAutoInvestSchedule: vi.fn(),
+    updateAutoInvestSchedule: vi.fn(),
+    deleteAutoInvestSchedule: vi.fn(),
+    applyAutoInvest: vi.fn(),
   },
 }))
 
@@ -55,6 +60,22 @@ const emptyProjection = {
   points: [{ year: 0, value: '0.00' }],
 }
 
+const makeSchedule = (overrides = {}) => ({
+  id: 'sched-1',
+  account_id: 'acc-1',
+  contribution_amount: '150.00',
+  frequency: 'biweekly',
+  next_contribution_date: '2099-01-01',
+  is_active: true,
+  is_due: false,
+  allocations: [
+    { id: 'alloc-1', holding_id: 'hold-1', ticker: 'VTI', percentage: '100.00' },
+  ],
+  created_at: '2026-01-01T00:00:00',
+  updated_at: '2026-01-01T00:00:00',
+  ...overrides,
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
   ;(portfolioService.listAccounts as any).mockResolvedValue([])
@@ -62,6 +83,13 @@ beforeEach(() => {
   ;(portfolioService.refreshPrices as any).mockResolvedValue({ updated: 0, tickers_fetched: 0 })
   ;(portfolioService.createAccount as any).mockResolvedValue(makeAccount())
   ;(portfolioService.getHistory as any).mockResolvedValue({ points: [] })
+  ;(portfolioService.listAutoInvestSchedules as any).mockResolvedValue([])
+  ;(portfolioService.createAutoInvestSchedule as any).mockResolvedValue(makeSchedule())
+  ;(portfolioService.applyAutoInvest as any).mockResolvedValue({
+    applied_amount: '150.00',
+    shares_added: [{ ticker: 'VTI', shares_added: '0.600000', price_used: '250.00', dollar_amount: '150.00' }],
+    next_contribution_date: '2099-01-15',
+  })
 })
 
 describe('Portfolio page', () => {
@@ -257,5 +285,113 @@ describe('Portfolio page', () => {
       expect(screen.getByText('Growth Projection')).toBeInTheDocument()
       expect(screen.getByText('Year 1')).toBeInTheDocument()
     })
+  })
+})
+
+describe('Auto-invest panel', () => {
+  const accountWithHolding = makeAccount({ holdings: [makeHolding()] })
+
+  beforeEach(() => {
+    ;(portfolioService.listAccounts as any).mockResolvedValue([accountWithHolding])
+  })
+
+  it('shows "+ Set up schedule" when no schedules exist', async () => {
+    ;(portfolioService.listAutoInvestSchedules as any).mockResolvedValue([])
+    render(<Portfolio />)
+    await waitFor(() => screen.getByText('My Fidelity HSA'))
+    await waitFor(() => {
+      expect(screen.getByText('+ Set up schedule')).toBeInTheDocument()
+    })
+  })
+
+  it('shows the auto-invest form when setup link is clicked', async () => {
+    ;(portfolioService.listAutoInvestSchedules as any).mockResolvedValue([])
+    render(<Portfolio />)
+    await waitFor(() => screen.getByText('+ Set up schedule'))
+    fireEvent.click(screen.getByText('+ Set up schedule'))
+    await waitFor(() => {
+      expect(screen.getByTestId('auto-invest-form')).toBeInTheDocument()
+    })
+  })
+
+  it('shows due contribution banner when is_due is true', async () => {
+    ;(portfolioService.listAutoInvestSchedules as any).mockResolvedValue([
+      makeSchedule({ is_due: true, next_contribution_date: '2026-01-01' }),
+    ])
+    render(<Portfolio />)
+    await waitFor(() => screen.getByText('My Fidelity HSA'))
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /apply now/i })).toBeInTheDocument()
+    })
+  })
+
+  it('calls applyAutoInvest and shows result message on apply', async () => {
+    ;(portfolioService.listAutoInvestSchedules as any).mockResolvedValue([
+      makeSchedule({ is_due: true }),
+    ])
+    render(<Portfolio />)
+    await waitFor(() => screen.getByRole('button', { name: /apply now/i }))
+    fireEvent.click(screen.getByRole('button', { name: /apply now/i }))
+    await waitFor(() => {
+      expect(portfolioService.applyAutoInvest).toHaveBeenCalledWith('sched-1')
+      expect(screen.getByText(/applied \$150\.00/i)).toBeInTheDocument()
+    })
+  })
+
+  it('shows active (non-due) schedule details', async () => {
+    ;(portfolioService.listAutoInvestSchedules as any).mockResolvedValue([
+      makeSchedule({ is_due: false, next_contribution_date: '2099-01-01' }),
+    ])
+    render(<Portfolio />)
+    await waitFor(() => screen.getByText('My Fidelity HSA'))
+    await waitFor(() => {
+      expect(screen.getByText(/\$150\.00/)).toBeInTheDocument()
+      expect(screen.getByText(/every 2 weeks/i)).toBeInTheDocument()
+    })
+  })
+})
+
+describe('Portfolio price auto-refresh', () => {
+  it('auto-refreshes prices on mount when holdings have stale prices', async () => {
+    const staleHolding = makeHolding({ last_price_fetched_at: '2020-01-01T00:00:00' })
+    const staleAccount = makeAccount({ holdings: [staleHolding] })
+    const freshAccount = makeAccount({ holdings: [makeHolding()] })
+
+    ;(portfolioService.listAccounts as any)
+      .mockResolvedValueOnce([staleAccount])
+      .mockResolvedValueOnce([freshAccount])
+    ;(portfolioService.listAutoInvestSchedules as any).mockResolvedValue([])
+
+    render(<Portfolio />)
+
+    await waitFor(() => {
+      expect(portfolioService.refreshPrices).toHaveBeenCalled()
+    })
+  })
+
+  it('does not auto-refresh when prices are fresh', async () => {
+    const freshHolding = makeHolding({ last_price_fetched_at: new Date().toISOString() })
+    const freshAccount = makeAccount({ holdings: [freshHolding] })
+
+    ;(portfolioService.listAccounts as any).mockResolvedValue([freshAccount])
+    ;(portfolioService.listAutoInvestSchedules as any).mockResolvedValue([])
+
+    render(<Portfolio />)
+    await waitFor(() => screen.getByText('My Fidelity HSA'))
+
+    // Give async effects time to settle
+    await new Promise(r => setTimeout(r, 50))
+    expect(portfolioService.refreshPrices).not.toHaveBeenCalled()
+  })
+
+  it('does not auto-refresh when there are no holdings', async () => {
+    ;(portfolioService.listAccounts as any).mockResolvedValue([makeAccount({ holdings: [] })])
+    ;(portfolioService.listAutoInvestSchedules as any).mockResolvedValue([])
+
+    render(<Portfolio />)
+    await waitFor(() => screen.getByText('My Fidelity HSA'))
+
+    await new Promise(r => setTimeout(r, 50))
+    expect(portfolioService.refreshPrices).not.toHaveBeenCalled()
   })
 })

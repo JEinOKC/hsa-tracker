@@ -1,15 +1,19 @@
 """Integration tests for portfolio endpoints."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
-from app.models.portfolio import HsaAccount, HsaHolding, HoldingSnapshot
+from app.models.portfolio import (
+    AutoInvestAllocation,
+    AutoInvestSchedule,
+    HoldingSnapshot,
+    HsaAccount,
+    HsaHolding,
+)
 from app.models.user import User
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -448,3 +452,235 @@ class TestHoldingSnapshots:
         resp = client.get("/api/v1/portfolio/history?days=365", headers=auth_headers)
         assert resp.status_code == 200
         assert resp.json()["points"] == []
+
+
+# ---------------------------------------------------------------------------
+# Auto-Invest Schedules
+# ---------------------------------------------------------------------------
+
+def _make_schedule(db_session, account_id, user_id, contribution_amount="150.00",
+                   frequency="biweekly", days_until_due=14):
+    next_date = date.today() + timedelta(days=days_until_due)
+    schedule = AutoInvestSchedule(
+        id=uuid.uuid4(),
+        account_id=account_id,
+        user_id=user_id,
+        contribution_amount=Decimal(contribution_amount),
+        frequency=frequency,
+        next_contribution_date=next_date,
+        is_active=True,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db_session.add(schedule)
+    db_session.commit()
+    db_session.refresh(schedule)
+    return schedule
+
+
+def _make_allocation(db_session, schedule_id, holding_id, ticker, percentage):
+    alloc = AutoInvestAllocation(
+        id=uuid.uuid4(),
+        schedule_id=schedule_id,
+        holding_id=holding_id,
+        ticker=ticker,
+        percentage=Decimal(str(percentage)),
+    )
+    db_session.add(alloc)
+    db_session.commit()
+    return alloc
+
+
+class TestAutoInvestScheduleAuth:
+    def test_list_requires_auth(self, client):
+        assert client.get("/api/v1/portfolio/accounts/fake-id/auto-invest").status_code == 401
+
+    def test_create_requires_auth(self, client):
+        assert client.post("/api/v1/portfolio/accounts/fake-id/auto-invest", json={}).status_code == 401
+
+    def test_apply_requires_auth(self, client):
+        assert client.post("/api/v1/portfolio/auto-invest/fake-id/apply").status_code == 401
+
+
+class TestAutoInvestScheduleCRUD:
+    def test_create_schedule_happy_path(self, client, auth_headers, db_session, test_user):
+        account = _make_account(db_session, test_user.id)
+        h1 = _make_holding(db_session, account.id, ticker="VTI", shares="10")
+        h2 = _make_holding(db_session, account.id, ticker="FZROX", shares="5")
+
+        next_date = (date.today() + timedelta(days=14)).isoformat()
+        resp = client.post(
+            f"/api/v1/portfolio/accounts/{account.id}/auto-invest",
+            json={
+                "contribution_amount": "150.00",
+                "frequency": "biweekly",
+                "next_contribution_date": next_date,
+                "allocations": [
+                    {"holding_id": str(h1.id), "ticker": "VTI", "percentage": "90.00"},
+                    {"holding_id": str(h2.id), "ticker": "FZROX", "percentage": "10.00"},
+                ],
+            },
+            headers=auth_headers,
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["contribution_amount"] == "150.00"
+        assert data["frequency"] == "biweekly"
+        assert len(data["allocations"]) == 2
+        assert data["is_active"] is True
+
+    def test_create_requires_allocations_sum_to_100(self, client, auth_headers, db_session, test_user):
+        account = _make_account(db_session, test_user.id)
+        h1 = _make_holding(db_session, account.id, ticker="VTI", shares="10")
+
+        next_date = (date.today() + timedelta(days=14)).isoformat()
+        resp = client.post(
+            f"/api/v1/portfolio/accounts/{account.id}/auto-invest",
+            json={
+                "contribution_amount": "150.00",
+                "frequency": "biweekly",
+                "next_contribution_date": next_date,
+                "allocations": [
+                    {"holding_id": str(h1.id), "ticker": "VTI", "percentage": "80.00"},
+                ],
+            },
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+        assert "100%" in resp.json()["detail"]
+
+    def test_list_schedules(self, client, auth_headers, db_session, test_user):
+        account = _make_account(db_session, test_user.id)
+        h1 = _make_holding(db_session, account.id, ticker="VTI", shares="10")
+        schedule = _make_schedule(db_session, account.id, test_user.id)
+        _make_allocation(db_session, schedule.id, h1.id, "VTI", 100)
+
+        resp = client.get(f"/api/v1/portfolio/accounts/{account.id}/auto-invest", headers=auth_headers)
+        assert resp.status_code == 200
+        assert len(resp.json()) == 1
+
+    def test_is_due_flag_true_when_past_due(self, client, auth_headers, db_session, test_user):
+        account = _make_account(db_session, test_user.id)
+        h1 = _make_holding(db_session, account.id, ticker="VTI", shares="10")
+        # Schedule with next_contribution_date in the past
+        schedule = _make_schedule(db_session, account.id, test_user.id, days_until_due=-1)
+        _make_allocation(db_session, schedule.id, h1.id, "VTI", 100)
+
+        resp = client.get(f"/api/v1/portfolio/accounts/{account.id}/auto-invest", headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json()[0]["is_due"] is True
+
+    def test_is_due_flag_false_when_future(self, client, auth_headers, db_session, test_user):
+        account = _make_account(db_session, test_user.id)
+        h1 = _make_holding(db_session, account.id, ticker="VTI", shares="10")
+        schedule = _make_schedule(db_session, account.id, test_user.id, days_until_due=7)
+        _make_allocation(db_session, schedule.id, h1.id, "VTI", 100)
+
+        resp = client.get(f"/api/v1/portfolio/accounts/{account.id}/auto-invest", headers=auth_headers)
+        assert resp.json()[0]["is_due"] is False
+
+    def test_delete_schedule(self, client, auth_headers, db_session, test_user):
+        account = _make_account(db_session, test_user.id)
+        h1 = _make_holding(db_session, account.id, ticker="VTI", shares="10")
+        schedule = _make_schedule(db_session, account.id, test_user.id)
+        _make_allocation(db_session, schedule.id, h1.id, "VTI", 100)
+
+        resp = client.delete(f"/api/v1/portfolio/auto-invest/{schedule.id}", headers=auth_headers)
+        assert resp.status_code == 204
+        assert db_session.query(AutoInvestSchedule).filter_by(id=schedule.id).first() is None
+
+    def test_cannot_access_other_users_schedule(self, client, auth_headers, db_session, test_user):
+        other_user = _make_user(db_session, "scheother")
+        other_account = _make_account(db_session, other_user.id)
+        _make_holding(db_session, other_account.id, ticker="VTI", shares="10")
+        schedule = _make_schedule(db_session, other_account.id, other_user.id)
+
+        resp = client.delete(f"/api/v1/portfolio/auto-invest/{schedule.id}", headers=auth_headers)
+        assert resp.status_code == 404
+
+
+class TestAutoInvestApply:
+    def test_apply_adds_shares_and_advances_date(self, client, auth_headers, db_session, test_user):
+        account = _make_account(db_session, test_user.id)
+        holding = _make_holding(db_session, account.id, ticker="VTI", shares="10.000000")
+        # Give holding a known price so apply can calculate shares
+        holding.last_known_price = Decimal("250.00")
+        db_session.commit()
+
+        schedule = _make_schedule(db_session, account.id, test_user.id,
+                                  contribution_amount="250.00", days_until_due=-1)
+        _make_allocation(db_session, schedule.id, holding.id, "VTI", 100)
+
+        # Mock the price fetcher to return $250
+        mock_prices = {"VTI": Decimal("250.00")}
+        with patch("app.api.v1.endpoints.portfolio.get_price_provider") as mock_provider_fn:
+            mock_provider = mock_provider_fn.return_value
+            mock_provider.fetch_prices = AsyncMock(return_value=mock_prices)
+
+            resp = client.post(
+                f"/api/v1/portfolio/auto-invest/{schedule.id}/apply",
+                headers=auth_headers,
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["applied_amount"] == "250.00"
+        assert len(data["shares_added"]) == 1
+        assert data["shares_added"][0]["ticker"] == "VTI"
+
+        # shares_added = 250 / 250 = 1.0 new shares → total should be 11.0
+        db_session.refresh(holding)
+        assert float(holding.shares) == pytest.approx(11.0)
+
+        # next_contribution_date should advance by 2 weeks
+        db_session.refresh(schedule)
+        assert schedule.next_contribution_date == date.today() + timedelta(days=13)  # -1 + 14
+
+    def test_apply_90_10_split(self, client, auth_headers, db_session, test_user):
+        account = _make_account(db_session, test_user.id)
+        h1 = _make_holding(db_session, account.id, ticker="VTI", shares="10.000000")
+        h2 = _make_holding(db_session, account.id, ticker="FZROX", shares="5.000000")
+        h1.last_known_price = Decimal("200.00")
+        h2.last_known_price = Decimal("100.00")
+        db_session.commit()
+
+        # $150 total: $135 → VTI, $15 → FZROX
+        schedule = _make_schedule(db_session, account.id, test_user.id,
+                                  contribution_amount="150.00", days_until_due=-1)
+        _make_allocation(db_session, schedule.id, h1.id, "VTI", 90)
+        _make_allocation(db_session, schedule.id, h2.id, "FZROX", 10)
+
+        mock_prices = {"VTI": Decimal("200.00"), "FZROX": Decimal("100.00")}
+        with patch("app.api.v1.endpoints.portfolio.get_price_provider") as mock_fn:
+            mock_fn.return_value.fetch_prices = AsyncMock(return_value=mock_prices)
+            resp = client.post(
+                f"/api/v1/portfolio/auto-invest/{schedule.id}/apply",
+                headers=auth_headers,
+            )
+
+        assert resp.status_code == 200
+        db_session.refresh(h1)
+        db_session.refresh(h2)
+        # VTI: 135/200 = 0.675 new shares
+        assert float(h1.shares) == pytest.approx(10.675, abs=0.0001)
+        # FZROX: 15/100 = 0.15 new shares
+        assert float(h2.shares) == pytest.approx(5.15, abs=0.0001)
+
+    def test_apply_fails_with_no_price(self, client, auth_headers, db_session, test_user):
+        account = _make_account(db_session, test_user.id)
+        holding = _make_holding(db_session, account.id, ticker="NOPRICE")
+        # No last_known_price set
+
+        schedule = _make_schedule(db_session, account.id, test_user.id, days_until_due=-1)
+        _make_allocation(db_session, schedule.id, holding.id, "NOPRICE", 100)
+
+        mock_prices: dict = {}
+        with patch("app.api.v1.endpoints.portfolio.get_price_provider") as mock_fn:
+            mock_fn.return_value.fetch_prices = AsyncMock(return_value=mock_prices)
+            resp = client.post(
+                f"/api/v1/portfolio/auto-invest/{schedule.id}/apply",
+                headers=auth_headers,
+            )
+
+        assert resp.status_code == 422
+        assert "No price available" in resp.json()["detail"]

@@ -1,12 +1,11 @@
 """Pydantic schemas for portfolio endpoints."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
-
 
 # ─── Holdings ────────────────────────────────────────────────────────────────
 
@@ -114,6 +113,64 @@ class PortfolioHistoryPoint(BaseModel):
 
 class PortfolioHistoryOut(BaseModel):
     points: List[PortfolioHistoryPoint]
+
+
+# ─── Auto-Invest ─────────────────────────────────────────────────────────────
+
+AutoInvestFrequency = Literal["biweekly", "weekly", "monthly"]
+
+
+class AutoInvestAllocationIn(BaseModel):
+    holding_id: UUID
+    ticker: str
+    percentage: Decimal
+
+
+class AutoInvestAllocationOut(BaseModel):
+    id: UUID
+    holding_id: Optional[UUID] = None
+    ticker: str
+    percentage: Decimal
+
+    class Config:
+        from_attributes = True
+
+
+class AutoInvestScheduleCreate(BaseModel):
+    contribution_amount: Decimal
+    frequency: AutoInvestFrequency = "biweekly"
+    next_contribution_date: date
+    allocations: List[AutoInvestAllocationIn]
+
+
+class AutoInvestScheduleUpdate(BaseModel):
+    contribution_amount: Optional[Decimal] = None
+    frequency: Optional[AutoInvestFrequency] = None
+    next_contribution_date: Optional[date] = None
+    is_active: Optional[bool] = None
+    allocations: Optional[List[AutoInvestAllocationIn]] = None
+
+
+class AutoInvestScheduleOut(BaseModel):
+    id: UUID
+    account_id: UUID
+    contribution_amount: Decimal
+    frequency: str
+    next_contribution_date: date
+    is_active: bool
+    is_due: bool  # computed: next_contribution_date <= today
+    allocations: List[AutoInvestAllocationOut] = []
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AutoInvestApplyResult(BaseModel):
+    applied_amount: Decimal
+    shares_added: List[dict]  # [{ticker, shares_added, price_used}]
+    next_contribution_date: date
 
 
 # ─── Projection ──────────────────────────────────────────────────────────────

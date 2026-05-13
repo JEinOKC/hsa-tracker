@@ -66,6 +66,47 @@ export interface PortfolioHistoryOut {
   points: PortfolioHistoryPoint[]
 }
 
+// ─── Auto-Invest ──────────────────────────────────────────────────────────────
+
+export type AutoInvestFrequency = 'biweekly' | 'weekly' | 'monthly'
+
+export interface AutoInvestAllocation {
+  id: string
+  holding_id: string | null
+  ticker: string
+  percentage: string
+}
+
+export interface AutoInvestSchedule {
+  id: string
+  account_id: string
+  contribution_amount: string
+  frequency: AutoInvestFrequency
+  next_contribution_date: string  // YYYY-MM-DD
+  is_active: boolean
+  is_due: boolean
+  allocations: AutoInvestAllocation[]
+  created_at: string
+  updated_at: string
+}
+
+export interface AutoInvestAllocationIn {
+  holding_id: string
+  ticker: string
+  percentage: string
+}
+
+export interface AutoInvestApplyResult {
+  applied_amount: string
+  shares_added: Array<{
+    ticker: string
+    shares_added: string
+    price_used: string
+    dollar_amount: string
+  }>
+  next_contribution_date: string
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export const portfolioService = {
@@ -139,5 +180,37 @@ export const portfolioService = {
   // History
   getHistory(days: number): Promise<PortfolioHistoryOut> {
     return api.get('/portfolio/history', { params: { days } }).then(r => r.data)
+  },
+
+  // Auto-Invest
+  listAutoInvestSchedules(accountId: string): Promise<AutoInvestSchedule[]> {
+    return api.get(`/portfolio/accounts/${accountId}/auto-invest`).then(r => r.data)
+  },
+
+  createAutoInvestSchedule(accountId: string, data: {
+    contribution_amount: string
+    frequency: AutoInvestFrequency
+    next_contribution_date: string
+    allocations: AutoInvestAllocationIn[]
+  }): Promise<AutoInvestSchedule> {
+    return api.post(`/portfolio/accounts/${accountId}/auto-invest`, data).then(r => r.data)
+  },
+
+  updateAutoInvestSchedule(scheduleId: string, data: Partial<{
+    contribution_amount: string
+    frequency: AutoInvestFrequency
+    next_contribution_date: string
+    is_active: boolean
+    allocations: AutoInvestAllocationIn[]
+  }>): Promise<AutoInvestSchedule> {
+    return api.patch(`/portfolio/auto-invest/${scheduleId}`, data).then(r => r.data)
+  },
+
+  deleteAutoInvestSchedule(scheduleId: string): Promise<void> {
+    return api.delete(`/portfolio/auto-invest/${scheduleId}`)
+  },
+
+  applyAutoInvest(scheduleId: string): Promise<AutoInvestApplyResult> {
+    return api.post(`/portfolio/auto-invest/${scheduleId}/apply`).then(r => r.data)
   },
 }
