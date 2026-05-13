@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import DatePicker from 'react-datepicker'
+import 'react-datepicker/dist/react-datepicker.css'
 import { bankService, BankTransaction, MatchCandidate } from '../services/bank'
 import { XIcon } from './icons'
 
@@ -112,11 +114,15 @@ export default function ManualTransactionForm({ onClose, onCreated }: Props) {
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Date</label>
-          <input
-            type="date"
+          <DatePicker
+            selected={date ? new Date(date + 'T00:00:00') : null}
+            onChange={(d: Date | null) => setDate(d ? d.toISOString().slice(0, 10) : '')}
+            dateFormat="MM/dd/yyyy"
+            placeholderText="MM/DD/YYYY"
             required
-            value={date}
-            onChange={e => setDate(e.target.value)}
+            popperPlacement="bottom-start"
+            popperProps={{ strategy: 'fixed' }}
+            wrapperClassName="w-full"
             className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>

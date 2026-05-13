@@ -172,11 +172,14 @@ function ReimburseToggle({ txn, onChange }: ReimburseToggleProps) {
   if (pickingDate)
     return (
       <span className="flex flex-wrap items-center gap-1">
-        <input
-          type="date"
-          value={reimburseDate}
-          onChange={e => setReimburseDate(e.target.value)}
-          className="text-xs border border-gray-300 rounded px-1 py-0.5 min-w-0"
+        <DatePicker
+          selected={reimburseDate ? new Date(reimburseDate + 'T00:00:00') : null}
+          onChange={(d: Date | null) => setReimburseDate(d ? d.toISOString().slice(0, 10) : '')}
+          dateFormat="MM/dd/yyyy"
+          placeholderText="MM/DD/YYYY"
+          popperPlacement="bottom-start"
+          popperProps={{ strategy: 'fixed' }}
+          className="text-xs border border-gray-300 rounded px-1 py-0.5 w-28"
         />
         <span className="flex items-center gap-1">
           <button onClick={confirm} className="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-600 text-white hover:bg-purple-700">
@@ -1529,7 +1532,7 @@ export default function Transactions() {
           </label>
 
           {/* Date range */}
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
             <div>
               <label className="block text-xs text-gray-400 mb-1 pl-1">From</label>
               <DatePicker
@@ -1538,7 +1541,10 @@ export default function Transactions() {
                 dateFormat="MM/dd/yyyy"
                 placeholderText="MM/DD/YYYY"
                 isClearable
-                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 w-36"
+                popperPlacement="bottom-start"
+                popperProps={{ strategy: 'fixed' }}
+                wrapperClassName="w-full"
+                className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
               />
             </div>
             <div>
@@ -1549,7 +1555,10 @@ export default function Transactions() {
                 dateFormat="MM/dd/yyyy"
                 placeholderText="MM/DD/YYYY"
                 isClearable
-                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 w-36"
+                popperPlacement="bottom-start"
+                popperProps={{ strategy: 'fixed' }}
+                wrapperClassName="w-full"
+                className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
               />
             </div>
           </div>

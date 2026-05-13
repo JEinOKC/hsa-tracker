@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import DatePicker from 'react-datepicker'
+import 'react-datepicker/dist/react-datepicker.css'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
@@ -593,11 +595,15 @@ function AutoInvestPanel({
             </div>
             <div className="col-span-2">
               <label className="block text-gray-500 mb-1">Next contribution date</label>
-              <input
-                type="date"
-                value={nextDate}
-                onChange={e => setNextDate(e.target.value)}
+              <DatePicker
+                selected={nextDate ? new Date(nextDate + 'T00:00:00') : null}
+                onChange={(d: Date | null) => setNextDate(d ? d.toISOString().slice(0, 10) : '')}
+                dateFormat="MM/dd/yyyy"
+                placeholderText="MM/DD/YYYY"
                 required
+                popperPlacement="bottom-start"
+                popperProps={{ strategy: 'fixed' }}
+                wrapperClassName="w-full"
                 className="w-full border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500"
               />
             </div>
