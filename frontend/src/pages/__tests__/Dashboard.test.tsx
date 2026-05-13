@@ -64,14 +64,28 @@ describe('Dashboard', () => {
     render(<Dashboard />)
     await waitFor(() => {
       expect(screen.getByText('$8,250.50')).toBeInTheDocument()
-      expect(screen.getByTestId('portfolio-link')).toBeInTheDocument()
+      expect(screen.getByTestId('portfolio-value-card').closest('a')).toHaveAttribute('href', '/portfolio')
     })
   })
 
-  it('shows set-up link in hero when no portfolio accounts', async () => {
+  it('shows set-up text in hero when no portfolio accounts', async () => {
     render(<Dashboard />)
     await waitFor(() => {
-      expect(screen.getByTestId('portfolio-setup-link')).toBeInTheDocument()
+      expect(screen.getByText('Set up →')).toBeInTheDocument()
+    })
+  })
+
+  it('lifetime HSA spend card links to HSA transactions tab', async () => {
+    render(<Dashboard />)
+    await waitFor(() => {
+      expect(screen.getByTestId('lifetime-spend-card').closest('a')).toHaveAttribute('href', '/transactions?tab=hsa')
+    })
+  })
+
+  it('portfolio value card links to portfolio page', async () => {
+    render(<Dashboard />)
+    await waitFor(() => {
+      expect(screen.getByTestId('portfolio-value-card').closest('a')).toHaveAttribute('href', '/portfolio')
     })
   })
 

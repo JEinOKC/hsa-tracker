@@ -1447,11 +1447,13 @@ export default function Transactions() {
           onChange={e => handleSearchChange(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-full sm:w-52 focus:outline-none focus:ring-2 focus:ring-sky-500"
         />
+
+        {/* Dropdown filters — 2 per row on mobile */}
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
           <select
             value={filterMember}
             onChange={e => setFilterMember(e.target.value)}
-            className="min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
           >
             <option value="">All people</option>
             {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -1459,7 +1461,7 @@ export default function Transactions() {
           <select
             value={filterDocs}
             onChange={e => setDocsFilter(e.target.value)}
-            className="min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
           >
             <option value="">Any docs</option>
             <option value="missing">Missing receipts</option>
@@ -1468,7 +1470,7 @@ export default function Transactions() {
           <select
             value={filterAutoFlag}
             onChange={e => setFilterAutoFlag(e.target.value)}
-            className="min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
           >
             <option value="">All flags</option>
             <option value="potential_hsa">Potential HSA only</option>
@@ -1477,7 +1479,7 @@ export default function Transactions() {
             <select
               value={filterCategory}
               onChange={e => setFilterCategory(e.target.value)}
-              className="min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
             >
               <option value="">Smart</option>
               <option value="__all__">All categories</option>
@@ -1486,37 +1488,43 @@ export default function Transactions() {
               ))}
             </select>
           )}
-          <label className="flex items-center gap-2 cursor-pointer min-w-0 px-1">
-            <input
-              type="checkbox"
-              checked={showHidden}
-              onChange={e => setShowHidden(e.target.checked)}
-              className="rounded border-gray-300 text-sky-600 focus:ring-sky-500"
-            />
-            <span className="text-sm text-gray-600 whitespace-nowrap">Show hidden</span>
-          </label>
-          <div className="min-w-0">
+        </div>
+
+        {/* Show hidden */}
+        <label className="flex items-center gap-2 cursor-pointer px-1 w-fit">
+          <input
+            type="checkbox"
+            checked={showHidden}
+            onChange={e => setShowHidden(e.target.checked)}
+            className="rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+          />
+          <span className="text-sm text-gray-600">Show hidden</span>
+        </label>
+
+        {/* Date range — From and To side by side */}
+        <div className="flex gap-2 items-end">
+          <div className="flex-1 min-w-0">
             <label className="block text-xs text-gray-400 mb-1 pl-1">From</label>
             <input
               type="date"
               value={startDate}
               onChange={e => setStartDate(e.target.value)}
-              className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
             />
           </div>
-          <div className="min-w-0">
+          <div className="flex-1 min-w-0">
             <label className="block text-xs text-gray-400 mb-1 pl-1">To</label>
             <input
               type="date"
               value={endDate}
               onChange={e => setEndDate(e.target.value)}
-              className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
             />
           </div>
           {hasFilters && (
             <button
               onClick={clearFilters}
-              className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 border border-gray-200 rounded-lg sm:border-0"
+              className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 border border-gray-200 rounded-lg shrink-0"
             >
               Clear filters
             </button>

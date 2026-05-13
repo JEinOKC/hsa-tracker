@@ -163,7 +163,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
       <div className="flex flex-col h-full">
         <Nav unreviewedCount={unreviewedCount} disconnectedCount={disconnectedCount} />
         {/* This is the only scrollable region — body stays locked */}
-        <main className="flex-1 overflow-y-auto pb-20 md:pb-0" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <main className="flex-1 overflow-y-auto overflow-x-hidden pb-20 md:pb-0" style={{ WebkitOverflowScrolling: 'touch' }}>
           {children}
         </main>
       </div>

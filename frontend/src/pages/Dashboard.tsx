@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { LineChart, Line, ResponsiveContainer } from 'recharts'
+import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts'
 import { bankService, DashboardSummary } from '../services/bank'
 import { portfolioService, PortfolioSummary, PortfolioHistoryPoint } from '../services/portfolio'
 import { CheckIcon } from '../components/icons'
@@ -103,7 +103,11 @@ export default function Dashboard() {
 
       {/* Hero — lifetime totals always visible above the fold */}
       <div className="grid grid-cols-2 gap-3 mb-4">
-        <div className="bg-sky-600 text-white rounded-xl p-4 shadow">
+        <Link
+          to="/transactions?tab=hsa"
+          data-testid="lifetime-spend-card"
+          className="block bg-sky-600 text-white rounded-xl p-4 shadow hover:opacity-90 transition-opacity"
+        >
           <p className="text-xs font-semibold text-sky-200 uppercase tracking-wider mb-1">Lifetime HSA Spend</p>
           <p className="text-2xl font-bold leading-tight">
             {lifetimeSummary ? formatDollars(lifetimeSummary.hsa_spending) : '—'}
@@ -113,8 +117,12 @@ export default function Dashboard() {
               ? `${lifetimeSummary.hsa_transaction_count} expense${lifetimeSummary.hsa_transaction_count !== 1 ? 's' : ''}`
               : ''}
           </p>
-        </div>
-        <div className="bg-white rounded-xl p-4 shadow">
+        </Link>
+        <Link
+          to="/portfolio"
+          data-testid="portfolio-value-card"
+          className="block bg-white rounded-xl p-4 shadow hover:shadow-md transition-shadow"
+        >
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Portfolio Value</p>
           <p className="text-xl font-bold text-gray-900 leading-tight">
             {portfolio?.total_value != null
@@ -132,6 +140,7 @@ export default function Dashboard() {
               <>
                 <ResponsiveContainer width="100%" height={36}>
                   <LineChart data={sparkData} margin={{ top: 2, right: 0, left: 0, bottom: 2 }}>
+                    <YAxis domain={['dataMin', 'dataMax']} hide />
                     <Line
                       type="monotone"
                       dataKey="v"
@@ -153,13 +162,10 @@ export default function Dashboard() {
             )
           })() : (
             <p className="text-xs text-gray-400 mt-1">
-              {portfolio?.accounts.length
-                ? <Link data-testid="portfolio-link" to="/portfolio" className="text-sky-600 hover:text-sky-800">View portfolio →</Link>
-                : <Link data-testid="portfolio-setup-link" to="/portfolio" className="text-sky-600 hover:text-sky-800">Set up →</Link>
-              }
+              {portfolio?.accounts.length ? 'View portfolio →' : 'Set up →'}
             </p>
           )}
-        </div>
+        </Link>
       </div>
 
       {/* Range selector — horizontally scrollable on mobile */}
