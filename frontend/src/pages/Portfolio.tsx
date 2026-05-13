@@ -401,6 +401,11 @@ function AccountCard({
   const totalValue =
     (account.cash_balance ? parseFloat(account.cash_balance) : 0) + totalInvested
 
+  // Notify parent whenever holdings change so the page-level total stays in sync.
+  const notifyHoldingsChanged = (newHoldings: HsaHolding[]) => {
+    onUpdated({ ...account, holdings: newHoldings })
+  }
+
   const saveEdit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSavingEdit(true)
@@ -429,11 +434,23 @@ function AccountCard({
     }
   }
 
-  const handleHoldingAdded = (h: HsaHolding) => setHoldings(prev => [...prev, h])
+  const handleHoldingAdded = (h: HsaHolding) => {
+    const newHoldings = [...holdings, h]
+    setHoldings(newHoldings)
+    notifyHoldingsChanged(newHoldings)
+  }
+
+  const handleHoldingUpdated = (updated: HsaHolding) => {
+    const newHoldings = holdings.map(x => x.id === updated.id ? updated : x)
+    setHoldings(newHoldings)
+    notifyHoldingsChanged(newHoldings)
+  }
 
   const handleDeleteHolding = async (holdingId: string) => {
     await portfolioService.deleteHolding(account.id, holdingId)
-    setHoldings(prev => prev.filter(h => h.id !== holdingId))
+    const newHoldings = holdings.filter(h => h.id !== holdingId)
+    setHoldings(newHoldings)
+    notifyHoldingsChanged(newHoldings)
   }
 
   return (
@@ -571,7 +588,7 @@ function AccountCard({
                 key={h.id}
                 holding={h}
                 accountId={account.id}
-                onUpdated={updated => setHoldings(prev => prev.map(x => x.id === updated.id ? updated : x))}
+                onUpdated={handleHoldingUpdated}
                 onDelete={() => handleDeleteHolding(h.id)}
               />
             ))}
@@ -887,6 +904,25 @@ export default function Portfolio() {
         </div>
       ) : (
         <>
+          {/* Page-level total — computed from accounts state so it stays in sync */}
+          {(() => {
+            const total = accounts.reduce((sum, a) => {
+              const invested = a.holdings.reduce((s, h) => {
+                if (h.last_known_price == null) return s
+                return s + parseFloat(h.shares) * parseFloat(h.last_known_price)
+              }, 0)
+              return sum + (a.cash_balance ? parseFloat(a.cash_balance) : 0) + invested
+            }, 0)
+            return (
+              <div className="flex items-baseline gap-3 mb-6" data-testid="portfolio-total">
+                <span className="text-3xl font-bold text-gray-900">{formatDollars(String(total.toFixed(2)))}</span>
+                <span className="text-sm text-gray-400">
+                  total across {accounts.length} account{accounts.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+            )
+          })()}
+
           <PortfolioHistoryChart />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">

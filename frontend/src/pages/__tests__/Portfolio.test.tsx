@@ -205,6 +205,39 @@ describe('Portfolio page', () => {
     expect(screen.getByRole('button', { name: /edit shares for vti/i })).toBeInTheDocument()
   })
 
+  it('shows total portfolio value near the top when accounts exist', async () => {
+    const account = makeAccount({ cash_balance: '500.00', holdings: [makeHolding()] })
+    ;(portfolioService.listAccounts as any).mockResolvedValue([account])
+    render(<Portfolio />)
+    await waitFor(() => {
+      // 10 shares × $250 + $500 cash = $3,000
+      const totalEl = screen.getByTestId('portfolio-total')
+      expect(totalEl).toHaveTextContent('$3,000.00')
+    })
+  })
+
+  it('total portfolio value updates immediately after editing shares', async () => {
+    const account = makeAccount({ cash_balance: '0.00', holdings: [makeHolding()] })
+    const updatedHolding = makeHolding({ shares: '20.000000' })
+    ;(portfolioService.listAccounts as any).mockResolvedValue([account])
+    ;(portfolioService.updateHolding as any).mockResolvedValue(updatedHolding)
+    render(<Portfolio />)
+    await waitFor(() => screen.getByText('VTI'))
+
+    // Initial: 10 shares × $250 = $2,500
+    expect(screen.getByTestId('portfolio-total')).toHaveTextContent('$2,500.00')
+
+    fireEvent.click(screen.getByRole('button', { name: /edit shares for vti/i }))
+    const input = screen.getByRole('spinbutton', { name: /shares for vti/i })
+    fireEvent.change(input, { target: { value: '20' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      // 20 shares × $250 = $5,000
+      expect(screen.getByTestId('portfolio-total')).toHaveTextContent('$5,000.00')
+    })
+  })
+
   it('projection table renders rows when accounts exist', async () => {
     ;(portfolioService.listAccounts as any).mockResolvedValue([makeAccount()])
     ;(portfolioService.getProjection as any).mockResolvedValue({
