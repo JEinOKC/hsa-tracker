@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import DatePicker from 'react-datepicker'
+import 'react-datepicker/dist/react-datepicker.css'
 import { useSearchParams } from 'react-router-dom'
 import { bankService, BankTransaction, CategorySmartStatus, HSA_CATEGORIES } from '../services/bank'
 import { XIcon, CheckIcon, WarningIcon, PaperclipIcon, ChevronDownIcon, ChevronRightIcon, InfoIcon, ArrowUpIcon } from '../components/icons'
@@ -1526,24 +1528,28 @@ export default function Transactions() {
             <span className="text-sm text-gray-600">Show hidden</span>
           </label>
 
-          {/* Date range — auto-width so iOS date inputs don't stretch full-screen */}
+          {/* Date range */}
           <div className="flex flex-wrap gap-2">
             <div>
               <label className="block text-xs text-gray-400 mb-1 pl-1">From</label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={e => setStartDate(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              <DatePicker
+                selected={startDate ? new Date(startDate + 'T00:00:00') : null}
+                onChange={(date: Date | null) => setStartDate(date ? date.toISOString().slice(0, 10) : '')}
+                dateFormat="MM/dd/yyyy"
+                placeholderText="MM/DD/YYYY"
+                isClearable
+                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 w-36"
               />
             </div>
             <div>
               <label className="block text-xs text-gray-400 mb-1 pl-1">To</label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={e => setEndDate(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              <DatePicker
+                selected={endDate ? new Date(endDate + 'T00:00:00') : null}
+                onChange={(date: Date | null) => setEndDate(date ? date.toISOString().slice(0, 10) : '')}
+                dateFormat="MM/dd/yyyy"
+                placeholderText="MM/DD/YYYY"
+                isClearable
+                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 w-36"
               />
             </div>
           </div>
