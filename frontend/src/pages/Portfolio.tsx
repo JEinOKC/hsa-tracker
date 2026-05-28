@@ -403,11 +403,50 @@ function AutoInvestPanel({
   const [allocations, setAllocations] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
 
+  // Keep a ref to the latest callback so the mount effect never goes stale
+  const onSharesUpdatedRef = useRef(onSharesUpdated)
+  onSharesUpdatedRef.current = onSharesUpdated
+
   useEffect(() => {
-    portfolioService.listAutoInvestSchedules(accountId)
-      .then(setSchedules)
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    let cancelled = false
+
+    const init = async () => {
+      try {
+        let current = await portfolioService.listAutoInvestSchedules(accountId)
+        if (cancelled) return
+
+        // Auto-apply any due active schedules (handles multiple missed periods)
+        let anyApplied = false
+        const dueOnes = current.filter(s => s.is_active && s.is_due)
+        for (const schedule of dueOnes) {
+          let stillDue = true
+          while (stillDue && !cancelled) {
+            try {
+              const result = await portfolioService.applyAutoInvest(schedule.id)
+              anyApplied = true
+              const today = new Date().toISOString().slice(0, 10)
+              stillDue = result.next_contribution_date <= today
+            } catch {
+              stillDue = false
+            }
+          }
+        }
+
+        if (cancelled) return
+
+        // Reload to reflect updated next_contribution_date / is_due flags
+        current = await portfolioService.listAutoInvestSchedules(accountId)
+        if (!cancelled) {
+          setSchedules(current)
+          if (anyApplied) onSharesUpdatedRef.current()
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    init()
+    return () => { cancelled = true }
   }, [accountId])
 
   // When form opens, pre-fill allocations evenly across holdings
@@ -662,10 +701,12 @@ function AccountCard({
   account,
   onUpdated,
   onDeleted,
+  onAutoInvestApplied,
 }: {
   account: HsaAccount
   onUpdated: (account: HsaAccount) => void
   onDeleted: (id: string) => void
+  onAutoInvestApplied: () => Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
   const [editInstitution, setEditInstitution] = useState(account.institution_name)
@@ -903,11 +944,7 @@ function AccountCard({
       <AutoInvestPanel
         accountId={account.id}
         holdings={holdings}
-        onSharesUpdated={async () => {
-          const updated = await portfolioService.listAccounts()
-          const fresh = updated.find(a => a.id === account.id)
-          if (fresh) onUpdated(fresh)
-        }}
+        onSharesUpdated={onAutoInvestApplied}
       />
     </div>
   )
@@ -922,7 +959,7 @@ const RANGE_OPTIONS = [
   { label: '1yr', days: 365 },
 ]
 
-function PortfolioHistoryChart() {
+function PortfolioHistoryChart({ refreshKey }: { refreshKey: number }) {
   const [days, setDays] = useState(90)
   const [points, setPoints] = useState<PortfolioHistoryPoint[]>([])
   const [loading, setLoading] = useState(true)
@@ -933,7 +970,7 @@ function PortfolioHistoryChart() {
       .then(r => setPoints(r.points))
       .catch(() => setPoints([]))
       .finally(() => setLoading(false))
-  }, [days])
+  }, [days, refreshKey])
 
   const chartData = points.map(p => ({
     date: p.date,
@@ -1127,6 +1164,7 @@ export default function Portfolio() {
   const [error, setError] = useState<string | null>(null)
   const [refreshMsg, setRefreshMsg] = useState<string | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
+  const [chartRefreshKey, setChartRefreshKey] = useState(0)
   const autoRefreshing = useRef(false)
 
   const loadAccounts = useCallback(async () => {
@@ -1134,6 +1172,11 @@ export default function Portfolio() {
     setAccounts(data)
     return data
   }, [])
+
+  const handleAutoInvestApplied = useCallback(async () => {
+    await loadAccounts()
+    setChartRefreshKey(k => k + 1)
+  }, [loadAccounts])
 
   // Auto-refresh prices if stale (on mount and on visibility change)
   const maybeAutoRefreshPrices = useCallback(async (data: HsaAccount[]) => {
@@ -1277,7 +1320,7 @@ export default function Portfolio() {
             )
           })()}
 
-          <PortfolioHistoryChart />
+          <PortfolioHistoryChart refreshKey={chartRefreshKey} />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
             {accounts.map(account => (
@@ -1286,6 +1329,7 @@ export default function Portfolio() {
                 account={account}
                 onUpdated={handleAccountUpdated}
                 onDeleted={handleAccountDeleted}
+                onAutoInvestApplied={handleAutoInvestApplied}
               />
             ))}
           </div>

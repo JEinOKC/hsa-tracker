@@ -314,7 +314,33 @@ describe('Auto-invest panel', () => {
     })
   })
 
-  it('shows due contribution banner when is_due is true', async () => {
+  it('auto-applies due schedules on mount without user interaction', async () => {
+    ;(portfolioService.listAutoInvestSchedules as any).mockResolvedValue([
+      makeSchedule({ is_due: true, next_contribution_date: '2026-01-01' }),
+    ])
+    render(<Portfolio />)
+    await waitFor(() => screen.getByText('My Fidelity HSA'))
+    await waitFor(() => {
+      expect(portfolioService.applyAutoInvest).toHaveBeenCalledWith('sched-1')
+    })
+  })
+
+  it('reloads chart after auto-invest is applied', async () => {
+    ;(portfolioService.listAutoInvestSchedules as any).mockResolvedValue([
+      makeSchedule({ is_due: true, next_contribution_date: '2026-01-01' }),
+    ])
+    render(<Portfolio />)
+    await waitFor(() => {
+      expect(portfolioService.applyAutoInvest).toHaveBeenCalled()
+    })
+    await waitFor(() => {
+      // getHistory called on mount, then again after auto-apply bumps chartRefreshKey
+      expect((portfolioService.getHistory as any).mock.calls.length).toBeGreaterThan(1)
+    })
+  })
+
+  it('shows due banner as fallback when schedule remains due after auto-apply', async () => {
+    // Mock always returns is_due: true (simulates reload still showing due)
     ;(portfolioService.listAutoInvestSchedules as any).mockResolvedValue([
       makeSchedule({ is_due: true, next_contribution_date: '2026-01-01' }),
     ])
@@ -325,7 +351,7 @@ describe('Auto-invest panel', () => {
     })
   })
 
-  it('calls applyAutoInvest and shows result message on apply', async () => {
+  it('calls applyAutoInvest and shows result message on manual apply', async () => {
     ;(portfolioService.listAutoInvestSchedules as any).mockResolvedValue([
       makeSchedule({ is_due: true }),
     ])
