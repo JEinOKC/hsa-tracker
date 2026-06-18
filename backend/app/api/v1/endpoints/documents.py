@@ -8,11 +8,11 @@ Endpoints:
 """
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -21,7 +21,7 @@ from app.dependencies import get_current_user
 from app.models.bank import BankConnection, BankTransaction, TransactionDocument
 from app.models.user import User
 from app.services.s3 import build_s3_key, s3_service
-from app.utils.access import get_readable_owner_ids, check_permission
+from app.utils.access import check_permission, get_readable_owner_ids
 
 router = APIRouter()
 
@@ -71,13 +71,19 @@ def _get_transaction_or_404(transaction_id: UUID, user: User, db: Session, opera
         db.query(BankTransaction)
         .filter(
             BankTransaction.id == transaction_id,
-            BankTransaction.connection_id.in_(user_connection_ids),
+            or_(
+                BankTransaction.connection_id.in_(user_connection_ids),
+                and_(
+                    BankTransaction.source == "manual",
+                    BankTransaction.user_id.in_(readable_owner_ids),
+                ),
+            ),
         )
         .first()
     )
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found.")
-    # Check resource-level permission
+    # Check resource-level permission (provider-synced transactions only)
     connection = db.query(BankConnection).filter(BankConnection.id == txn.connection_id).first()
     if connection and not check_permission(user, connection.user_id, "documents", operation, db):
         raise HTTPException(status_code=403, detail="Access denied.")

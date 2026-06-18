@@ -18,27 +18,39 @@ from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import func, or_
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models.bank import BankConnection, BankTransaction, TransactionDocument, UserCategoryOverride
+from app.models.bank import (
+    BankConnection,
+    BankTransaction,
+    TransactionDocument,
+    UserCategoryOverride,
+)
 from app.models.family import FamilyMember, HsaEligibilityPeriod
 from app.models.household import Household, HouseholdMembership
 from app.models.user import User
 from app.providers import get_teller_provider, is_teller_configured
-from app.providers.teller.client import TellerAPIError, TellerAuthError, TellerDisconnectedError
-from app.utils.access import get_readable_owner_ids, check_permission
-from app.services.rules_engine import (
-    apply_auto_flag, apply_rules_to_transaction, get_active_rules_for_user,
-    get_smart_hidden_categories, NON_HSA_CATEGORIES, SMART_DEFAULT_HIDDEN,
-    _SMART_MIN_REVIEWED, _SMART_MIN_HSA_RATE,
+from app.providers.teller.client import (
+    TellerAPIError,
+    TellerAuthError,
+    TellerDisconnectedError,
 )
 from app.services.merchant_keywords import classify_merchant, normalize_merchant_name
+from app.services.rules_engine import (
+    _SMART_MIN_HSA_RATE,
+    _SMART_MIN_REVIEWED,
+    SMART_DEFAULT_HIDDEN,
+    apply_auto_flag,
+    apply_rules_to_transaction,
+    get_active_rules_for_user,
+    get_smart_hidden_categories,
+)
+from app.utils.access import check_permission, get_readable_owner_ids
 
 router = APIRouter()
 
@@ -388,7 +400,7 @@ async def get_bank_status(
     current_user: User = Depends(get_current_user),
 ):
     """Check whether a bank provider is configured and how many accounts are connected."""
-    active = db.query(BankConnection).filter(BankConnection.is_active == True).count()
+    active = db.query(BankConnection).filter(BankConnection.is_active.is_(True)).count()
     return BankStatusResponse(
         teller_configured=is_teller_configured(),
         active_connections=active,
@@ -417,7 +429,7 @@ async def get_dashboard_summary(
     readable_owner_ids = get_readable_owner_ids(current_user, db, resource="transactions")
     user_connection_ids = (
         db.query(BankConnection.id)
-        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active == True)
+        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active.is_(True))
         .subquery()
     )
 
@@ -428,7 +440,7 @@ async def get_dashboard_summary(
     def date_filters():
         f = [
             BankTransaction.connection_id.in_(user_connection_ids),
-            BankTransaction.is_hsa_eligible == True,
+            BankTransaction.is_hsa_eligible.is_(True),
         ]
         if start_date:
             f.append(BankTransaction.transaction_date >= start_date)
@@ -492,7 +504,7 @@ async def get_dashboard_summary(
     ).first() is not None
     readable_bank_ids = get_readable_owner_ids(current_user, db, resource="bank_accounts")
     has_connections = db.query(BankConnection).filter(
-        BankConnection.user_id.in_(readable_bank_ids), BankConnection.is_active == True
+        BankConnection.user_id.in_(readable_bank_ids), BankConnection.is_active.is_(True)
     ).first() is not None
     has_transactions = db.query(BankTransaction).filter(
         BankTransaction.connection_id.in_(user_connection_ids)
@@ -520,7 +532,7 @@ async def get_smart_filter_status(
 
     user_connection_ids = (
         db.query(BC.id)
-        .filter(BC.user_id == current_user.id, BC.is_active == True)  # noqa: E712
+        .filter(BC.user_id == current_user.id, BC.is_active.is_(True))
         .subquery()
     )
 
@@ -529,7 +541,7 @@ async def get_smart_filter_status(
         db.query(
             BankTransaction.details["category"].astext.label("category"),
             func.count().filter(BankTransaction.is_hsa_eligible.isnot(None)).label("reviewed"),
-            func.count().filter(BankTransaction.is_hsa_eligible == True).label("hsa_count"),  # noqa: E712
+            func.count().filter(BankTransaction.is_hsa_eligible.is_(True)).label("hsa_count"),
         )
         .filter(
             BankTransaction.connection_id.in_(user_connection_ids),
@@ -626,7 +638,7 @@ async def list_transaction_categories(
     readable_owner_ids = get_readable_owner_ids(current_user, db, resource="transactions")
     user_connection_ids = (
         db.query(BankConnection.id)
-        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active == True)
+        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active.is_(True))
         .subquery()
     )
     rows = (
@@ -657,7 +669,7 @@ async def list_transaction_merchants(
     readable_owner_ids = get_readable_owner_ids(current_user, db, resource="transactions")
     user_connection_ids = (
         db.query(BankConnection.id)
-        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active == True)
+        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active.is_(True))
         .subquery()
     )
 
@@ -768,7 +780,7 @@ def _build_transaction_query(
         if is_hsa_eligible and include_potential_hsa:
             # Confirmed HSA eligible OR unreviewed auto-flagged as potential
             query = query.filter(
-                (BankTransaction.is_hsa_eligible == True) |  # noqa: E712
+                (BankTransaction.is_hsa_eligible.is_(True)) |
                 (
                     BankTransaction.is_hsa_eligible.is_(None) &
                     (BankTransaction.auto_flag == "potential_hsa")
@@ -843,7 +855,7 @@ async def count_transactions(
     readable_owner_ids = get_readable_owner_ids(current_user, db, resource="transactions")
     user_connection_ids = (
         db.query(BankConnection.id)
-        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active == True)
+        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active.is_(True))
         .subquery()
     )
     return _build_transaction_query(
@@ -889,7 +901,7 @@ async def list_all_transactions(
     readable_owner_ids = get_readable_owner_ids(current_user, db, resource="transactions")
     user_connection_ids = (
         db.query(BankConnection.id)
-        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active == True)
+        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active.is_(True))
         .subquery()
     )
     query = _build_transaction_query(
@@ -967,14 +979,17 @@ async def annotate_transaction(
         db.query(BankTransaction)
         .filter(
             BankTransaction.id == transaction_id,
-            BankTransaction.connection_id.in_(user_connection_ids),
+            or_(
+                BankTransaction.connection_id.in_(user_connection_ids),
+                (BankTransaction.source == "manual") & BankTransaction.user_id.in_(readable_owner_ids),
+            ),
         )
         .first()
     )
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found.")
 
-    # Check write permission on the transaction's owner
+    # Check write permission on the transaction's owner (provider-synced only)
     connection = db.query(BankConnection).filter(BankConnection.id == txn.connection_id).first()
     if connection and not check_permission(current_user, connection.user_id, "transactions", "write", db):
         raise HTTPException(status_code=403, detail="Write access denied.")
@@ -1019,7 +1034,7 @@ async def list_bank_accounts(
     readable_owner_ids = get_readable_owner_ids(current_user, db, resource="bank_accounts")
     connections = (
         db.query(BankConnection)
-        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active == True)
+        .filter(BankConnection.user_id.in_(readable_owner_ids), BankConnection.is_active.is_(True))
         .all()
     )
     # Build owner lookup for attribution
@@ -1153,7 +1168,7 @@ async def sync_all_accounts(
         db.query(BankConnection)
         .filter(
             BankConnection.user_id.in_(readable_owner_ids),
-            BankConnection.is_active == True,
+            BankConnection.is_active.is_(True),
             BankConnection.connection_status == "connected",
             BankConnection.enrollment_token.isnot(None),
         )
@@ -1294,7 +1309,7 @@ async def list_account_transactions(
     current_user: User = Depends(get_current_user),
 ):
     """List transactions stored in the database for a connected account."""
-    connection = _get_connection_or_404(account_id, current_user, db)
+    _get_connection_or_404(account_id, current_user, db)
 
     query = db.query(BankTransaction).filter(BankTransaction.connection_id == account_id)
 
