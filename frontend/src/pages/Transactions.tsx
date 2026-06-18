@@ -963,9 +963,10 @@ interface TxnRowProps {
   tab: Tab
   onChange: (updated: BankTransaction) => void
   onTag?: (txn: BankTransaction) => void
+  onDelete?: (id: string) => void
 }
 
-function TxnRow({ txn, members, tab, onChange, onTag }: TxnRowProps) {
+function TxnRow({ txn, members, tab, onChange, onTag, onDelete }: TxnRowProps) {
   const amount = parseFloat(txn.amount)
   const [expanded, setExpanded] = useState(false)
   const [docCount, setDocCount] = useState(txn.document_count ?? 0)
@@ -1097,6 +1098,18 @@ function TxnRow({ txn, members, tab, onChange, onTag }: TxnRowProps) {
             transactionId={txn.id}
             onEligibleAmountChange={(amount) => onChange({ ...txn, eligible_amount: amount })}
           />
+          {txn.source === 'manual' && onDelete && (
+            <div className="mt-3 pt-3 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => {
+                  if (confirm('Delete this manually-entered transaction?')) onDelete(txn.id)
+                }}
+                className="text-xs text-red-400 hover:text-red-600 transition-colors"
+              >
+                Delete transaction
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1241,6 +1254,15 @@ export default function Transactions() {
 
   const handleChange = useCallback((updated: BankTransaction) => {
     setTransactions(prev => prev.map(t => t.id === updated.id ? updated : t))
+  }, [])
+
+  const handleDeleteManual = useCallback(async (id: string) => {
+    try {
+      await bankService.deleteManualTransaction(id)
+      setTransactions(prev => prev.filter(t => t.id !== id))
+    } catch {
+      // leave transaction in list if delete fails
+    }
   }, [])
 
   // ── Tag flow ──────────────────────────────────────────────────────────────
@@ -1710,6 +1732,7 @@ export default function Transactions() {
               tab={tab}
               onChange={handleChange}
               onTag={setTagPromptTxn}
+              onDelete={handleDeleteManual}
             />
           ))
         )}

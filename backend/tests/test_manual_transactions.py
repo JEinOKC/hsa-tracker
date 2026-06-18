@@ -13,10 +13,8 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-
 from app.models.bank import BankConnection, BankTransaction
 from app.models.user import User
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -107,7 +105,7 @@ class TestMerchantsEndpoint:
     def test_has_hsa_flag_set_when_any_txn_is_hsa_eligible(self, client, db_session, test_user, auth_headers):
         conn = _make_connection(db_session, test_user.id)
         t1 = _make_teller_txn(db_session, conn.id, details={"counterparty": {"name": "CVS PHARMACY"}})
-        t2 = _make_teller_txn(db_session, conn.id, details={"counterparty": {"name": "CVS PHARMACY"}})
+        _make_teller_txn(db_session, conn.id, details={"counterparty": {"name": "CVS PHARMACY"}})
         t1.is_hsa_eligible = True
         db_session.commit()
 
@@ -503,4 +501,56 @@ class TestDeleteManualTransaction:
         db_session.commit()
 
         r = client.delete(f"/api/v1/transactions/{txn.id}")
+
         assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Regression: PATCH /bank/transactions/{id} must work for manual transactions
+# ---------------------------------------------------------------------------
+
+class TestAnnotateManualTransaction:
+    """PATCH /bank/transactions/{id} must accept manual (connection_id=NULL) transactions."""
+
+    def test_can_set_hsa_eligible_on_manual_transaction(self, client, db_session, test_user, auth_headers):
+        txn = _make_manual_txn(db_session, test_user.id, merchant_name="Baptist Pulmonary Medical")
+        db_session.commit()
+
+        r = client.patch(
+            f"/api/v1/bank/transactions/{txn.id}",
+            json={"is_hsa_eligible": True, "hsa_category": "medical"},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["is_hsa_eligible"] is True
+        assert data["hsa_category"] == "medical"
+
+    def test_can_set_notes_on_manual_transaction(self, client, db_session, test_user, auth_headers):
+        txn = _make_manual_txn(db_session, test_user.id)
+        db_session.commit()
+
+        r = client.patch(
+            f"/api/v1/bank/transactions/{txn.id}",
+            json={"notes": "co-pay for pulmonologist"},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        assert r.json()["notes"] == "co-pay for pulmonologist"
+
+    def test_patch_manual_transaction_not_visible_to_other_user(self, client, db_session, test_user, auth_headers):
+        other_user = User(
+            id=uuid.uuid4(), username="other_patch_user",
+            display_name="Other", is_active=True, is_superuser=False,
+        )
+        db_session.add(other_user)
+        db_session.flush()
+        txn = _make_manual_txn(db_session, other_user.id)
+        db_session.commit()
+
+        r = client.patch(
+            f"/api/v1/bank/transactions/{txn.id}",
+            json={"is_hsa_eligible": True},
+            headers=auth_headers,
+        )
+        assert r.status_code == 404

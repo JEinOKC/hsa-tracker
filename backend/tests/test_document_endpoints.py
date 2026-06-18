@@ -8,11 +8,8 @@ import uuid
 from datetime import date, datetime
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.models.bank import BankConnection, BankTransaction, TransactionDocument
 from app.models.user import User
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -448,3 +445,82 @@ class TestReimbursedAt:
         assert resp.status_code == 200
         data = resp.json()
         assert "2026-01-15" in data["reimbursed_at"]
+
+
+# ---------------------------------------------------------------------------
+# Regression: document endpoints must work for manual transactions
+# ---------------------------------------------------------------------------
+
+def _make_manual_transaction(db_session, user_id):
+    import uuid as _uuid
+    from decimal import Decimal
+
+    from app.models.bank import BankTransaction
+    txn = BankTransaction(
+        id=_uuid.uuid4(),
+        connection_id=None,
+        user_id=user_id,
+        source="manual",
+        provider="manual",
+        provider_transaction_id=f"manual_{_uuid.uuid4().hex[:8]}",
+        transaction_date=date(2026, 6, 2),
+        description="Pulmonologist co-pay",
+        amount=Decimal("-60.00"),
+        transaction_type="manual",
+        status="posted",
+        details={"counterparty": {"name": "Baptist Pulmonary Medical"}},
+        is_hsa_eligible=True,
+    )
+    db_session.add(txn)
+    db_session.flush()
+    return txn
+
+
+class TestManualTransactionDocuments:
+    """Presign and list endpoints must work for manual (connection_id=NULL) transactions."""
+
+    def test_presign_works_for_manual_transaction(self, client, auth_headers, test_user, db_session):
+        txn = _make_manual_transaction(db_session, test_user.id)
+        db_session.commit()
+
+        with patch("app.api.v1.endpoints.documents.s3_service", _mock_s3()):
+            resp = client.post(
+                f"/api/v1/bank/transactions/{txn.id}/documents/presign",
+                json={"filename": "receipt.jpg", "content_type": "image/jpeg", "file_size_bytes": 1024},
+                headers=auth_headers,
+            )
+        assert resp.status_code == 201, resp.text
+        data = resp.json()
+        assert "upload_url" in data
+        assert "document_id" in data
+
+    def test_presign_returns_404_for_other_users_manual_transaction(self, client, auth_headers, db_session):
+        other_user = User(
+            id=uuid.uuid4(), username="other_doc_manual_user",
+            display_name="Other", is_active=True, is_superuser=False,
+        )
+        db_session.add(other_user)
+        db_session.flush()
+        txn = _make_manual_transaction(db_session, other_user.id)
+        db_session.commit()
+
+        with patch("app.api.v1.endpoints.documents.s3_service", _mock_s3()):
+            resp = client.post(
+                f"/api/v1/bank/transactions/{txn.id}/documents/presign",
+                json={"filename": "receipt.jpg", "content_type": "image/jpeg", "file_size_bytes": 1024},
+                headers=auth_headers,
+            )
+        assert resp.status_code == 404
+
+    def test_list_documents_works_for_manual_transaction(self, client, auth_headers, test_user, db_session):
+        txn = _make_manual_transaction(db_session, test_user.id)
+        _make_document(db_session, txn.id, test_user.id, status="confirmed")
+        db_session.commit()
+
+        with patch("app.api.v1.endpoints.documents.s3_service", _mock_s3()):
+            resp = client.get(
+                f"/api/v1/bank/transactions/{txn.id}/documents",
+                headers=auth_headers,
+            )
+        assert resp.status_code == 200
+        assert len(resp.json()) == 1
