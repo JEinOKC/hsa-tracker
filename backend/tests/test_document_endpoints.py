@@ -102,23 +102,23 @@ class TestDocumentAuthRequired:
             f"/api/v1/bank/transactions/{uuid.uuid4()}/documents/presign",
             json={"filename": "r.jpg", "content_type": "image/jpeg", "file_size_bytes": 1000},
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     def test_confirm_requires_auth(self, client):
         resp = client.post(
             f"/api/v1/bank/transactions/{uuid.uuid4()}/documents/{uuid.uuid4()}/confirm"
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     def test_list_requires_auth(self, client):
         resp = client.get(f"/api/v1/bank/transactions/{uuid.uuid4()}/documents")
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     def test_delete_requires_auth(self, client):
         resp = client.delete(
             f"/api/v1/bank/transactions/{uuid.uuid4()}/documents/{uuid.uuid4()}"
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
 
 # ---------------------------------------------------------------------------

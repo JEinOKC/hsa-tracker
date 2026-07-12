@@ -12,6 +12,7 @@ import DocumentUpload from '../components/DocumentUpload'
 import RuleEditor from '../components/RuleEditor'
 import MerchantManager from '../components/MerchantManager'
 import ManualTransactionForm from '../components/ManualTransactionForm'
+import LmnPicker from '../components/LmnPicker'
 
 function formatAmount(amount: string): string {
   const n = parseFloat(amount)
@@ -1087,6 +1088,11 @@ function TxnRow({ txn, members, tab, onChange, onTag, onDelete }: TxnRowProps) {
           {txn.is_hsa_eligible === true && (
             <div className="mb-3">
               <EligibleAmountEditor txn={txn} onChange={onChange} />
+            </div>
+          )}
+          {txn.is_hsa_eligible === true && (
+            <div className="mb-3">
+              <LmnPicker txn={txn} onChange={onChange} />
             </div>
           )}
           <DocumentUpload

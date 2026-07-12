@@ -2,6 +2,7 @@
 
 from app.models.bank import BankConnection, BankTransaction
 from app.models.family import FamilyMember, HsaEligibilityPeriod
+from app.models.lmn import LmnDocument
 from app.models.portfolio import (
     AutoInvestAllocation,
     AutoInvestSchedule,
@@ -14,7 +15,7 @@ from app.models.user import User, UserBackupCode, UserPasskey, UserTOTP
 __all__ = [
     "User", "UserPasskey", "UserTOTP", "UserBackupCode",
     "BankConnection", "BankTransaction",
-    "FamilyMember", "HsaEligibilityPeriod",
+    "FamilyMember", "HsaEligibilityPeriod", "LmnDocument",
     "HsaRule", "HsaRuleCondition", "HsaRuleAction",
     "HsaAccount", "HsaHolding", "AutoInvestSchedule", "AutoInvestAllocation",
 ]

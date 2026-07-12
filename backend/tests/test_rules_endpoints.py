@@ -6,12 +6,9 @@ Tests CRUD operations, auth guards, reorder, and apply endpoint.
 import uuid
 from datetime import datetime
 
-import pytest
-
-from app.models.rules import HsaRule, HsaRuleCondition, HsaRuleAction
 from app.models.bank import BankConnection, BankTransaction
+from app.models.rules import HsaRule, HsaRuleAction, HsaRuleCondition
 from app.models.user import User
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -139,25 +136,25 @@ def _make_transaction(db_session, connection_id, description="CVS Pharmacy", det
 
 class TestRulesAuthRequired:
     def test_list_rules_requires_auth(self, client):
-        assert client.get("/api/v1/bank/rules").status_code == 403
+        assert client.get("/api/v1/bank/rules").status_code == 401
 
     def test_create_rule_requires_auth(self, client):
-        assert client.post("/api/v1/bank/rules", json=_rule_payload()).status_code == 403
+        assert client.post("/api/v1/bank/rules", json=_rule_payload()).status_code == 401
 
     def test_get_rule_requires_auth(self, client):
-        assert client.get(f"/api/v1/bank/rules/{uuid.uuid4()}").status_code == 403
+        assert client.get(f"/api/v1/bank/rules/{uuid.uuid4()}").status_code == 401
 
     def test_update_rule_requires_auth(self, client):
-        assert client.put(f"/api/v1/bank/rules/{uuid.uuid4()}", json=_rule_payload()).status_code == 403
+        assert client.put(f"/api/v1/bank/rules/{uuid.uuid4()}", json=_rule_payload()).status_code == 401
 
     def test_delete_rule_requires_auth(self, client):
-        assert client.delete(f"/api/v1/bank/rules/{uuid.uuid4()}").status_code == 403
+        assert client.delete(f"/api/v1/bank/rules/{uuid.uuid4()}").status_code == 401
 
     def test_reorder_requires_auth(self, client):
-        assert client.patch("/api/v1/bank/rules/reorder", json=[]).status_code == 403
+        assert client.patch("/api/v1/bank/rules/reorder", json=[]).status_code == 401
 
     def test_apply_requires_auth(self, client):
-        assert client.post("/api/v1/bank/rules/apply").status_code == 403
+        assert client.post("/api/v1/bank/rules/apply").status_code == 401
 
 
 # ---------------------------------------------------------------------------
@@ -478,7 +475,7 @@ class TestApplyRules:
 class TestTransactionFilters:
     def test_hidden_transactions_excluded_by_default(self, client, auth_headers, db_session, test_user):
         conn = _make_connection(db_session, test_user.id)
-        visible = _make_transaction(db_session, conn.id, description="Visible")
+        _visible = _make_transaction(db_session, conn.id, description="Visible")
         hidden = _make_transaction(db_session, conn.id, description="Hidden")
         hidden.auto_flag = "hidden"
         db_session.commit()
@@ -508,7 +505,7 @@ class TestTransactionFilters:
         conn = _make_connection(db_session, test_user.id)
         potential = _make_transaction(db_session, conn.id, description="Potential")
         potential.auto_flag = "potential_hsa"
-        normal = _make_transaction(db_session, conn.id, description="Normal")
+        _normal = _make_transaction(db_session, conn.id, description="Normal")
         db_session.commit()
 
         resp = client.get(
@@ -551,7 +548,7 @@ _PREVIEW_PAYLOAD = {
 
 class TestPreviewRule:
     def test_preview_requires_auth(self, client):
-        assert client.post("/api/v1/bank/rules/preview", json=_PREVIEW_PAYLOAD).status_code == 403
+        assert client.post("/api/v1/bank/rules/preview", json=_PREVIEW_PAYLOAD).status_code == 401
 
     def test_preview_returns_matching_transactions(self, client, auth_headers, db_session, test_user):
         conn = _make_connection(db_session, test_user.id)

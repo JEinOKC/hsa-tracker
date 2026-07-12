@@ -75,19 +75,19 @@ def _make_holding(db_session, account_id, ticker="VTI", shares="10.0"):
 
 class TestPortfolioAuthRequired:
     def test_list_accounts_requires_auth(self, client):
-        assert client.get("/api/v1/portfolio/accounts").status_code == 403
+        assert client.get("/api/v1/portfolio/accounts").status_code == 401
 
     def test_create_account_requires_auth(self, client):
-        assert client.post("/api/v1/portfolio/accounts", json={"institution_name": "Fidelity"}).status_code == 403
+        assert client.post("/api/v1/portfolio/accounts", json={"institution_name": "Fidelity"}).status_code == 401
 
     def test_summary_requires_auth(self, client):
-        assert client.get("/api/v1/portfolio/summary").status_code == 403
+        assert client.get("/api/v1/portfolio/summary").status_code == 401
 
     def test_projection_requires_auth(self, client):
-        assert client.get("/api/v1/portfolio/projection").status_code == 403
+        assert client.get("/api/v1/portfolio/projection").status_code == 401
 
     def test_refresh_prices_requires_auth(self, client):
-        assert client.post("/api/v1/portfolio/prices/refresh").status_code == 403
+        assert client.post("/api/v1/portfolio/prices/refresh").status_code == 401
 
 
 # ---------------------------------------------------------------------------
@@ -398,7 +398,7 @@ class TestHoldingSnapshots:
         assert db_session.query(HoldingSnapshot).count() == 0
 
     def test_history_requires_auth(self, client):
-        assert client.get("/api/v1/portfolio/history").status_code == 403
+        assert client.get("/api/v1/portfolio/history").status_code == 401
 
     def test_history_returns_daily_totals(self, client, auth_headers, db_session, test_user):
         """History endpoint should aggregate snapshots by date."""

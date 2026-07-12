@@ -1,7 +1,7 @@
 """Bank connection and transaction models for provider-ingested data."""
 
 import uuid
-from datetime import date, datetime
+from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
@@ -115,6 +115,14 @@ class BankTransaction(Base):
     reimbursed_at = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
 
+    # Letter of Medical Necessity — optional link to an LMN document
+    lmn_document_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("lmn_documents.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Rules engine fields — set by auto-flag logic or user rules
     auto_flag = Column(String(20), nullable=True, index=True)  # 'potential_hsa' | 'hidden'
     rule_id = Column(
@@ -128,6 +136,7 @@ class BankTransaction(Base):
 
     connection = relationship("BankConnection", back_populates="transactions")
     family_member = relationship("FamilyMember", foreign_keys=[family_member_id])
+    lmn_document = relationship("LmnDocument", foreign_keys=[lmn_document_id])
     rule = relationship("HsaRule", foreign_keys=[rule_id])
     documents = relationship(
         "TransactionDocument",

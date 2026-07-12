@@ -2,22 +2,30 @@
 
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
 from alembic import context
+from app.config import settings
 
 # Import the Base and all models
 from app.database import Base
-from app.config import settings
+
 # Import all models so Alembic can detect them
-from app.models import User, UserPasskey, UserTOTP, UserBackupCode  # noqa: F401
-from app.models.user import RegistrationToken, FamilyInvite  # noqa: F401
-from app.models.bank import BankConnection, BankTransaction, TransactionDocument  # noqa: F401
+from app.models import User, UserBackupCode, UserPasskey, UserTOTP  # noqa: F401
+from app.models.access import AccountAccess, AccountRole  # noqa: F401
+from app.models.bank import (  # noqa: F401
+    BankConnection,
+    BankTransaction,
+    TransactionDocument,
+)
 from app.models.family import FamilyMember, HsaEligibilityPeriod  # noqa: F401
-from app.models.household import Household, HouseholdMembership, HouseholdRole  # noqa: F401
-from app.models.access import AccountRole, AccountAccess  # noqa: F401
+from app.models.household import (  # noqa: F401
+    Household,
+    HouseholdMembership,
+    HouseholdRole,
+)
+from app.models.lmn import LmnDocument  # noqa: F401
 from app.models.push_subscription import PushSubscription  # noqa: F401
+from app.models.user import FamilyInvite, RegistrationToken  # noqa: F401
+from sqlalchemy import engine_from_config, pool
 
 # this is the Alembic Config object
 config = context.config

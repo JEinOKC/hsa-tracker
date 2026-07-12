@@ -77,6 +77,8 @@ export interface BankTransaction {
   institution_name: string | null
   document_count: number
   owner_display_name?: string | null
+  // Letter of Medical Necessity
+  lmn_document_id: string | null
   // Rules engine fields
   auto_flag: 'potential_hsa' | 'hidden' | null
   rule_id: string | null
@@ -95,6 +97,7 @@ export interface BankTransactionAnnotation {
   reimbursed_at?: string | null
   notes?: string | null
   auto_flag?: 'hidden' | null
+  lmn_document_id?: string | null
 }
 
 export interface CategorySmartStatus {

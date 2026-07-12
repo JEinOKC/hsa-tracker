@@ -15,10 +15,7 @@ import uuid
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
-import pytest
-
 from app.models.user import FamilyInvite, User
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -77,7 +74,7 @@ class TestCreateInvite:
 
     def test_requires_auth(self, client):
         response = client.post("/api/v1/family-invites", json={})
-        assert response.status_code == 403
+        assert response.status_code == 401
 
 
 # ── GET /family-invites ───────────────────────────────────────────────────────

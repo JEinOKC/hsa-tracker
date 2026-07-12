@@ -3,24 +3,19 @@
 Uses SQLite in-memory DB (via conftest fixtures) and no external services.
 """
 
-import io
 import textwrap
 import uuid
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
-
-import pytest
 
 from app.models.bank import (
     BankConnection,
     BankTransaction,
     PharmacyFill,
     PharmacyImportBatch,
-    ReceiptLineItem,
 )
 from app.models.user import User
 from app.utils.security import create_access_token
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -133,22 +128,22 @@ _CVS_CSV_UNMATCHED = textwrap.dedent("""\
 class TestReceiptAuthGuards:
     def test_cvs_import_requires_auth(self, client):
         resp = client.post("/api/v1/bank/imports/cvs-pharmacy", files={"file": ("f.csv", b"x", "text/csv")})
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     def test_list_fills_requires_auth(self, client):
         resp = client.get("/api/v1/bank/pharmacy-fills")
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     def test_list_line_items_requires_auth(self, client):
         resp = client.get(f"/api/v1/bank/transactions/{uuid.uuid4()}/line-items")
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     def test_import_line_items_csv_requires_auth(self, client):
         resp = client.post(
             f"/api/v1/bank/transactions/{uuid.uuid4()}/line-items/import-csv",
             files={"file": ("f.csv", b"description,amount\nItem,5.00", "text/csv")},
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +261,7 @@ class TestCvsPharmacyImport:
     def test_import_matches_within_3_day_tolerance(self, client, db_session, test_user):
         conn = _make_connection(db_session, test_user.id)
         # Transaction is 2 days after the fill date
-        txn = _make_transaction(db_session, conn.id, txn_date=date(2026, 3, 29), amount="-10.00")
+        _txn = _make_transaction(db_session, conn.id, txn_date=date(2026, 3, 29), amount="-10.00")
         db_session.commit()
 
         csv_bytes = textwrap.dedent("""\
@@ -329,7 +324,7 @@ class TestCvsPharmacyImport:
 
     def test_import_matches_manual_transaction(self, client, db_session, test_user):
         """Manual transactions (no connection_id) should also be matched."""
-        txn = _make_manual_transaction(db_session, test_user.id, txn_date=date(2026, 3, 27), amount="-10.00")
+        _txn = _make_manual_transaction(db_session, test_user.id, txn_date=date(2026, 3, 27), amount="-10.00")
         db_session.commit()
 
         csv_bytes = textwrap.dedent("""\

@@ -4,11 +4,9 @@ import uuid
 from datetime import date, datetime
 
 import pytest
-
 from app.models.family import FamilyMember, HsaEligibilityPeriod
-from app.models.household import Household, HouseholdMembership, HouseholdRole
+from app.models.household import Household
 from app.models.user import User
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -53,16 +51,16 @@ def member_with_eligibility(db_session, member):
 
 class TestFamilyAuthRequired:
     def test_list_requires_auth(self, client):
-        assert client.get("/api/v1/families/").status_code == 403
+        assert client.get("/api/v1/families/").status_code == 401
 
     def test_create_requires_auth(self, client):
-        assert client.post("/api/v1/families/", json={"name": "X", "member_relationship": "self"}).status_code == 403
+        assert client.post("/api/v1/families/", json={"name": "X", "member_relationship": "self"}).status_code == 401
 
     def test_get_requires_auth(self, client):
-        assert client.get(f"/api/v1/families/{uuid.uuid4()}").status_code == 403
+        assert client.get(f"/api/v1/families/{uuid.uuid4()}").status_code == 401
 
     def test_eligibility_requires_auth(self, client):
-        assert client.get(f"/api/v1/families/{uuid.uuid4()}/eligibility").status_code == 403
+        assert client.get(f"/api/v1/families/{uuid.uuid4()}/eligibility").status_code == 401
 
 
 # ---------------------------------------------------------------------------

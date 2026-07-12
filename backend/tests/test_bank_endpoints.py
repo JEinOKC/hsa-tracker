@@ -5,15 +5,13 @@ DB operations, auth guards, and error handling, not Teller's servers.
 """
 
 import uuid
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from app.models.bank import BankConnection, BankTransaction
 from app.providers.base import ExternalAccount, ExternalBalance, ExternalTransaction
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -81,16 +79,16 @@ def _make_connection(
 
 class TestBankAuthRequired:
     def test_status_requires_auth(self, client):
-        assert client.get("/api/v1/bank/status").status_code == 403
+        assert client.get("/api/v1/bank/status").status_code == 401
 
     def test_connect_requires_auth(self, client):
-        assert client.post("/api/v1/bank/connect", json={"access_token": "tok"}).status_code == 403
+        assert client.post("/api/v1/bank/connect", json={"access_token": "tok"}).status_code == 401
 
     def test_list_accounts_requires_auth(self, client):
-        assert client.get("/api/v1/bank/accounts").status_code == 403
+        assert client.get("/api/v1/bank/accounts").status_code == 401
 
     def test_sync_requires_auth(self, client):
-        assert client.post(f"/api/v1/bank/accounts/{uuid.uuid4()}/sync").status_code == 403
+        assert client.post(f"/api/v1/bank/accounts/{uuid.uuid4()}/sync").status_code == 401
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +219,7 @@ class TestListBankAccounts:
         assert len(resp.json()) == 2
 
     def test_excludes_inactive_accounts(self, client, auth_headers, db_session, test_user):
-        active = _make_connection(db_session, user_id=test_user.id, provider_account_id="acct_active")
+        _active = _make_connection(db_session, user_id=test_user.id, provider_account_id="acct_active")
         inactive = _make_connection(db_session, user_id=test_user.id, provider_account_id="acct_inactive")
         inactive.is_active = False
         db_session.commit()

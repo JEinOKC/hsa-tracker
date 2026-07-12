@@ -1,7 +1,7 @@
 """Family member models for HSA eligibility tracking."""
 
 import uuid
-from datetime import date, datetime
+from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
@@ -47,6 +47,12 @@ class FamilyMember(Base):
         back_populates="family_member",
         cascade="all, delete-orphan",
         order_by="HsaEligibilityPeriod.start_date",
+    )
+    lmn_documents = relationship(
+        "LmnDocument",
+        back_populates="family_member",
+        cascade="all, delete-orphan",
+        order_by="LmnDocument.uploaded_at",
     )
 
     def __repr__(self):
