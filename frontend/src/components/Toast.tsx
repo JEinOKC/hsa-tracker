@@ -43,7 +43,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       <div
         role="region"
         aria-label="Notifications"
-        className="fixed top-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-80 z-[60] flex flex-col gap-2 pointer-events-none"
+        className="fixed left-4 right-4 sm:left-auto sm:right-4 sm:w-80 z-[60] flex flex-col gap-2 pointer-events-none"
+        style={{ top: 'calc(1rem + env(safe-area-inset-top, 0px))' }}
       >
         {toasts.map(t => (
           <div

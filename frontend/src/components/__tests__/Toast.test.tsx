@@ -59,4 +59,10 @@ describe('Toast', () => {
     fireEvent.click(button)
     expect(screen.getAllByRole('alert')).toHaveLength(2)
   })
+
+  it('accounts for iOS safe area inset', () => {
+    renderWithProvider('Safe area test')
+    const region = screen.getByRole('region', { name: 'Notifications' })
+    expect(region.style.top).toContain('safe-area-inset-top')
+  })
 })
