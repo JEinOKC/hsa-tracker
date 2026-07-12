@@ -33,6 +33,7 @@ from app.models.bank import (
 )
 from app.models.family import FamilyMember, HsaEligibilityPeriod
 from app.models.household import Household, HouseholdMembership
+from app.models.lmn import LmnDocument
 from app.models.user import User
 from app.providers import get_teller_provider, is_teller_configured
 from app.providers.teller.client import (
@@ -124,6 +125,8 @@ class BankTransactionResponse(BaseModel):
     reimbursed_at: Optional[datetime] = None
     # Set for transactions from shared accounts
     owner_display_name: Optional[str] = None
+    # Letter of Medical Necessity
+    lmn_document_id: Optional[UUID] = None
     # Rules engine fields
     auto_flag: Optional[str] = None
     rule_id: Optional[UUID] = None
@@ -157,6 +160,7 @@ class BankTransactionAnnotation(BaseModel):
     reimbursed_at: Optional[datetime] = None
     notes: Optional[str] = None
     auto_flag: Optional[str] = None
+    lmn_document_id: Optional[UUID] = None
 
 
 class SyncResult(BaseModel):
@@ -1002,6 +1006,18 @@ async def annotate_transaction(
     # Clear reimbursed_at when status is removed
     elif "reimbursement_status" in updates and updates["reimbursement_status"] != "reimbursed":
         updates.setdefault("reimbursed_at", None)
+
+    # Validate LMN document if provided
+    if "lmn_document_id" in updates and updates["lmn_document_id"] is not None:
+        lmn_doc = db.query(LmnDocument).filter(LmnDocument.id == updates["lmn_document_id"]).first()
+        if not lmn_doc or lmn_doc.status != "confirmed":
+            raise HTTPException(status_code=422, detail="LMN document not found or not confirmed.")
+        # Verify LMN belongs to user's household
+        household = _get_user_household(current_user.id, db)
+        if household:
+            member = db.query(FamilyMember).filter(FamilyMember.id == lmn_doc.family_member_id).first()
+            if not member or member.household_id != household.id:
+                raise HTTPException(status_code=422, detail="LMN document not found or not confirmed.")
 
     for field, value in updates.items():
         setattr(txn, field, value)

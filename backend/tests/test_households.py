@@ -15,7 +15,6 @@ from datetime import date, datetime
 from app.models.household import Household, HouseholdMembership, HouseholdRole
 from app.models.user import User
 
-
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 def _make_user(db, username="otheruser"):
@@ -107,7 +106,7 @@ class TestCreateHousehold:
 
     def test_requires_auth(self, client):
         r = client.post("/api/v1/households", json={"name": "X"})
-        assert r.status_code == 403
+        assert r.status_code == 401
 
 
 # ── get my household ──────────────────────────────────────────────────────────
@@ -292,8 +291,9 @@ class TestTransferAdmin:
 
 class TestHouseholdPermissions:
     def test_member_can_read_other_members_transactions(self, client, db_session, test_user, auth_headers):
-        from app.models.bank import BankConnection, BankTransaction
         from decimal import Decimal
+
+        from app.models.bank import BankConnection, BankTransaction
 
         h, admin_role = _setup_household_with_admin(db_session, test_user)
         other = _make_user(db_session, "other_txn_perm")
@@ -335,8 +335,9 @@ class TestHouseholdPermissions:
         assert "Other User Purchase" in descriptions
 
     def test_removed_member_loses_access(self, client, db_session, test_user, auth_headers):
-        from app.models.bank import BankConnection, BankTransaction
         from decimal import Decimal
+
+        from app.models.bank import BankConnection, BankTransaction
 
         h, admin_role = _setup_household_with_admin(db_session, test_user)
         other = _make_user(db_session, "other_removed_perm")

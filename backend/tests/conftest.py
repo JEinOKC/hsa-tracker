@@ -19,15 +19,16 @@ os.environ.setdefault("WEBAUTHN_RP_ID", "localhost")
 os.environ.setdefault("WEBAUTHN_RP_NAME", "HSA Tracker Test")
 os.environ.setdefault("WEBAUTHN_ORIGIN", "http://localhost:3001")
 
-import uuid as uuid_module
+import uuid as uuid_module  # noqa: E402
 
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy.ext.compiler import compiles
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import create_engine, event  # noqa: E402
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID  # noqa: E402
+from sqlalchemy.ext.compiler import compiles  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
+from sqlalchemy.pool import StaticPool  # noqa: E402
+
 
 # Make PostgreSQL UUID type work with SQLite:
 # 1) DDL: render as VARCHAR(36) instead of UUID
@@ -63,14 +64,33 @@ def _patched_result_processor(self, dialect, coltype):
 PG_UUID.bind_processor = _patched_bind_processor
 PG_UUID.result_processor = _patched_result_processor
 
-from app.database import Base, get_db
-from app.main import app
-from app.models.user import User, UserPasskey, RegistrationToken, FamilyInvite, PasskeyChallenge  # noqa: F401
-from app.models.access import AccountRole, AccountAccess  # noqa: F401
-from app.models.household import Household, HouseholdRole, HouseholdMembership  # noqa: F401
-from app.models.bank import BankConnection, BankTransaction, TransactionDocument, UserCategoryOverride, PharmacyImportBatch, PharmacyFill, ReceiptLineItem  # noqa: F401
-from app.models.portfolio import HsaAccount, HsaHolding  # noqa: F401
-from app.utils.security import create_access_token
+from app.database import Base, get_db  # noqa: E402
+from app.main import app  # noqa: E402
+from app.models.access import AccountAccess, AccountRole  # noqa: E402, F401
+from app.models.bank import (  # noqa: E402, F401
+    BankConnection,
+    BankTransaction,
+    PharmacyFill,
+    PharmacyImportBatch,
+    ReceiptLineItem,
+    TransactionDocument,
+    UserCategoryOverride,
+)
+from app.models.household import (  # noqa: E402, F401
+    Household,
+    HouseholdMembership,
+    HouseholdRole,
+)
+from app.models.lmn import LmnDocument  # noqa: E402, F401
+from app.models.portfolio import HsaAccount, HsaHolding  # noqa: E402, F401
+from app.models.user import (  # noqa: E402, F401
+    FamilyInvite,
+    PasskeyChallenge,
+    RegistrationToken,
+    User,
+    UserPasskey,
+)
+from app.utils.security import create_access_token  # noqa: E402
 
 
 @pytest.fixture(scope="session")

@@ -4,9 +4,7 @@ import uuid
 from unittest.mock import patch
 
 import pytest
-
 from app.models.push_subscription import PushSubscription
-
 
 SAMPLE_ENDPOINT = "https://push.example.com/sub/abc123"
 SAMPLE_KEYS = {"p256dh": "fake-p256dh-key", "auth": "fake-auth-key"}
@@ -92,7 +90,7 @@ def test_subscribe_requires_auth(client):
         "/api/v1/push/subscribe",
         json={"endpoint": SAMPLE_ENDPOINT, "keys": SAMPLE_KEYS},
     )
-    assert response.status_code == 403
+    assert response.status_code == 401
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +118,7 @@ def test_unsubscribe_requires_auth(client):
         "/api/v1/push/subscribe",
         json={"endpoint": SAMPLE_ENDPOINT, "keys": SAMPLE_KEYS},
     )
-    assert response.status_code == 403
+    assert response.status_code == 401
 
 
 # ---------------------------------------------------------------------------
@@ -150,7 +148,7 @@ def test_send_test_push_returns_zero_when_no_vapid(client, auth_headers):
 
 def test_send_test_push_requires_auth(client):
     response = client.post("/api/v1/push/test")
-    assert response.status_code == 403
+    assert response.status_code == 401
 
 
 # ---------------------------------------------------------------------------
@@ -201,4 +199,4 @@ def test_notify_hsa_review_skips_push_for_zero_count(client, auth_headers):
 
 def test_notify_hsa_review_requires_auth(client):
     response = client.post("/api/v1/push/notify-hsa-review", json={"count": 1})
-    assert response.status_code == 403
+    assert response.status_code == 401

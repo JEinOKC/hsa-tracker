@@ -153,7 +153,7 @@ class TestMerchantsEndpoint:
 
     def test_requires_authentication(self, client):
         r = client.get("/api/v1/bank/transactions/merchants")
-        assert r.status_code == 403
+        assert r.status_code == 401
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +321,7 @@ class TestMatchEndpoint:
 
     def test_requires_authentication(self, client):
         r = client.get("/api/v1/transactions/match", params={"amount": "50.00", "date": "2026-03-01"})
-        assert r.status_code == 403
+        assert r.status_code == 401
 
 
 # ---------------------------------------------------------------------------
@@ -382,7 +382,7 @@ class TestCreateManualTransaction:
             "/api/v1/transactions/",
             json={"transaction_date": "2026-03-15", "amount": "50.00", "merchant_name": "Test"},
         )
-        assert r.status_code == 403
+        assert r.status_code == 401
 
 
 # ---------------------------------------------------------------------------
@@ -456,7 +456,7 @@ class TestUpdateManualTransaction:
         db_session.commit()
 
         r = client.put(f"/api/v1/transactions/{txn.id}", json={"amount": "10.00"})
-        assert r.status_code == 403
+        assert r.status_code == 401
 
 
 # ---------------------------------------------------------------------------
@@ -502,7 +502,7 @@ class TestDeleteManualTransaction:
 
         r = client.delete(f"/api/v1/transactions/{txn.id}")
 
-        assert r.status_code == 403
+        assert r.status_code == 401
 
 
 # ---------------------------------------------------------------------------

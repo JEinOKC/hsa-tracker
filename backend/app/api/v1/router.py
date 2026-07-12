@@ -5,19 +5,20 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     app_config,
     auth,
-    passkey,
-    family_invites,
-    families,
-    transactions,
-    categories,
     bank,
+    categories,
     documents,
+    families,
+    family_invites,
+    households,
+    lmn,
+    passkey,
+    portfolio,
+    push,
     receipts,
     roles,
-    households,
-    push,
     rules,
-    portfolio,
+    transactions,
 )
 
 api_router = APIRouter()
@@ -27,6 +28,7 @@ api_router.include_router(app_config.router, prefix="/config", tags=["App Config
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 api_router.include_router(passkey.router, prefix="/passkey", tags=["Passkey Authentication"])
 api_router.include_router(family_invites.router, prefix="/family-invites", tags=["Family Invites"])
+api_router.include_router(lmn.router, prefix="/families", tags=["LMN Documents"])
 api_router.include_router(families.router, prefix="/families", tags=["Families"])
 api_router.include_router(transactions.router, prefix="/transactions", tags=["Transactions"])
 api_router.include_router(categories.router, prefix="/categories", tags=["Categories"])

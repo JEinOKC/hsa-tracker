@@ -14,10 +14,10 @@ class TestGetCurrentUser:
         assert data["username"] == "testuser"
         assert data["display_name"] == "Test User"
 
-    def test_missing_token_returns_403(self, client):
-        """HTTPBearer with auto_error=True returns 403 when no token provided."""
+    def test_missing_token_returns_401(self, client):
+        """HTTPBearer with auto_error=True returns 401 when no token provided."""
         response = client.get("/api/v1/auth/me")
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     def test_invalid_token_returns_401(self, client):
         response = client.get(

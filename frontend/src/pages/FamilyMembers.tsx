@@ -4,6 +4,7 @@ import 'react-datepicker/dist/react-datepicker.css'
 import { useToast } from '../components/Toast'
 import { useSearchParams } from 'react-router-dom'
 import { familyService, FamilyMember, EligibilityPeriod, FamilyMemberCreate } from '../services/family'
+import LmnUpload from '../components/LmnUpload'
 import familyInvitesService, { FamilyInvite } from '../services/familyInvites'
 import householdsService, { HouseholdDetailOut, HouseholdMemberOut, HouseholdRoleOut, HouseholdRoleCreate as HHRoleCreate } from '../services/households'
 import { useAuthStore } from '../store/authStore'
@@ -366,6 +367,7 @@ interface MemberCardProps {
 function MemberCard({ member, currentUserId, viewerRelationship, householdMember, householdRoles, initialInvite, onUpdated, onDeactivated, autoExpand }: MemberCardProps) {
   const { toast } = useToast()
   const [expanded, setExpanded] = useState(autoExpand ?? false)
+  const [showLmn, setShowLmn] = useState(false)
   const [pendingInvite, setPendingInvite] = useState<FamilyInvite | null>(initialInvite ?? null)
   const [showInviteForm, setShowInviteForm] = useState(false)
   const [inviteRoleId, setInviteRoleId] = useState('')
@@ -485,12 +487,20 @@ function MemberCard({ member, currentUserId, viewerRelationship, householdMember
           {editing ? 'Cancel' : 'Edit'}
         </button>
         {!editing && (
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="text-sm text-sky-600 hover:text-sky-800"
-          >
-            {expanded ? 'Hide Eligibility' : 'Eligibility'}
-          </button>
+          <>
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="text-sm text-sky-600 hover:text-sky-800"
+            >
+              {expanded ? 'Hide Eligibility' : 'Eligibility'}
+            </button>
+            <button
+              onClick={() => setShowLmn(!showLmn)}
+              className="text-sm text-sky-600 hover:text-sky-800"
+            >
+              {showLmn ? 'Hide LMNs' : 'LMNs'}
+            </button>
+          </>
         )}
         <button
           onClick={handleDeactivate}
@@ -599,6 +609,13 @@ function MemberCard({ member, currentUserId, viewerRelationship, householdMember
 
       {expanded && (
         <EligibilityManager member={member} onUpdated={onUpdated} />
+      )}
+
+      {showLmn && (
+        <div className="mt-4 pl-4 border-l-2 border-gray-100">
+          <p className="text-sm font-medium text-gray-600 mb-2">Letters of Medical Necessity</p>
+          <LmnUpload familyMemberId={member.id} />
+        </div>
       )}
     </div>
   )

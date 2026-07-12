@@ -16,15 +16,26 @@ from botocore.exceptions import ClientError
 from app.config import settings
 
 
+def _sanitize_filename(filename: str) -> str:
+    """Strips path components and replaces unsafe characters with underscores."""
+    base = os.path.basename(filename) or "file"
+    return re.sub(r"[^\w.\-]", "_", base)
+
+
 def build_s3_key(app_env: str, user_id: str, transaction_id: str, filename: str) -> str:
     """Build a namespaced S3 object key for a transaction document.
 
     Strips path components (guards against traversal) then replaces any
     remaining characters outside [word chars, dot, dash] with underscores.
     """
-    base = os.path.basename(filename) or "file"
-    safe_name = re.sub(r"[^\w.\-]", "_", base)
+    safe_name = _sanitize_filename(filename)
     return f"{app_env}/{user_id}/{transaction_id}/{_uuid.uuid4()}-{safe_name}"
+
+
+def build_lmn_s3_key(app_env: str, user_id: str, family_member_id: str, filename: str) -> str:
+    """Build a namespaced S3 object key for a Letter of Medical Necessity."""
+    safe_name = _sanitize_filename(filename)
+    return f"{app_env}/{user_id}/lmn/{family_member_id}/{_uuid.uuid4()}-{safe_name}"
 
 
 class S3Service:

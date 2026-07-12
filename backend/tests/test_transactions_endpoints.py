@@ -105,7 +105,7 @@ class TestListAllTransactions:
         db_session.flush()
 
         t1 = _make_txn(db_session, conn.id, description="Jane's Doctor")
-        t2 = _make_txn(db_session, conn.id, description="Other")
+        _t2 = _make_txn(db_session, conn.id, description="Other")
         t1.family_member_id = member.id
         db_session.commit()
 
@@ -120,7 +120,7 @@ class TestListAllTransactions:
 
     def test_requires_authentication(self, client):
         r = client.get("/api/v1/bank/transactions")
-        assert r.status_code == 403
+        assert r.status_code == 401
 
 
 class TestAnnotateTransaction:
@@ -316,7 +316,7 @@ class TestCountTransactions:
 
     def test_count_requires_auth(self, client):
         r = client.get("/api/v1/bank/transactions/count")
-        assert r.status_code in (401, 403)
+        assert r.status_code == 401
 
     def test_count_isolates_by_user(self, client, db_session, test_user, auth_headers):
         other_user = User(

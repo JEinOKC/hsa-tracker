@@ -26,7 +26,7 @@ class TestTransactionStubs:
                 "merchant_name": "CVS Pharmacy",
             },
         )
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     def test_update_requires_auth(self, client):
         import uuid
@@ -34,12 +34,12 @@ class TestTransactionStubs:
             f"/api/v1/transactions/{uuid.uuid4()}",
             json={"amount": "10.00"},
         )
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     def test_delete_requires_auth(self, client):
         import uuid
         response = client.delete(f"/api/v1/transactions/{uuid.uuid4()}")
-        assert response.status_code == 403
+        assert response.status_code == 401
 
 
 # ---------------------------------------------------------------------------

@@ -15,12 +15,13 @@ from datetime import date
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.models.bank import BankConnection, BankTransaction
 from app.providers.base import ExternalAccount, ExternalTransaction
-from app.providers.teller.client import TellerAuthError, TellerDisconnectedError, TellerAPIError
-
+from app.providers.teller.client import (
+    TellerAPIError,
+    TellerAuthError,
+    TellerDisconnectedError,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers (mirror test_bank_endpoints.py patterns)
@@ -312,7 +313,7 @@ class TestSeamlessReconnect:
 
 class TestSyncAll:
     def test_sync_all_returns_per_account_outcomes(self, client, auth_headers, db_session, test_user):
-        good = _make_connection(db_session, user_id=test_user.id, provider_account_id="acct_all_good", token="tok_good")
+        _good = _make_connection(db_session, user_id=test_user.id, provider_account_id="acct_all_good", token="tok_good")
         bad = _make_connection(db_session, user_id=test_user.id, provider_account_id="acct_all_bad", token="tok_bad")
 
         def provider_factory(access_token):
@@ -371,4 +372,4 @@ class TestSyncAll:
         assert resp.status_code == 503
 
     def test_sync_all_requires_auth(self, client):
-        assert client.post("/api/v1/bank/accounts/sync-all").status_code == 403
+        assert client.post("/api/v1/bank/accounts/sync-all").status_code == 401
