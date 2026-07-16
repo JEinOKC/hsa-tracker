@@ -229,10 +229,6 @@ tf-ecr-bootstrap: ## Create ECR repository (one-time, before first deploy)
 		TF_VAR_frontend_domain="$$FRONTEND_DOMAIN" \
 		TF_VAR_api_custom_domain="$$API_CUSTOM_DOMAIN" \
 		TF_VAR_github_repo="$$GITHUB_REPO" \
-		TF_VAR_teller_app_id="$$TELLER_APP_ID" \
-		TF_VAR_teller_cert_b64="$$TELLER_CERT_B64" \
-		TF_VAR_teller_private_key_b64="$$TELLER_PRIVATE_KEY_B64" \
-		TF_VAR_teller_env="$$TELLER_ENV" \
 		TF_VAR_require_invite="$${REQUIRE_INVITE:-true}" \
 		terraform -chdir=terraform apply \
 			-target=aws_ecr_repository.backend \
@@ -279,8 +275,6 @@ build-check: ## Dry-run the frontend build with dev secrets (catches TS/build er
 		VITE_API_URL="$${VITE_API_URL:-http://localhost:8001/api/v1}" \
 		VITE_VAPID_PUBLIC_KEY="$$VAPID_PUBLIC_KEY" \
 		VITE_WEBAUTHN_RP_ID="$${WEBAUTHN_RP_ID:-localhost}" \
-		VITE_TELLER_APP_ID="$$TELLER_APP_ID" \
-		VITE_TELLER_ENV="$${TELLER_ENV:-sandbox}" \
 		npm run build'
 	@echo "$(GREEN)✓ Build check passed — safe to deploy$(NC)"
 
@@ -291,8 +285,6 @@ frontend-deploy: ## Build and deploy frontend to Cloudflare Pages (manual — do
 		VITE_API_URL="https://$$API_CUSTOM_DOMAIN/api/v1" \
 		VITE_VAPID_PUBLIC_KEY="$$VAPID_PUBLIC_KEY" \
 		VITE_WEBAUTHN_RP_ID="$$WEBAUTHN_RP_ID" \
-		VITE_TELLER_APP_ID="$$TELLER_APP_ID" \
-		VITE_TELLER_ENV="$$TELLER_ENV" \
 		npm run build && \
 		npx wrangler pages deploy dist \
 			--project-name hsa-tracker \
@@ -328,10 +320,6 @@ tf-plan: ## Plan Terraform changes
 		TF_VAR_frontend_domain="$$FRONTEND_DOMAIN" \
 		TF_VAR_api_custom_domain="$$API_CUSTOM_DOMAIN" \
 		TF_VAR_github_repo="$$GITHUB_REPO" \
-		TF_VAR_teller_app_id="$$TELLER_APP_ID" \
-		TF_VAR_teller_cert_b64="$$TELLER_CERT_B64" \
-		TF_VAR_teller_private_key_b64="$$TELLER_PRIVATE_KEY_B64" \
-		TF_VAR_teller_env="$$TELLER_ENV" \
 		TF_VAR_require_invite="$${REQUIRE_INVITE:-true}" \
 		TF_VAR_price_provider="$${PRICE_PROVIDER:-finnhub}" \
 		TF_VAR_finnhub_api_key="$$FINNHUB_API_KEY" \
@@ -357,10 +345,6 @@ tf-apply: ## Apply Terraform changes (create AWS infrastructure)
 		TF_VAR_frontend_domain="$$FRONTEND_DOMAIN" \
 		TF_VAR_api_custom_domain="$$API_CUSTOM_DOMAIN" \
 		TF_VAR_github_repo="$$GITHUB_REPO" \
-		TF_VAR_teller_app_id="$$TELLER_APP_ID" \
-		TF_VAR_teller_cert_b64="$$TELLER_CERT_B64" \
-		TF_VAR_teller_private_key_b64="$$TELLER_PRIVATE_KEY_B64" \
-		TF_VAR_teller_env="$$TELLER_ENV" \
 		TF_VAR_require_invite="$${REQUIRE_INVITE:-true}" \
 		TF_VAR_price_provider="$${PRICE_PROVIDER:-finnhub}" \
 		TF_VAR_finnhub_api_key="$$FINNHUB_API_KEY" \

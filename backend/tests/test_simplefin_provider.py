@@ -106,6 +106,43 @@ class TestParseAccount:
         accounts = provider.list_accounts()
         assert accounts[0].type == "depository"
 
+    def test_last_four_parsed_from_parenthesized_digits(self):
+        provider, client = _make_provider()
+        client.get_accounts.return_value = {
+            "accounts": [_raw_account(name="Rewards Credit Card (4321)")],
+            "errors": [],
+        }
+        accounts = provider.list_accounts()
+        assert accounts[0].last_four == "4321"
+
+    def test_last_four_zero_padded_for_three_digits(self):
+        provider, client = _make_provider()
+        client.get_accounts.return_value = {
+            "accounts": [_raw_account(name="Savings Account (789)")],
+            "errors": [],
+        }
+        accounts = provider.list_accounts()
+        assert accounts[0].last_four == "0789"
+
+    def test_last_four_none_when_no_parenthesized_digits(self):
+        provider, client = _make_provider()
+        client.get_accounts.return_value = {
+            "accounts": [_raw_account(name="HSA Checking")],
+            "errors": [],
+        }
+        accounts = provider.list_accounts()
+        assert accounts[0].last_four is None
+
+    def test_last_four_from_hyphenated_name(self):
+        """Some providers embed last4 twice: 'Cash Back Card-5678 (5678)' format."""
+        provider, client = _make_provider()
+        client.get_accounts.return_value = {
+            "accounts": [_raw_account(name="Cash Back Card-5678 (5678)")],
+            "errors": [],
+        }
+        accounts = provider.list_accounts()
+        assert accounts[0].last_four == "5678"
+
     def test_empty_accounts_list(self):
         provider, client = _make_provider()
         client.get_accounts.return_value = {"accounts": [], "errors": []}

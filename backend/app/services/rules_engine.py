@@ -10,46 +10,75 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.bank import BankTransaction, UserCategoryOverride
-from app.models.rules import HsaRule, HsaRuleCondition, HsaRuleAction
+from app.models.rules import HsaRule, HsaRuleCondition
 from app.services.merchant_keywords import (
     classify_merchant,
     normalize_merchant_name,
 )
 
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-# Teller category values that suggest potential HSA eligibility.
-# Expand this list as more patterns are discovered.
+# Provider category values that suggest potential HSA eligibility.
+# These are Sophtron's lowercased category strings (Title Case → lower on ingest).
+# Sophtron health-adjacent categories confirmed from API examples:
+#   "doctor", "health insurance", "personal care", "gym"
+# Legacy slug-style values kept for any manually-entered transactions.
 POTENTIAL_HSA_CATEGORIES: frozenset[str] = frozenset({
-    "health",         # Teller's primary medical/pharmacy category
-    "personal_care",  # pharmacies, vision, hearing aids
-    "mental_health",  # therapy, counseling
-    "fitness",        # gym memberships (sometimes HSA-eligible)
+    # Sophtron lowercased values
+    "doctor",
+    "health insurance",
+    "personal care",
+    "gym",
+    # Legacy slugs (manual transactions, old Teller data)
+    "health",
+    "personal_care",
+    "mental_health",
+    "fitness",
 })
 
-# Teller category values that are never plausibly HSA-eligible.
+# Provider category values that are never plausibly HSA-eligible.
 # Kept for reference; the smart filter now uses SMART_DEFAULT_HIDDEN instead.
 NON_HSA_CATEGORIES: frozenset[str] = frozenset({
-    "food_and_drink",   # restaurants, fast food, bars
-    "entertainment",    # movies, concerts, sports
-    "travel",           # flights, hotels, car rentals
-    "fuel",             # gas stations
-    "gambling",         # casinos, lottery
-    "subscription",     # streaming, software subscriptions
+    # Sophtron lowercased values
+    "food & dining",
+    "fast food",
+    "restaurants",
+    "coffee shops",
+    "gas",
+    "entertainment",
+    "movies & dvds",
+    "music",
+    "shopping",
+    "groceries",
+    "clothing",
+    "toys",
+    "sporting goods",
+    "electronics & software",
+    # Legacy slugs
+    "food_and_drink",
+    "travel",
+    "gambling",
+    "subscription",
 })
 
-# Full default-hide list for Smart filter mode. These are the Teller category
+# Full default-hide list for Smart filter mode. These are the provider category
 # values that are hidden unless the user has a manual override or the system
 # has learned that the category is being used for HSA purchases.
 SMART_DEFAULT_HIDDEN: frozenset[str] = frozenset({
-    # Actual Teller category values observed in production
-    "dining", "bar", "entertainment", "fuel", "software", "phone",
-    "investment", "transportation", "tax", "shopping", "groceries",
-    "service", "home", "office", "charity", "insurance", "general",
-    # Legacy / alternate Teller values (keep for safety)
+    # Sophtron lowercased values (Title Case → lower on ingest)
+    "food & dining", "fast food", "restaurants", "coffee shops",
+    "gas", "entertainment", "movies & dvds", "music",
+    "shopping", "groceries", "clothing", "toys", "sporting goods",
+    "electronics & software", "mobile phone", "utilities",
+    "home improvement", "financial", "transfer", "paycheck",
+    "credit card payment", "student loan", "mortgage & rent",
+    "charity", "hair", "pets", "uncategorized",
+    # Legacy slugs (manual transactions, old Teller data)
+    "dining", "bar", "fuel", "software", "phone",
+    "investment", "transportation", "tax", "service",
+    "home", "office", "insurance", "general",
     "food_and_drink", "travel", "gambling", "subscription",
 })
 
@@ -69,9 +98,9 @@ def apply_auto_flag(txn: BankTransaction) -> None:
     and the user hasn't reviewed it yet.
 
     Two signals are checked (either is sufficient):
-      1. Teller category is in POTENTIAL_HSA_CATEGORIES.
+      1. Provider category is in POTENTIAL_HSA_CATEGORIES.
       2. Normalized merchant name matches HSA_LIKELY_KEYWORDS (catches cases
-         where Teller miscategorizes a medical provider).
+         where provider miscategorizes a medical provider).
 
     NON_HSA_CATEGORIES are filtered at query time rather than written to the DB.
     """
@@ -117,7 +146,7 @@ def would_rule_apply(
 
 
 def get_smart_hidden_categories(user_id: UUID, db: Session) -> frozenset[str]:
-    """Return the set of Teller categories that Smart mode should hide for *user_id*.
+    """Return the set of provider categories that Smart mode should hide for *user_id*.
 
     Precedence (highest wins):
       1. User pin override (show/hide)
@@ -203,9 +232,9 @@ def _safe_details_category(txn: BankTransaction) -> Optional[str]:
 def _safe_counterparty_name(txn: BankTransaction) -> str:
     """Extract counterparty name, falling back to description.
 
-    Teller doesn't always populate details.counterparty.name (depends on the
-    payment terminal). When it's absent we fall back to txn.description so that
-    rules and keyword matching still work for those transactions.
+    Sophtron doesn't always populate details.counterparty.name. When it's absent
+    we fall back to txn.description so that rules and keyword matching still work
+    for those transactions.
     """
     try:
         details = txn.details
@@ -253,7 +282,7 @@ def _evaluate_condition(txn: BankTransaction, condition: HsaRuleCondition) -> bo
         if field == "description":
             return _eval_text(txn.description or "", operator, value)
 
-        if field == "teller_category":
+        if field == "provider_category":
             return _eval_text(_safe_details_category(txn) or "", operator, value)
 
         if field == "amount":

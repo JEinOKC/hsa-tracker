@@ -8,18 +8,14 @@ Covers:
   - Smart filter integration in GET /bank/transactions
 """
 
-import json
 import uuid
 from datetime import date
 from decimal import Decimal
 
 from app.models.bank import BankConnection, BankTransaction, UserCategoryOverride
-from app.models.user import User
 from app.services.rules_engine import (
-    SMART_DEFAULT_HIDDEN,
     get_smart_hidden_categories,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -288,7 +284,7 @@ class TestSmartFilterIntegration:
 
         r = client.get(
             "/api/v1/bank/transactions",
-            params={"teller_category": "dining"},
+            params={"provider_category": "dining"},
             headers=auth_headers,
         )
         assert r.status_code == 200

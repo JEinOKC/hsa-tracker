@@ -71,6 +71,14 @@ class TestClaimSetupToken:
             with pytest.raises(SimpleFINAuthError, match="already been claimed"):
                 SimpleFINClient.claim_setup_token(token)
 
+    def test_403_raises_simplefin_auth_error(self):
+        """SimpleFIN returns 403 (not 401) when a token has already been claimed."""
+        token = _b64("https://example.com/claim")
+        with patch("app.providers.simplefin.client.httpx.post") as mock_post:
+            mock_post.return_value = _mock_response(403)
+            with pytest.raises(SimpleFINAuthError, match="already been claimed"):
+                SimpleFINClient.claim_setup_token(token)
+
     def test_network_error_raises_connection_error(self):
         token = _b64("https://example.com/claim")
         with patch("app.providers.simplefin.client.httpx.post") as mock_post:

@@ -11,6 +11,7 @@ Dates:
   posted/transacted_at fields.  We convert them to date objects here.
 """
 
+import re
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
@@ -92,6 +93,10 @@ class SimpleFINProvider(BankProvider):
         acct_id = str(data.get("id") or "")
         name = data.get("name") or "Account"
 
+        # Parse last4 from account names like "My Credit Card (4321)"
+        last_four_match = re.search(r'\((\d{3,4})\)\s*$', name)
+        last_four = last_four_match.group(1).zfill(4) if last_four_match else None
+
         return ExternalAccount(
             id=acct_id,
             name=name,
@@ -100,7 +105,7 @@ class SimpleFINProvider(BankProvider):
             currency=data.get("currency", "USD"),
             institution_name=institution_name,
             provider=self.PROVIDER_NAME,
-            last_four=None,
+            last_four=last_four,
         )
 
     def _parse_transaction(self, data: dict, account_id: str) -> ExternalTransaction:

@@ -15,9 +15,9 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.api.v1.endpoints.bank import BankTransactionResponse
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.bank import BankConnection, BankTransaction
@@ -29,7 +29,6 @@ from app.services.rules_engine import (
     get_active_rules_for_user,
 )
 from app.utils.access import get_readable_owner_ids
-from app.api.v1.endpoints.bank import BankTransactionResponse
 
 router = APIRouter()
 
@@ -87,7 +86,7 @@ def _build_response(txn: BankTransaction) -> BankTransactionResponse:
     if txn.details and isinstance(txn.details, dict):
         cp = txn.details.get("counterparty") or {}
         if isinstance(cp, dict):
-            data.teller_category = txn.details.get("category")
+            data.provider_category = txn.details.get("category")
     return data
 
 

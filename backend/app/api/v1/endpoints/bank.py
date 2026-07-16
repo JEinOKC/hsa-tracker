@@ -331,16 +331,52 @@ async def connect_bank(
     except SimpleFINConnectionError as exc:
         raise HTTPException(status_code=502, detail=f"Could not reach SimpleFIN: {exc}") from exc
 
+    # The token is now consumed on SimpleFIN's side — persist the access URL
+    # immediately so it is never lost, even if account discovery below fails.
+    existing_connections = (
+        db.query(BankConnection)
+        .filter(
+            BankConnection.user_id == current_user.id,
+            BankConnection.provider == "simplefin",
+        )
+        .all()
+    )
+    for conn in existing_connections:
+        conn.enrollment_token = access_url
+        conn.connection_status = "connected"
+        conn.connection_error = None
+    if existing_connections:
+        db.commit()
+
     try:
         provider = get_simplefin_provider(access_url)
         external_accounts = provider.list_accounts()
-    except SimpleFINAuthError as exc:
-        raise HTTPException(status_code=502, detail=f"SimpleFIN auth error: {exc}") from exc
-    except SimpleFINError as exc:
-        raise HTTPException(status_code=502, detail=f"SimpleFIN error: {exc}") from exc
+    except Exception as exc:
+        # Account discovery failed but the access URL is already saved
+        # on any existing connections. If there are none yet, store it
+        # on a placeholder so the user doesn't lose the token.
+        if not existing_connections:
+            placeholder = BankConnection(
+                user_id=current_user.id,
+                provider="simplefin",
+                provider_account_id=f"pending-{current_user.id}",
+                account_name="Pending account discovery",
+                account_type="unknown",
+                enrollment_token=access_url,
+                connection_status="error",
+                connection_error=f"Account discovery failed: {exc}",
+            )
+            db.add(placeholder)
+            db.commit()
+        raise HTTPException(
+            status_code=502,
+            detail=f"Token claimed successfully but account discovery failed: {exc}. "
+            f"Your access URL has been saved — try syncing later.",
+        ) from exc
 
     results = []
     for acct in external_accounts:
+        # 1. Try exact match on stable SimpleFIN account ID
         existing = (
             db.query(BankConnection)
             .filter(
@@ -349,11 +385,28 @@ async def connect_bank(
             )
             .first()
         )
+
+        # 2. Cross-provider fallback: match by last4 (Teller→SimpleFIN migration)
+        if not existing and acct.last_four:
+            existing = (
+                db.query(BankConnection)
+                .filter(
+                    BankConnection.user_id == current_user.id,
+                    BankConnection.last_four == acct.last_four,
+                )
+                .first()
+            )
+
         if existing:
-            # Exact match on stable SimpleFIN account ID — update in place
+            # Update provider identity fields but preserve account_type/subtype
+            # (SimpleFIN wrongly reports credit cards as depository/checking)
+            is_cross_provider = existing.provider != acct.provider
+            existing.provider = acct.provider
+            existing.provider_account_id = acct.id
             existing.account_name = acct.name
-            existing.account_type = acct.type
-            existing.account_subtype = acct.subtype
+            if not is_cross_provider:
+                existing.account_type = acct.type
+                existing.account_subtype = acct.subtype
             existing.institution_name = acct.institution_name
             existing.last_four = acct.last_four
             existing.enrollment_token = access_url
@@ -1103,6 +1156,41 @@ def _sync_one_connection(
         from_date=from_date,
         count=count,
     )
+
+    # Overlap-window dedup for Teller→SimpleFIN migrated connections.
+    # On migrated connections, Teller transactions share the same connection_id.
+    # Skip SimpleFIN transactions that duplicate existing Teller data.
+    latest_teller = (
+        db.query(func.max(BankTransaction.transaction_date))
+        .filter(
+            BankTransaction.connection_id == connection.id,
+            BankTransaction.source == "teller",
+        )
+        .scalar()
+    )
+    if latest_teller:
+        overlap_start = latest_teller - timedelta(days=2)
+        teller_in_window = (
+            db.query(BankTransaction.amount, BankTransaction.transaction_date)
+            .filter(
+                BankTransaction.connection_id == connection.id,
+                BankTransaction.source == "teller",
+                BankTransaction.transaction_date >= overlap_start,
+            )
+            .all()
+        )
+
+        def _is_teller_duplicate(txn):
+            if txn.date < overlap_start:
+                return True  # Before overlap window — already covered by Teller
+            if txn.date > latest_teller + timedelta(days=2):
+                return False  # Well past overlap — definitely new
+            return any(
+                txn.amount == t_amt and abs((txn.date - t_date).days) <= 2
+                for t_amt, t_date in teller_in_window
+            )
+
+        external_txns = [t for t in external_txns if not _is_teller_duplicate(t)]
 
     added = 0
     skipped = 0

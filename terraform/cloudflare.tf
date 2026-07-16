@@ -65,8 +65,6 @@ resource "cloudflare_pages_project" "frontend" {
         VITE_API_URL          = var.api_custom_domain != "" ? "https://${var.api_custom_domain}/api/v1" : "${aws_apigatewayv2_stage.default.invoke_url}api/v1"
         VITE_VAPID_PUBLIC_KEY = var.vapid_public_key
         VITE_WEBAUTHN_RP_ID   = var.webauthn_rp_id
-        VITE_TELLER_APP_ID    = var.teller_app_id
-        VITE_TELLER_ENV       = "development"
       }
     }
   }

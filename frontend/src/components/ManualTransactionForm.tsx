@@ -81,7 +81,7 @@ export default function ManualTransactionForm({ onClose, onCreated }: Props) {
               </div>
               <div className="text-xs text-gray-400 mt-0.5">
                 {m.transaction_date}
-                {m.teller_category && ` · ${m.teller_category}`}
+                {m.provider_category && ` · ${m.provider_category}`}
               </div>
             </li>
           ))}

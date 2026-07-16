@@ -9,14 +9,12 @@ from decimal import Decimal
 from unittest.mock import MagicMock
 
 import pytest
-
 from app.services.rules_engine import (
+    _evaluate_condition,
     apply_auto_flag,
     apply_rules_to_transaction,
     would_rule_apply,
-    _evaluate_condition,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -513,74 +511,74 @@ class TestApplyAutoFlagCategories:
 
 
 # ---------------------------------------------------------------------------
-# _evaluate_condition — teller_category field
+# _evaluate_condition — provider_category field
 # ---------------------------------------------------------------------------
 
 
 class TestEvaluateConditionTellerCategory:
-    def test_teller_category_is_exact_match(self):
+    def test_provider_category_is_exact_match(self):
         txn = _make_txn(details={"category": "health"})
-        cond = _make_condition("teller_category", "is", "health")
+        cond = _make_condition("provider_category", "is", "health")
         assert _evaluate_condition(txn, cond) is True
 
-    def test_teller_category_is_case_insensitive(self):
+    def test_provider_category_is_case_insensitive(self):
         txn = _make_txn(details={"category": "Health"})
-        cond = _make_condition("teller_category", "is", "health")
+        cond = _make_condition("provider_category", "is", "health")
         assert _evaluate_condition(txn, cond) is True
 
-    def test_teller_category_is_not(self):
+    def test_provider_category_is_not(self):
         txn = _make_txn(details={"category": "shopping"})
-        cond = _make_condition("teller_category", "is_not", "health")
+        cond = _make_condition("provider_category", "is_not", "health")
         assert _evaluate_condition(txn, cond) is True
 
-    def test_teller_category_is_not_fails_when_equal(self):
+    def test_provider_category_is_not_fails_when_equal(self):
         txn = _make_txn(details={"category": "health"})
-        cond = _make_condition("teller_category", "is_not", "health")
+        cond = _make_condition("provider_category", "is_not", "health")
         assert _evaluate_condition(txn, cond) is False
 
-    def test_teller_category_contains(self):
+    def test_provider_category_contains(self):
         txn = _make_txn(details={"category": "personal_care"})
-        cond = _make_condition("teller_category", "contains", "care")
+        cond = _make_condition("provider_category", "contains", "care")
         assert _evaluate_condition(txn, cond) is True
 
-    def test_teller_category_does_not_contain(self):
+    def test_provider_category_does_not_contain(self):
         txn = _make_txn(details={"category": "shopping"})
-        cond = _make_condition("teller_category", "does_not_contain", "health")
+        cond = _make_condition("provider_category", "does_not_contain", "health")
         assert _evaluate_condition(txn, cond) is True
 
-    def test_teller_category_missing_details_returns_false_for_is(self):
+    def test_provider_category_missing_details_returns_false_for_is(self):
         txn = _make_txn(details=None)
-        cond = _make_condition("teller_category", "is", "health")
+        cond = _make_condition("provider_category", "is", "health")
         assert _evaluate_condition(txn, cond) is False
 
-    def test_teller_category_missing_category_key_returns_false(self):
+    def test_provider_category_missing_category_key_returns_false(self):
         txn = _make_txn(details={"counterparty": {"name": "CVS"}})
-        cond = _make_condition("teller_category", "is", "health")
+        cond = _make_condition("provider_category", "is", "health")
         assert _evaluate_condition(txn, cond) is False
 
-    def test_teller_category_missing_does_not_contain_returns_true(self):
+    def test_provider_category_missing_does_not_contain_returns_true(self):
         """Empty string does not contain 'health' → condition passes."""
         txn = _make_txn(details=None)
-        cond = _make_condition("teller_category", "does_not_contain", "health")
+        cond = _make_condition("provider_category", "does_not_contain", "health")
         assert _evaluate_condition(txn, cond) is True
 
-    def test_teller_category_rule_fires_on_matching_category(self):
+    def test_provider_category_rule_fires_on_matching_category(self):
         """End-to-end: a hide rule on food_and_drink hides matching transactions."""
         txn = _make_txn(details={"category": "food_and_drink"}, is_hsa_eligible=None)
 
         rule = _make_rule(
-            conditions=[_make_condition("teller_category", "is", "food_and_drink")],
+            conditions=[_make_condition("provider_category", "is", "food_and_drink")],
             actions=[_make_action("hide")],
         )
 
         apply_rules_to_transaction(txn, [rule])
         assert txn.auto_flag == "hidden"
 
-    def test_teller_category_rule_does_not_fire_on_different_category(self):
+    def test_provider_category_rule_does_not_fire_on_different_category(self):
         txn = _make_txn(details={"category": "health"}, is_hsa_eligible=None)
 
         rule = _make_rule(
-            conditions=[_make_condition("teller_category", "is", "food_and_drink")],
+            conditions=[_make_condition("provider_category", "is", "food_and_drink")],
             actions=[_make_action("hide")],
         )
 

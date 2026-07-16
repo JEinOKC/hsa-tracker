@@ -52,9 +52,12 @@ class SimpleFINClient:
         except httpx.RequestError as exc:
             raise SimpleFINConnectionError(f"Could not reach SimpleFIN claim URL: {exc}") from exc
 
-        if resp.status_code == 401:
+        if resp.status_code in (401, 403):
             raise SimpleFINAuthError("Setup token has already been claimed or is invalid.")
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except Exception as exc:
+            raise SimpleFINError(f"SimpleFIN claim failed (HTTP {resp.status_code}): {exc}") from exc
         return resp.text.strip()
 
     def __init__(self, access_url: str):
@@ -99,5 +102,8 @@ class SimpleFINClient:
 
         if resp.status_code == 401:
             raise SimpleFINAuthError("SimpleFIN access URL credentials are invalid or expired.")
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except Exception as exc:
+            raise SimpleFINError(f"SimpleFIN accounts request failed (HTTP {resp.status_code}): {exc}") from exc
         return resp.json()
