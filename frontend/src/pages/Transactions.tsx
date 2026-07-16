@@ -1191,7 +1191,7 @@ export default function Transactions() {
     show_hidden: showHidden || undefined,
     auto_flag: filterAutoFlag || undefined,
     show_all_categories: filterCategory === '__all__' ? true : undefined,
-    teller_category: (filterCategory && filterCategory !== '__all__') ? filterCategory : undefined,
+    provider_category: (filterCategory && filterCategory !== '__all__') ? filterCategory : undefined,
     limit: PAGE_SIZE,
     offset,
   }), [tab, filterDocs, debouncedSearch, filterMember, startDate, endDate, showHidden, filterAutoFlag, filterCategory])

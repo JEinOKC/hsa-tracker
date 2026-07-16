@@ -1,7 +1,7 @@
 """Integration tests for bank integration endpoints.
 
-Teller API calls are mocked throughout — we test our HTTP layer,
-DB operations, auth guards, and error handling, not Teller's servers.
+SimpleFIN Bridge API calls are mocked throughout — we test our HTTP layer,
+DB operations, auth guards, and error handling, not SimpleFIN's servers.
 """
 
 import uuid
@@ -25,7 +25,7 @@ def _make_external_account(account_id="acct_001", name="HSA Checking", subtype="
         subtype=subtype,
         currency="USD",
         institution_name="First National Bank",
-        provider="teller",
+        provider="simplefin",
         last_four="1234",
     )
 
@@ -39,7 +39,7 @@ def _make_external_txn(txn_id="txn_001", amount="-50.00", status="posted"):
         amount=Decimal(amount),
         type="card_payment",
         status=status,
-        provider="teller",
+        provider="simplefin",
         details={},
     )
 
@@ -56,7 +56,7 @@ def _make_connection(
     conn = BankConnection(
         id=uuid.uuid4(),
         user_id=user_id,
-        provider="teller",
+        provider="simplefin",
         provider_account_id=provider_account_id,
         account_name=account_name,
         account_type=account_type,
@@ -97,20 +97,20 @@ class TestBankAuthRequired:
 
 class TestBankStatus:
     def test_reports_not_configured(self, client, auth_headers):
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=False):
+        with patch("app.api.v1.endpoints.bank.is_simplefin_configured", return_value=False):
             resp = client.get("/api/v1/bank/status", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
-        assert data["teller_configured"] is False
+        assert data["provider_configured"] is False
         assert data["active_connections"] == 0
 
     def test_reports_configured_with_connection_count(self, client, auth_headers, db_session):
         _make_connection(db_session)
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True):
+        with patch("app.api.v1.endpoints.bank.is_simplefin_configured", return_value=True):
             resp = client.get("/api/v1/bank/status", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
-        assert data["teller_configured"] is True
+        assert data["provider_configured"] is True
         assert data["active_connections"] == 1
 
     def test_inactive_connections_excluded_from_count(self, client, auth_headers, db_session):
@@ -118,25 +118,29 @@ class TestBankStatus:
         conn.is_active = False
         db_session.commit()
 
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True):
+        with patch("app.api.v1.endpoints.bank.is_simplefin_configured", return_value=True):
             resp = client.get("/api/v1/bank/status", headers=auth_headers)
         assert resp.json()["active_connections"] == 0
 
 
 # ---------------------------------------------------------------------------
-# Connect (Teller enrollment)
+# Connect (SimpleFIN setup token)
 # ---------------------------------------------------------------------------
+
+FAKE_ACCESS_URL = "https://u:p@beta-bridge.simplefin.org/simplefin"
+FAKE_SETUP_TOKEN = "aHR0cHM6Ly9leGFtcGxlLmNvbS9jbGFpbQ=="  # base64 placeholder
+
 
 class TestBankConnect:
     def test_connect_creates_accounts(self, client, auth_headers, db_session):
         mock_provider = MagicMock()
         mock_provider.list_accounts.return_value = [_make_external_account()]
 
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
-             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider):
+        with patch("app.api.v1.endpoints.bank.claim_simplefin_setup_token", return_value=FAKE_ACCESS_URL), \
+             patch("app.api.v1.endpoints.bank.get_simplefin_provider", return_value=mock_provider):
             resp = client.post(
                 "/api/v1/bank/connect",
-                json={"access_token": "tok_abc"},
+                json={"setup_token": FAKE_SETUP_TOKEN},
                 headers=auth_headers,
             )
 
@@ -148,33 +152,34 @@ class TestBankConnect:
         assert accounts[0]["institution_name"] == "First National Bank"
         assert accounts[0]["last_four"] == "1234"
 
-        # Token stored in DB
+        # Access URL stored as enrollment_token in DB
         conn = db_session.query(BankConnection).filter(
             BankConnection.provider_account_id == "acct_001"
         ).first()
         assert conn is not None
-        assert conn.enrollment_token == "tok_abc"
+        assert conn.enrollment_token == FAKE_ACCESS_URL
 
     def test_connect_updates_existing_account(self, client, auth_headers, db_session):
-        existing = _make_connection(db_session, token="old_tok")
+        existing = _make_connection(db_session, token="https://old:tok@bridge.simplefin.org/simplefin")
+        new_access_url = "https://new:url@beta-bridge.simplefin.org/simplefin"
 
         mock_provider = MagicMock()
         mock_provider.list_accounts.return_value = [
             _make_external_account(name="HSA Checking Updated")
         ]
 
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
-             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider):
+        with patch("app.api.v1.endpoints.bank.claim_simplefin_setup_token", return_value=new_access_url), \
+             patch("app.api.v1.endpoints.bank.get_simplefin_provider", return_value=mock_provider):
             resp = client.post(
                 "/api/v1/bank/connect",
-                json={"access_token": "new_tok"},
+                json={"setup_token": FAKE_SETUP_TOKEN},
                 headers=auth_headers,
             )
 
         assert resp.status_code == 200
         db_session.refresh(existing)
         assert existing.account_name == "HSA Checking Updated"
-        assert existing.enrollment_token == "new_tok"
+        assert existing.enrollment_token == new_access_url
 
         # No duplicate rows
         count = db_session.query(BankConnection).filter(
@@ -182,27 +187,32 @@ class TestBankConnect:
         ).count()
         assert count == 1
 
-    def test_connect_returns_503_when_not_configured(self, client, auth_headers):
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=False):
+    def test_connect_returns_422_for_invalid_setup_token(self, client, auth_headers):
+        from app.providers.simplefin.client import SimpleFINError
+        with patch("app.api.v1.endpoints.bank.claim_simplefin_setup_token",
+                   side_effect=SimpleFINError("not valid base64")):
             resp = client.post(
                 "/api/v1/bank/connect",
-                json={"access_token": "tok"},
+                json={"setup_token": "invalid!!"},
                 headers=auth_headers,
             )
-        assert resp.status_code == 503
+        assert resp.status_code == 422
 
-    def test_connect_uses_access_token_for_provider(self, client, auth_headers):
+    def test_connect_uses_claimed_access_url_for_provider(self, client, auth_headers):
         mock_provider = MagicMock()
         mock_provider.list_accounts.return_value = []
 
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
-             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider) as mock_factory:
+        with patch("app.api.v1.endpoints.bank.claim_simplefin_setup_token",
+                   return_value=FAKE_ACCESS_URL) as mock_claim, \
+             patch("app.api.v1.endpoints.bank.get_simplefin_provider",
+                   return_value=mock_provider) as mock_factory:
             client.post(
                 "/api/v1/bank/connect",
-                json={"access_token": "tok_xyz"},
+                json={"setup_token": FAKE_SETUP_TOKEN},
                 headers=auth_headers,
             )
-        mock_factory.assert_called_once_with(access_token="tok_xyz")
+        mock_claim.assert_called_once_with(FAKE_SETUP_TOKEN)
+        mock_factory.assert_called_once_with(FAKE_ACCESS_URL)
 
 
 # ---------------------------------------------------------------------------
@@ -251,8 +261,8 @@ class TestGetBankAccount:
             currency="USD",
         )
 
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
-             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider):
+        with patch("app.api.v1.endpoints.bank.is_simplefin_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_simplefin_provider", return_value=mock_provider):
             resp = client.get(f"/api/v1/bank/accounts/{conn.id}", headers=auth_headers)
 
         assert resp.status_code == 200
@@ -266,8 +276,8 @@ class TestGetBankAccount:
         mock_provider = MagicMock()
         mock_provider.get_balance.side_effect = Exception("Teller unavailable")
 
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
-             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider):
+        with patch("app.api.v1.endpoints.bank.is_simplefin_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_simplefin_provider", return_value=mock_provider):
             resp = client.get(f"/api/v1/bank/accounts/{conn.id}", headers=auth_headers)
 
         assert resp.status_code == 200
@@ -292,8 +302,8 @@ class TestSyncAccount:
             _make_external_txn("txn_002", amount="-25.00"),
         ]
 
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
-             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider):
+        with patch("app.api.v1.endpoints.bank.is_simplefin_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_simplefin_provider", return_value=mock_provider):
             resp = client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
 
         assert resp.status_code == 200
@@ -312,7 +322,7 @@ class TestSyncAccount:
         existing = BankTransaction(
             id=uuid.uuid4(),
             connection_id=conn.id,
-            provider="teller",
+            provider="simplefin",
             provider_transaction_id="txn_001",
             transaction_date=date(2026, 3, 1),
             description="Existing",
@@ -328,8 +338,8 @@ class TestSyncAccount:
             _make_external_txn("txn_002"),   # new
         ]
 
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
-             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider):
+        with patch("app.api.v1.endpoints.bank.is_simplefin_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_simplefin_provider", return_value=mock_provider):
             resp = client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
 
         data = resp.json()
@@ -343,27 +353,21 @@ class TestSyncAccount:
         mock_provider = MagicMock()
         mock_provider.list_transactions.return_value = []
 
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
-             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider):
+        with patch("app.api.v1.endpoints.bank.is_simplefin_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_simplefin_provider", return_value=mock_provider):
             client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
 
         db_session.refresh(conn)
         assert conn.last_synced_at is not None
 
-    def test_sync_returns_503_when_not_configured(self, client, auth_headers, db_session, test_user):
-        conn = _make_connection(db_session, user_id=test_user.id)
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=False):
-            resp = client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
-        assert resp.status_code == 503
-
     def test_sync_returns_422_when_no_enrollment_token(self, client, auth_headers, db_session, test_user):
         conn = _make_connection(db_session, user_id=test_user.id, token=None)
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True):
+        with patch("app.api.v1.endpoints.bank.is_simplefin_configured", return_value=True):
             resp = client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
         assert resp.status_code == 422
 
     def test_sync_returns_404_for_unknown_account(self, client, auth_headers):
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True):
+        with patch("app.api.v1.endpoints.bank.is_simplefin_configured", return_value=True):
             resp = client.post(f"/api/v1/bank/accounts/{uuid.uuid4()}/sync", headers=auth_headers)
         assert resp.status_code == 404
 
@@ -373,28 +377,28 @@ class TestSyncAccount:
         mock_provider = MagicMock()
         mock_provider.list_transactions.return_value = []
 
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
-             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider) as mock_factory:
+        with patch("app.api.v1.endpoints.bank.is_simplefin_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_simplefin_provider", return_value=mock_provider) as mock_factory:
             client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
 
-        mock_factory.assert_called_once_with(access_token="my_secret_token")
+        mock_factory.assert_called_once_with("my_secret_token")
 
     # ------------------------------------------------------------------
     # Amount sign normalisation — regression for Teller credit accounts
     # ------------------------------------------------------------------
 
     def test_sync_depository_amount_stored_as_is(self, client, auth_headers, db_session, test_user):
-        """Depository accounts: Teller sign convention matches ours (negative = debit)."""
+        """Depository accounts: Sophtron provider normalizes sign (negative = expense)."""
         conn = _make_connection(db_session, user_id=test_user.id, account_type="depository")
 
         mock_provider = MagicMock()
-        # Teller sends a debit as negative on depository accounts
+        # SophtronProvider already returns normalized sign: -42.00 = expense
         mock_provider.list_transactions.return_value = [
             _make_external_txn("txn_dep_debit", amount="-42.00"),
         ]
 
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
-             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider):
+        with patch("app.api.v1.endpoints.bank.is_simplefin_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_simplefin_provider", return_value=mock_provider):
             client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
 
         txn = db_session.query(BankTransaction).filter(
@@ -403,7 +407,7 @@ class TestSyncAccount:
         assert txn.amount == Decimal("-42.00")
 
     def test_sync_credit_account_purchase_stored_as_negative(self, client, auth_headers, db_session, test_user):
-        """Credit accounts: Teller sends purchases as positive; we must negate so they show as expenses."""
+        """Credit accounts: SophtronProvider pre-normalizes so -26.04 = expense as-is."""
         conn = _make_connection(
             db_session,
             user_id=test_user.id,
@@ -413,23 +417,23 @@ class TestSyncAccount:
         )
 
         mock_provider = MagicMock()
-        # Teller sends a credit-card purchase as +26.04 (increases balance owed)
+        # SophtronProvider already negated the raw amount; purchase arrives as -26.04
         mock_provider.list_transactions.return_value = [
-            _make_external_txn("txn_cc_purchase", amount="26.04"),
+            _make_external_txn("txn_cc_purchase", amount="-26.04"),
         ]
 
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
-             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider):
+        with patch("app.api.v1.endpoints.bank.is_simplefin_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_simplefin_provider", return_value=mock_provider):
             client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
 
         txn = db_session.query(BankTransaction).filter(
             BankTransaction.connection_id == conn.id
         ).one()
-        # Must be stored as negative so the UI renders it as an expense (red)
+        # Stored as negative — expense renders in red
         assert txn.amount == Decimal("-26.04")
 
     def test_sync_credit_account_payment_stored_as_positive(self, client, auth_headers, db_session, test_user):
-        """Credit accounts: Teller sends card payments as negative; we negate so they show as credits."""
+        """Credit accounts: SophtronProvider pre-normalizes; payment arrives as +200.00 = credit."""
         conn = _make_connection(
             db_session,
             user_id=test_user.id,
@@ -439,13 +443,13 @@ class TestSyncAccount:
         )
 
         mock_provider = MagicMock()
-        # Teller sends a payment to the card as -200.00 (decreases balance owed)
+        # SophtronProvider already negated; payment (decreases debt) arrives as +200.00
         mock_provider.list_transactions.return_value = [
-            _make_external_txn("txn_cc_payment", amount="-200.00"),
+            _make_external_txn("txn_cc_payment", amount="200.00"),
         ]
 
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
-             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider):
+        with patch("app.api.v1.endpoints.bank.is_simplefin_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_simplefin_provider", return_value=mock_provider):
             client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
 
         txn = db_session.query(BankTransaction).filter(
@@ -467,7 +471,7 @@ class TestListBankTransactions:
             BankTransaction(
                 id=uuid.uuid4(),
                 connection_id=conn.id,
-                provider="teller",
+                provider="simplefin",
                 provider_transaction_id=f"txn_{i:03d}",
                 transaction_date=date(2026, i % 12 + 1, 1),
                 description=f"Transaction {i}",
@@ -532,7 +536,7 @@ class TestDisconnectAccount:
         txn = BankTransaction(
             id=uuid.uuid4(),
             connection_id=conn.id,
-            provider="teller",
+            provider="simplefin",
             provider_transaction_id="txn_keep",
             transaction_date=date(2026, 1, 1),
             description="Keep me",
@@ -565,8 +569,8 @@ class TestSyncPotentialHsaCount:
         mock_provider = MagicMock()
         mock_provider.list_transactions.return_value = [_make_external_txn("txn_001")]
 
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
-             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider), \
+        with patch("app.api.v1.endpoints.bank.is_simplefin_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_simplefin_provider", return_value=mock_provider), \
              patch("app.api.v1.endpoints.bank.apply_auto_flag"):
             resp = client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
 
@@ -586,8 +590,8 @@ class TestSyncPotentialHsaCount:
             if txn.provider_transaction_id == "txn_001":
                 txn.auto_flag = "potential_hsa"
 
-        with patch("app.api.v1.endpoints.bank.is_teller_configured", return_value=True), \
-             patch("app.api.v1.endpoints.bank.get_teller_provider", return_value=mock_provider), \
+        with patch("app.api.v1.endpoints.bank.is_simplefin_configured", return_value=True), \
+             patch("app.api.v1.endpoints.bank.get_simplefin_provider", return_value=mock_provider), \
              patch("app.api.v1.endpoints.bank.apply_auto_flag", side_effect=flag_first_only):
             resp = client.post(f"/api/v1/bank/accounts/{conn.id}/sync", headers=auth_headers)
 

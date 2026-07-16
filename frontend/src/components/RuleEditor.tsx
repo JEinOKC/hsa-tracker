@@ -66,15 +66,15 @@ function blankAction(): Omit<RuleAction, 'id' | 'rule_id' | 'created_at'> {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-// Known Teller categories shown in the dropdown when no live data is available
-const KNOWN_TELLER_CATEGORIES = [
+// Known Sophtron categories shown in the dropdown when no live data is available
+const KNOWN_PROVIDER_CATEGORIES = [
   'health', 'personal_care', 'mental_health', 'fitness',
   'food_and_drink', 'shopping', 'travel', 'entertainment',
   'transportation', 'utilities', 'other',
 ]
 
 export default function RuleEditor({ rule, members, availableCategories, onSave, onClose, initialName, initialConditions, initialActions }: RuleEditorProps) {
-  const categoryOptions = availableCategories && availableCategories.length > 0 ? availableCategories : KNOWN_TELLER_CATEGORIES
+  const categoryOptions = availableCategories && availableCategories.length > 0 ? availableCategories : KNOWN_PROVIDER_CATEGORIES
   const [name, setName] = useState(rule?.name ?? initialName ?? '')
   const [isActive, setIsActive] = useState(rule?.is_active ?? true)
   const [conditions, setConditions] = useState<Omit<RuleCondition, 'id' | 'rule_id' | 'created_at'>[]>(
@@ -276,7 +276,7 @@ export default function RuleEditor({ rule, members, availableCategories, onSave,
                       <option value="counterparty_name">Merchant</option>
                       <option value="amount">Amount</option>
                       <option value="date">Date</option>
-                      <option value="teller_category">Category</option>
+                      <option value="provider_category">Category</option>
                     </select>
 
                     <select
@@ -289,7 +289,7 @@ export default function RuleEditor({ rule, members, availableCategories, onSave,
                       ))}
                     </select>
 
-                    {cond.field === 'teller_category' ? (
+                    {cond.field === 'provider_category' ? (
                       <select
                         value={cond.value}
                         onChange={e => updateCondition(i, { value: e.target.value })}

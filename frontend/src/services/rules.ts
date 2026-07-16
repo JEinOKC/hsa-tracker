@@ -3,7 +3,7 @@ import api from './api'
 export interface RuleCondition {
   id?: string
   rule_id?: string
-  field: 'counterparty_name' | 'description' | 'amount' | 'date' | 'teller_category'
+  field: 'counterparty_name' | 'description' | 'amount' | 'date' | 'provider_category'
   operator: 'is' | 'contains' | 'does_not_contain' | 'is_not' | 'eq' | 'gt' | 'lt' | 'before' | 'after'
   value: string
   created_at?: string

@@ -2,20 +2,6 @@ import { useState, useEffect, useCallback } from 'react'
 import { bankService, BankAccount, BankTransaction, SyncAllResult } from '../services/bank'
 import { useToast } from '../components/Toast'
 
-// Teller Connect is loaded as a global from the CDN script in index.html
-declare global {
-  interface Window {
-    TellerConnect: {
-      setup: (config: {
-        applicationId: string
-        environment?: string
-        onSuccess: (enrollment: { accessToken: string }) => void
-        onExit?: () => void
-      }) => { open: () => void }
-    }
-  }
-}
-
 
 function formatAmount(amount: string): string {
   const n = parseFloat(amount)
@@ -33,7 +19,8 @@ export default function BankAccounts() {
   const [accounts, setAccounts] = useState<BankAccount[]>([])
   const [selectedAccount, setSelectedAccount] = useState<BankAccount | null>(null)
   const [transactions, setTransactions] = useState<BankTransaction[]>([])
-  const [tellerConfigured, setTellerConfigured] = useState(false)
+  const [widgetOpen, setWidgetOpen] = useState(false)
+  const [setupToken, setSetupToken] = useState('')
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
   const [syncingAll, setSyncingAll] = useState(false)
@@ -45,11 +32,7 @@ export default function BankAccounts() {
 
   const loadAccounts = useCallback(async () => {
     try {
-      const [status, accts] = await Promise.all([
-        bankService.getStatus(),
-        bankService.listAccounts(),
-      ])
-      setTellerConfigured(status.teller_configured)
+      const accts = await bankService.listAccounts()
       setAccounts(accts)
     } catch {
       setError('Failed to load bank accounts.')
@@ -115,36 +98,24 @@ export default function BankAccounts() {
     }
   }
 
-  const handleConnect = () => {
-    const appId = import.meta.env.VITE_TELLER_APP_ID || ''
-    const tellerEnv = import.meta.env.VITE_TELLER_ENV || 'sandbox'
-
-    if (!appId) {
-      setError('VITE_TELLER_APP_ID is not set. Add it to your .env file.')
-      return
-    }
-
+  const handleConnect = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const token = setupToken.trim()
+    if (!token) return
     setConnecting(true)
     setError(null)
-
-    const tellerConnect = window.TellerConnect.setup({
-      applicationId: appId,
-      environment: tellerEnv,
-      onSuccess: async ({ accessToken }) => {
-        try {
-          const newAccounts = await bankService.connect(accessToken)
-          toast(`Connected! ${newAccounts.length} account(s) linked.`)
-          await loadAccounts()
-        } catch {
-          setError('Connection failed. Try again.')
-        } finally {
-          setConnecting(false)
-        }
-      },
-      onExit: () => setConnecting(false),
-    })
-
-    tellerConnect.open()
+    try {
+      const newAccounts = await bankService.connect(token)
+      toast(`Connected! ${newAccounts.length} account(s) linked.`)
+      setWidgetOpen(false)
+      setSetupToken('')
+      await loadAccounts()
+    } catch (err: unknown) {
+      const detail = (err as any)?.response?.data?.detail
+      setError(detail ?? 'Connection failed. Check your setup token and try again.')
+    } finally {
+      setConnecting(false)
+    }
   }
 
   const handleDisconnect = async (accountId: string) => {
@@ -177,7 +148,7 @@ export default function BankAccounts() {
       <div className="flex items-start justify-between gap-3 mb-6 flex-wrap">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Bank Accounts</h1>
-          <p className="text-gray-500 mt-1">Connect your bank to import transactions automatically.</p>
+          <p className="text-gray-500 mt-1">Connect your bank via SimpleFIN to import transactions automatically.</p>
           {syncAllResult && (
             <p className="text-sm text-gray-500 mt-1">
               Last bulk sync: {syncAllResult.succeeded}/{syncAllResult.total} accounts updated
@@ -194,23 +165,75 @@ export default function BankAccounts() {
             {syncingAll ? 'Syncing…' : 'Sync All'}
           </button>
           <button
-            onClick={handleConnect}
-            disabled={connecting || !tellerConfigured}
+            onClick={() => { setWidgetOpen(true); setError(null) }}
+            disabled={connecting}
             className="bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white font-medium px-5 py-2 rounded-lg"
-            title={!tellerConfigured ? 'Teller is not configured on this server.' : undefined}
           >
-            {connecting ? 'Connecting…' : '+ Connect Bank'}
+            + Connect Bank
           </button>
         </div>
       </div>
 
-      {!tellerConfigured && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 text-yellow-800 text-sm">
-          Teller is not configured. Set <code className="font-mono">TELLER_CERT_B64</code>, <code className="font-mono">TELLER_PRIVATE_KEY_B64</code>, and <code className="font-mono">VITE_TELLER_APP_ID</code> to enable bank connections.
+      {/* SimpleFIN setup token modal */}
+      {widgetOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Connect via SimpleFIN</h2>
+              <button
+                onClick={() => { setWidgetOpen(false); setSetupToken('') }}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Get a setup token from{' '}
+              <a
+                href="https://beta-bridge.simplefin.org/simplefin/claim"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sky-600 underline"
+              >
+                SimpleFIN Bridge
+              </a>
+              , then paste it below. Each token can only be used once.
+            </p>
+            <form onSubmit={handleConnect}>
+              <textarea
+                value={setupToken}
+                onChange={e => setSetupToken(e.target.value)}
+                placeholder="Paste your SimpleFIN setup token here…"
+                className="w-full border border-gray-300 rounded-lg p-3 text-sm font-mono resize-none h-24 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                disabled={connecting}
+                autoFocus
+              />
+              {error && (
+                <p className="text-red-600 text-sm mt-2">{error}</p>
+              )}
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => { setWidgetOpen(false); setSetupToken('') }}
+                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+                  disabled={connecting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={connecting || !setupToken.trim()}
+                  className="bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white font-medium px-5 py-2 rounded-lg text-sm"
+                >
+                  {connecting ? 'Connecting…' : 'Connect'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
-      {error && (
+      {error && !widgetOpen && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-red-700 text-sm">
           {error}
         </div>
@@ -225,7 +248,7 @@ export default function BankAccounts() {
             }
           </span>
           <button
-            onClick={handleConnect}
+            onClick={() => { setWidgetOpen(true); setError(null) }}
             className="underline shrink-0 font-medium"
           >
             Re-connect
@@ -236,7 +259,7 @@ export default function BankAccounts() {
       {accounts.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-12 text-center">
           <p className="text-gray-400 text-lg mb-2">No bank accounts connected yet.</p>
-          <p className="text-gray-400 text-sm">Click "Connect Bank" to link your HSA or checking account.</p>
+          <p className="text-gray-400 text-sm">Click "Connect Bank" to link your HSA or checking account via SimpleFIN.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

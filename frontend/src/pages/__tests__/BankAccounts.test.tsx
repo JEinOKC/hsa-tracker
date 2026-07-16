@@ -4,7 +4,6 @@ import BankAccounts from '../BankAccounts'
 
 vi.mock('../../services/bank', () => ({
   bankService: {
-    getStatus: vi.fn(),
     listAccounts: vi.fn(),
     connect: vi.fn(),
     syncAccount: vi.fn(),
@@ -16,17 +15,15 @@ vi.mock('../../services/bank', () => ({
 
 import { bankService } from '../../services/bank'
 
-const mockStatus = { teller_configured: true, active_connections: 0 }
-
 const mockAccount = {
   id: 'acct-uuid-1',
-  provider: 'teller',
-  provider_account_id: 'acct_001',
+  provider: 'simplefin',
+  provider_account_id: 'https://bridge.simplefin.org/simplefin/accounts/abc123',
   account_name: 'HSA Checking',
   account_type: 'depository',
   account_subtype: 'hsa',
   institution_name: 'First National Bank',
-  last_four: '1234',
+  last_four: null,
   currency: 'USD',
   is_active: true,
   last_synced_at: null,
@@ -38,12 +35,12 @@ const mockAccount = {
 const mockTransaction = {
   id: 'txn-uuid-1',
   connection_id: 'acct-uuid-1',
-  provider: 'teller',
+  provider: 'simplefin',
   provider_transaction_id: 'txn_001',
   transaction_date: '2026-03-01',
   description: 'CVS Pharmacy',
   amount: '-50.00',
-  transaction_type: 'card_payment',
+  transaction_type: '',
   status: 'posted',
   details: null,
   created_at: '2026-03-22T00:00:00',
@@ -51,8 +48,6 @@ const mockTransaction = {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  // Default: configured, no accounts
-  ;(bankService.getStatus as any).mockResolvedValue(mockStatus)
   ;(bankService.listAccounts as any).mockResolvedValue([])
 })
 
@@ -71,27 +66,11 @@ describe('BankAccounts page', () => {
     })
   })
 
-  it('shows connect bank button when teller is configured', async () => {
+  it('shows connect bank button', async () => {
     render(<BankAccounts />)
     await waitFor(() => {
       const btn = screen.getByRole('button', { name: /connect bank/i })
       expect(btn).not.toBeDisabled()
-    })
-  })
-
-  it('disables connect bank button when teller is not configured', async () => {
-    ;(bankService.getStatus as any).mockResolvedValue({ teller_configured: false, active_connections: 0 })
-    render(<BankAccounts />)
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /connect bank/i })).toBeDisabled()
-    })
-  })
-
-  it('shows configuration warning when teller is not configured', async () => {
-    ;(bankService.getStatus as any).mockResolvedValue({ teller_configured: false, active_connections: 0 })
-    render(<BankAccounts />)
-    await waitFor(() => {
-      expect(screen.getByText(/teller is not configured/i)).toBeInTheDocument()
     })
   })
 
@@ -169,65 +148,7 @@ describe('BankAccounts page', () => {
     })
   })
 
-  describe('handleConnect', () => {
-    it('shows error when VITE_TELLER_APP_ID is not set', async () => {
-      vi.stubEnv('VITE_TELLER_APP_ID', '')
-      render(<BankAccounts />)
-      await waitFor(() => screen.getByRole('button', { name: /connect bank/i }))
-
-      fireEvent.click(screen.getByRole('button', { name: /connect bank/i }))
-
-      await waitFor(() => {
-        expect(screen.getByText(/VITE_TELLER_APP_ID is not set/i)).toBeInTheDocument()
-      })
-      vi.unstubAllEnvs()
-    })
-
-    it('calls TellerConnect.setup with applicationId (not appId)', async () => {
-      vi.stubEnv('VITE_TELLER_APP_ID', '')
-      const mockOpen = vi.fn()
-      const mockSetup = vi.fn().mockReturnValue({ open: mockOpen })
-      window.TellerConnect = { setup: mockSetup }
-
-      ;(bankService.getStatus as any).mockResolvedValue({ teller_configured: true, active_connections: 0 })
-
-      render(<BankAccounts />)
-      await waitFor(() => screen.getByRole('button', { name: /connect bank/i }))
-
-      fireEvent.click(screen.getByRole('button', { name: /connect bank/i }))
-
-      // With VITE_TELLER_APP_ID stubbed to '', the guard returns early
-      expect(mockSetup).not.toHaveBeenCalled()
-      vi.unstubAllEnvs()
-    })
-
-    it('passes applicationId (not appId) to TellerConnect.setup when app ID is available', async () => {
-      const mockOpen = vi.fn()
-      const mockSetup = vi.fn().mockReturnValue({ open: mockOpen })
-      window.TellerConnect = { setup: mockSetup }
-
-      // Override the env import by re-importing the module with env patched
-      // We verify the type contract: setup config must use applicationId key
-      const validConfig = {
-        applicationId: 'app_test123',
-        environment: 'sandbox',
-        onSuccess: expect.any(Function),
-        onExit: expect.any(Function),
-      }
-
-      // Call setup directly to assert the shape Teller Connect expects
-      window.TellerConnect.setup(validConfig)
-      expect(mockSetup).toHaveBeenCalledWith(
-        expect.objectContaining({ applicationId: 'app_test123' })
-      )
-      expect(mockSetup).not.toHaveBeenCalledWith(
-        expect.objectContaining({ appId: expect.anything() })
-      )
-    })
-  })
-
-  it('shows error when status load fails', async () => {
-    ;(bankService.getStatus as any).mockRejectedValue(new Error('Network error'))
+  it('shows error when account load fails', async () => {
     ;(bankService.listAccounts as any).mockRejectedValue(new Error('Network error'))
 
     render(<BankAccounts />)
@@ -241,6 +162,75 @@ describe('BankAccounts page', () => {
     render(<BankAccounts />)
     await waitFor(() => {
       expect(screen.getByText(/select an account to view transactions/i)).toBeInTheDocument()
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // SimpleFIN connect flow
+  // ---------------------------------------------------------------------------
+
+  describe('connect modal', () => {
+    it('opens connect modal when Connect Bank is clicked', async () => {
+      render(<BankAccounts />)
+      await waitFor(() => screen.getByRole('button', { name: /connect bank/i }))
+
+      fireEvent.click(screen.getByRole('button', { name: /connect bank/i }))
+
+      expect(screen.getByText(/connect via simplefin/i)).toBeInTheDocument()
+      expect(screen.getByPlaceholderText(/setup token/i)).toBeInTheDocument()
+    })
+
+    it('closes connect modal when Cancel is clicked', async () => {
+      render(<BankAccounts />)
+      await waitFor(() => screen.getByRole('button', { name: /connect bank/i }))
+      fireEvent.click(screen.getByRole('button', { name: /connect bank/i }))
+
+      fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+
+      expect(screen.queryByText(/connect via simplefin/i)).not.toBeInTheDocument()
+    })
+
+    it('calls bankService.connect with the setup token on submit', async () => {
+      ;(bankService.connect as any).mockResolvedValue([mockAccount])
+
+      render(<BankAccounts />)
+      await waitFor(() => screen.getByRole('button', { name: /connect bank/i }))
+      fireEvent.click(screen.getByRole('button', { name: /connect bank/i }))
+
+      const textarea = screen.getByPlaceholderText(/setup token/i)
+      fireEvent.change(textarea, { target: { value: 'aHR0cHM6Ly9leGFtcGxlLmNvbQ==' } })
+      fireEvent.click(screen.getByRole('button', { name: /^connect$/i }))
+
+      await waitFor(() => {
+        expect(bankService.connect).toHaveBeenCalledWith('aHR0cHM6Ly9leGFtcGxlLmNvbQ==')
+      })
+    })
+
+    it('shows error in modal when connect fails', async () => {
+      const err = Object.assign(new Error('bad token'), {
+        response: { data: { detail: 'Setup token has already been claimed or is invalid.' } },
+      })
+      ;(bankService.connect as any).mockRejectedValue(err)
+
+      render(<BankAccounts />)
+      await waitFor(() => screen.getByRole('button', { name: /connect bank/i }))
+      fireEvent.click(screen.getByRole('button', { name: /connect bank/i }))
+
+      const textarea = screen.getByPlaceholderText(/setup token/i)
+      fireEvent.change(textarea, { target: { value: 'invalidtoken' } })
+      fireEvent.click(screen.getByRole('button', { name: /^connect$/i }))
+
+      await waitFor(() => {
+        expect(screen.getByText(/setup token has already been claimed/i)).toBeInTheDocument()
+      })
+    })
+
+    it('disables Connect button when textarea is empty', async () => {
+      render(<BankAccounts />)
+      await waitFor(() => screen.getByRole('button', { name: /connect bank/i }))
+      fireEvent.click(screen.getByRole('button', { name: /connect bank/i }))
+
+      expect(screen.getByRole('button', { name: /^connect$/i })).toBeDisabled()
     })
   })
 
@@ -302,13 +292,13 @@ describe('BankAccounts page', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // Sync: specific 409 error message
+  // Sync: specific error message
   // ---------------------------------------------------------------------------
 
-  it('shows specific error detail on sync 409', async () => {
+  it('shows specific error detail on sync failure', async () => {
     ;(bankService.listAccounts as any).mockResolvedValue([mockAccount])
     const err = Object.assign(new Error('409'), {
-      response: { data: { detail: 'Account is disconnected from Teller. Re-connect via the Connect Bank button.' } },
+      response: { data: { detail: 'SimpleFIN access URL is invalid or expired. Re-connect via the Connect Bank button.' } },
     })
     ;(bankService.syncAccount as any).mockRejectedValue(err)
 
@@ -318,7 +308,7 @@ describe('BankAccounts page', () => {
     fireEvent.click(screen.getByRole('button', { name: /^sync$/i }))
 
     await waitFor(() => {
-      expect(screen.getByText(/account is disconnected from teller/i)).toBeInTheDocument()
+      expect(screen.getByText(/simplefin access url is invalid or expired/i)).toBeInTheDocument()
     })
   })
 
@@ -364,8 +354,8 @@ describe('BankAccounts page', () => {
   })
 
   it('shows failed count in Sync All result when some accounts fail', async () => {
-    const disconnected = { ...mockAccount, id: 'acct-dis-5', account_name: 'Amex', connection_status: 'connected' as const }
-    ;(bankService.listAccounts as any).mockResolvedValue([mockAccount, disconnected])
+    const second = { ...mockAccount, id: 'acct-2', account_name: 'Amex', connection_status: 'connected' as const }
+    ;(bankService.listAccounts as any).mockResolvedValue([mockAccount, second])
     ;(bankService.syncAllAccounts as any).mockResolvedValue({
       total: 2,
       succeeded: 1,

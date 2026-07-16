@@ -176,32 +176,6 @@ variable "github_repo" {
   default     = ""
 }
 
-variable "teller_app_id" {
-  description = "Teller application ID (passed to frontend as VITE_TELLER_APP_ID)"
-  type        = string
-  default     = ""
-}
-
-variable "teller_cert_b64" {
-  description = "Teller TLS certificate, base64-encoded"
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "teller_private_key_b64" {
-  description = "Teller TLS private key, base64-encoded"
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "teller_env" {
-  description = "Teller environment: sandbox or production"
-  type        = string
-  default     = "sandbox"
-}
-
 variable "price_provider" {
   description = "Stock price provider: finnhub or alphavantage"
   type        = string

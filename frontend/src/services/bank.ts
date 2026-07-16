@@ -1,7 +1,7 @@
 import api from './api'
 
 export interface BankStatus {
-  teller_configured: boolean
+  provider_configured: boolean
   active_connections: number
 }
 
@@ -48,7 +48,7 @@ export interface MatchCandidate {
   amount: string
   merchant_name: string | null
   description: string | null
-  teller_category: string | null
+  provider_category: string | null
 }
 
 export interface BankTransaction {
@@ -84,8 +84,8 @@ export interface BankTransaction {
   rule_id: string | null
   // Coverage window
   eligibility_warning: boolean
-  // Teller-provided category
-  teller_category: string | null
+  // Provider-supplied category
+  provider_category: string | null
 }
 
 export interface BankTransactionAnnotation {
@@ -122,7 +122,7 @@ export interface AllTransactionsParams {
   search?: string
   show_hidden?: boolean
   auto_flag?: string
-  teller_category?: string
+  provider_category?: string
   show_all_categories?: boolean
   limit?: number
   offset?: number
@@ -181,8 +181,8 @@ export const bankService = {
   getDashboardSummary: (params?: { start_date?: string; end_date?: string }) =>
     api.get<DashboardSummary>('/bank/summary', { params }).then(r => r.data),
 
-  connect: (accessToken: string) =>
-    api.post<BankAccount[]>('/bank/connect', { access_token: accessToken }).then(r => r.data),
+  connect: (setupToken: string) =>
+    api.post<BankAccount[]>('/bank/connect', { setup_token: setupToken }).then(r => r.data),
 
   listAllTransactions: (params?: AllTransactionsParams) =>
     api.get<BankTransaction[]>('/bank/transactions', { params }).then(r => r.data),

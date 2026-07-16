@@ -265,7 +265,7 @@ class TestCountTransactions:
         assert r.status_code == 200
         assert r.json() == 3
 
-    def test_count_filters_by_teller_category(self, client, db_session, test_user, auth_headers):
+    def test_count_filters_by_provider_category(self, client, db_session, test_user, auth_headers):
         """Regression: category filter applies to count, old txns without category are excluded."""
         conn = _make_connection(db_session, test_user.id)
         t1 = _make_txn(db_session, conn.id, description="Doctor")
@@ -278,7 +278,7 @@ class TestCountTransactions:
 
         r = client.get(
             "/api/v1/bank/transactions/count",
-            params={"teller_category": "health"},
+            params={"provider_category": "health"},
             headers=auth_headers,
         )
         assert r.status_code == 200
@@ -295,7 +295,7 @@ class TestCountTransactions:
 
         r = client.get(
             "/api/v1/bank/transactions/count",
-            params={"teller_category": "health"},
+            params={"provider_category": "health"},
             headers=auth_headers,
         )
         assert r.status_code == 200
@@ -308,7 +308,7 @@ class TestCountTransactions:
 
         r = client.get(
             "/api/v1/bank/transactions/count",
-            params={"teller_category": "health"},
+            params={"provider_category": "health"},
             headers=auth_headers,
         )
         assert r.status_code == 200
