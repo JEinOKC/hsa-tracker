@@ -24,7 +24,7 @@ repos:
         files: ^backend/
 
   # ── Dependency vulnerability scanning ─────────────────────────────────────
-  # Runs pip-audit only when requirements.txt changes (makes network calls).
+  # Runs pip-audit on every commit to catch newly disclosed CVEs early.
   # Prerequisite: brew install libpq
   - repo: local
     hooks:
@@ -33,4 +33,4 @@ repos:
         entry: bash -c 'PATH="/opt/homebrew/opt/libpq/bin:/opt/homebrew/bin:$PATH" pip-audit -r backend/requirements.txt'
         language: system
         pass_filenames: false
-        files: ^backend/requirements\.txt$
+        always_run: true
