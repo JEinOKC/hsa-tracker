@@ -101,7 +101,6 @@ const makeTxn = (overrides = {}) => ({
   auto_flag: null,
   rule_id: null,
   eligibility_warning: false,
-  teller_category: null,
   eligible_amount: null,
   ...overrides,
 })
