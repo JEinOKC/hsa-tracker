@@ -102,6 +102,7 @@ const makeTxn = (overrides = {}) => ({
   rule_id: null,
   eligibility_warning: false,
   eligible_amount: null,
+  provider_category: null,
   ...overrides,
 })
 
