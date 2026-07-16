@@ -32,7 +32,7 @@ beforeEach(() => {
 
 describe('bankService.getStatus', () => {
   it('calls GET /bank/status and returns data', async () => {
-    const mockStatus = { teller_configured: true, active_connections: 2 }
+    const mockStatus = { provider_configured: true, active_connections: 2 }
     ;(api.get as any).mockResolvedValue({ data: mockStatus })
 
     const result = await bankService.getStatus()
@@ -43,12 +43,12 @@ describe('bankService.getStatus', () => {
 })
 
 describe('bankService.connect', () => {
-  it('POSTs access_token and returns created accounts', async () => {
+  it('POSTs setup_token and returns created accounts', async () => {
     ;(api.post as any).mockResolvedValue({ data: [mockAccount] })
 
-    const result = await bankService.connect('tok_abc123')
+    const result = await bankService.connect('aHR0cHM6Ly9leGFtcGxlLmNvbQ==')
 
-    expect(api.post).toHaveBeenCalledWith('/bank/connect', { access_token: 'tok_abc123' })
+    expect(api.post).toHaveBeenCalledWith('/bank/connect', { setup_token: 'aHR0cHM6Ly9leGFtcGxlLmNvbQ==' })
     expect(result).toHaveLength(1)
     expect(result[0].provider_account_id).toBe('acct_001')
   })

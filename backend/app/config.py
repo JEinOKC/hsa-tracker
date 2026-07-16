@@ -59,13 +59,6 @@ class Settings(BaseSettings):
     vapid_public_key: Optional[str] = None   # URL-safe base64
     vapid_claims_email: str = "mailto:admin@localhost"
 
-    # Teller.io bank integration (optional, per-install)
-    teller_app_id: Optional[str] = None
-    teller_cert_b64: Optional[str] = None          # direct env var (local dev)
-    teller_private_key_b64: Optional[str] = None   # direct env var (local dev)
-    teller_secret_arn: Optional[str] = None        # Secrets Manager ARN (production)
-    teller_env: str = "sandbox"  # "sandbox" or "production"
-
     # File Upload
     max_upload_size_mb: int = 10
     allowed_mime_types: str = "image/jpeg,image/png,image/heic,application/pdf"

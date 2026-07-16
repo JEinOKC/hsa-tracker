@@ -88,8 +88,8 @@ class BankTransaction(Base):
         nullable=True,
         index=True,
     )
-    # 'teller' for synced transactions, 'manual' for user-entered ones
-    source = Column(String(20), nullable=False, server_default="teller")
+    # 'simplefin' for synced transactions, 'manual' for user-entered ones
+    source = Column(String(20), nullable=False, server_default="simplefin")
     provider = Column(String(50), nullable=True)
     provider_transaction_id = Column(String(255), nullable=True, index=True)
 
@@ -157,7 +157,7 @@ class BankTransaction(Base):
             name="ck_bank_txn_auto_flag",
         ),
         CheckConstraint(
-            "source IN ('teller', 'manual')",
+            "source IN ('teller', 'simplefin', 'manual')",
             name="ck_bank_txn_source",
         ),
     )

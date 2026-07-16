@@ -1,8 +1,8 @@
-"""Bank integration endpoints (Teller.io and future providers).
+"""Bank integration endpoints (SimpleFIN Bridge provider).
 
 Endpoints:
-  POST   /bank/connect                          - receive Teller Connect token, store + discover accounts
-  GET    /bank/status                           - is a provider configured?
+  POST   /bank/connect                          - claim SimpleFIN setup token, store + discover accounts
+  GET    /bank/status                           - is the provider available?
   GET    /bank/transactions                     - all transactions across all accounts (with filters)
   PATCH  /bank/transactions/{id}               - update HSA annotations on a transaction
   GET    /bank/accounts                         - list connected accounts (DB)
@@ -35,11 +35,15 @@ from app.models.family import FamilyMember, HsaEligibilityPeriod
 from app.models.household import Household, HouseholdMembership
 from app.models.lmn import LmnDocument
 from app.models.user import User
-from app.providers import get_teller_provider, is_teller_configured
-from app.providers.teller.client import (
-    TellerAPIError,
-    TellerAuthError,
-    TellerDisconnectedError,
+from app.providers import (
+    claim_simplefin_setup_token,
+    get_simplefin_provider,
+    is_simplefin_configured,
+)
+from app.providers.simplefin.client import (
+    SimpleFINAuthError,
+    SimpleFINConnectionError,
+    SimpleFINError,
 )
 from app.services.merchant_keywords import classify_merchant, normalize_merchant_name
 from app.services.rules_engine import (
@@ -60,13 +64,13 @@ router = APIRouter()
 # Request / response schemas
 # ---------------------------------------------------------------------------
 
-class TellerEnrollment(BaseModel):
-    """Payload sent from Teller Connect's onSuccess callback."""
-    access_token: str
+class SimpleFINConnect(BaseModel):
+    """Payload for connecting a bank via SimpleFIN Bridge."""
+    setup_token: str  # Base64-encoded claim URL from simplefin.org
 
 
 class BankStatusResponse(BaseModel):
-    teller_configured: bool
+    provider_configured: bool
     active_connections: int
 
 
@@ -99,7 +103,7 @@ class BankAccountDetailResponse(BankAccountResponse):
 class BankTransactionResponse(BaseModel):
     id: UUID
     connection_id: Optional[UUID]
-    source: str = "teller"
+    source: str = "simplefin"
     provider: Optional[str]
     provider_transaction_id: Optional[str]
     transaction_date: date
@@ -132,8 +136,8 @@ class BankTransactionResponse(BaseModel):
     rule_id: Optional[UUID] = None
     # Coverage window
     eligibility_warning: bool = False
-    # Teller-provided category (extracted from details JSON for convenience)
-    teller_category: Optional[str] = None
+    # Provider-supplied category (extracted from details JSON for convenience)
+    provider_category: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -221,7 +225,7 @@ def _txn_to_response(
     data.owner_display_name = owner_display_name
     data.eligibility_warning = eligibility_warning
     if txn.details and isinstance(txn.details, dict):
-        data.teller_category = txn.details.get("category")
+        data.provider_category = txn.details.get("category")
     return data
 
 
@@ -307,20 +311,33 @@ def _get_user_household(user_id, db: Session):
 
 @router.post("/connect", response_model=list[BankAccountResponse])
 async def connect_bank(
-    payload: TellerEnrollment,
+    payload: SimpleFINConnect,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Receive a Teller Connect enrollment token, store it, and discover accounts.
+    """Claim a SimpleFIN Setup Token, discover accounts, and store connections.
 
-    Called by the frontend immediately after the Teller Connect widget succeeds.
-    Safe to call repeatedly — existing accounts are updated, not duplicated.
+    The setup token is a one-time credential obtained from simplefin.org.
+    Claiming it returns a long-lived Access URL that is stored as enrollment_token
+    on every BankConnection row. Safe to call repeatedly — existing accounts are
+    updated, not duplicated.
     """
-    if not is_teller_configured():
-        raise HTTPException(status_code=503, detail="Bank provider not configured.")
+    try:
+        access_url = claim_simplefin_setup_token(payload.setup_token)
+    except SimpleFINAuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SimpleFINError as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid setup token: {exc}") from exc
+    except SimpleFINConnectionError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not reach SimpleFIN: {exc}") from exc
 
-    provider = get_teller_provider(access_token=payload.access_token)
-    external_accounts = provider.list_accounts()
+    try:
+        provider = get_simplefin_provider(access_url)
+        external_accounts = provider.list_accounts()
+    except SimpleFINAuthError as exc:
+        raise HTTPException(status_code=502, detail=f"SimpleFIN auth error: {exc}") from exc
+    except SimpleFINError as exc:
+        raise HTTPException(status_code=502, detail=f"SimpleFIN error: {exc}") from exc
 
     results = []
     for acct in external_accounts:
@@ -333,13 +350,13 @@ async def connect_bank(
             .first()
         )
         if existing:
-            # Exact match — update in place
+            # Exact match on stable SimpleFIN account ID — update in place
             existing.account_name = acct.name
             existing.account_type = acct.type
             existing.account_subtype = acct.subtype
             existing.institution_name = acct.institution_name
             existing.last_four = acct.last_four
-            existing.enrollment_token = payload.access_token
+            existing.enrollment_token = access_url
             existing.user_id = current_user.id
             existing.is_active = True
             existing.connection_status = "connected"
@@ -347,50 +364,20 @@ async def connect_bank(
             existing.updated_at = datetime.utcnow()
             results.append(existing)
         else:
-            # Fuzzy match: same user + institution + last_four + subtype, previously disconnected.
-            # Teller issues new account IDs on re-enrollment, so we can't match on provider_account_id.
-            fuzzy = (
-                db.query(BankConnection)
-                .filter(
-                    BankConnection.user_id == current_user.id,
-                    BankConnection.provider == acct.provider,
-                    BankConnection.institution_name == acct.institution_name,
-                    BankConnection.last_four == acct.last_four,
-                    BankConnection.account_subtype == acct.subtype,
-                    BankConnection.connection_status.in_(["disconnected", "error"]),
-                )
-                .first()
+            connection = BankConnection(
+                user_id=current_user.id,
+                provider=acct.provider,
+                provider_account_id=acct.id,
+                account_name=acct.name,
+                account_type=acct.type,
+                account_subtype=acct.subtype,
+                institution_name=acct.institution_name,
+                last_four=acct.last_four,
+                currency=acct.currency,
+                enrollment_token=access_url,
             )
-            if fuzzy:
-                # Re-connect: reuse the existing row, preserving all transaction history
-                fuzzy.provider_account_id = acct.id
-                fuzzy.account_name = acct.name
-                fuzzy.account_type = acct.type
-                fuzzy.account_subtype = acct.subtype
-                fuzzy.institution_name = acct.institution_name
-                fuzzy.last_four = acct.last_four
-                fuzzy.enrollment_token = payload.access_token
-                fuzzy.user_id = current_user.id
-                fuzzy.is_active = True
-                fuzzy.connection_status = "connected"
-                fuzzy.connection_error = None
-                fuzzy.updated_at = datetime.utcnow()
-                results.append(fuzzy)
-            else:
-                connection = BankConnection(
-                    user_id=current_user.id,
-                    provider=acct.provider,
-                    provider_account_id=acct.id,
-                    account_name=acct.name,
-                    account_type=acct.type,
-                    account_subtype=acct.subtype,
-                    institution_name=acct.institution_name,
-                    last_four=acct.last_four,
-                    currency=acct.currency,
-                    enrollment_token=payload.access_token,
-                )
-                db.add(connection)
-                results.append(connection)
+            db.add(connection)
+            results.append(connection)
 
     db.commit()
     for r in results:
@@ -406,7 +393,7 @@ async def get_bank_status(
     """Check whether a bank provider is configured and how many accounts are connected."""
     active = db.query(BankConnection).filter(BankConnection.is_active.is_(True)).count()
     return BankStatusResponse(
-        teller_configured=is_teller_configured(),
+        provider_configured=is_simplefin_configured(),
         active_connections=active,
     )
 
@@ -762,7 +749,7 @@ def _build_transaction_query(
     show_hidden: bool = False,
     show_all_categories: bool = False,
     auto_flag_filter: Optional[str] = None,
-    teller_category: Optional[str] = None,
+    provider_category: Optional[str] = None,
 ):
     """Return a filtered SQLAlchemy query for BankTransaction (no limit/offset applied).
 
@@ -819,7 +806,7 @@ def _build_transaction_query(
         # In "Smart" mode (default), exclude unreviewed transactions in categories
         # the adaptive filter says to hide. "All" mode bypasses this entirely.
         # Transactions with no category (NULL) always show.
-        if not show_all_categories and teller_category is None and current_user_id is not None:
+        if not show_all_categories and provider_category is None and current_user_id is not None:
             smart_hidden = get_smart_hidden_categories(current_user_id, db)
             if smart_hidden:
                 category_col = BankTransaction.details["category"].astext
@@ -830,9 +817,9 @@ def _build_transaction_query(
                 )
     if auto_flag_filter is not None:
         query = query.filter(BankTransaction.auto_flag == auto_flag_filter)
-    if teller_category is not None:
+    if provider_category is not None:
         query = query.filter(
-            BankTransaction.details["category"].astext == teller_category
+            BankTransaction.details["category"].astext == provider_category
         )
     return query
 
@@ -851,7 +838,7 @@ async def count_transactions(
     show_hidden: bool = Query(False),
     show_all_categories: bool = Query(False),
     auto_flag_filter: Optional[str] = Query(None, alias="auto_flag"),
-    teller_category: Optional[str] = Query(None),
+    provider_category: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> int:
@@ -877,7 +864,7 @@ async def count_transactions(
         show_hidden=show_hidden,
         show_all_categories=show_all_categories,
         auto_flag_filter=auto_flag_filter,
-        teller_category=teller_category,
+        provider_category=provider_category,
     ).count()
 
 
@@ -895,7 +882,7 @@ async def list_all_transactions(
     show_hidden: bool = Query(False, description="Include transactions flagged as hidden (default: excluded)"),
     show_all_categories: bool = Query(False, description="Disable smart category filter — show non-HSA categories like food, gas, entertainment"),
     auto_flag_filter: Optional[str] = Query(None, alias="auto_flag", description="Filter to transactions with this auto_flag value"),
-    teller_category: Optional[str] = Query(None, description="Filter by Teller-provided category (e.g. 'health', 'food_and_drink')"),
+    provider_category: Optional[str] = Query(None, description="Filter by provider-supplied category (e.g. 'health', 'food_and_drink')"),
     limit: int = Query(50, le=2000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -923,7 +910,7 @@ async def list_all_transactions(
         show_hidden=show_hidden,
         show_all_categories=show_all_categories,
         auto_flag_filter=auto_flag_filter,
-        teller_category=teller_category,
+        provider_category=provider_category,
     )
 
     txns = (
@@ -1082,20 +1069,18 @@ async def get_bank_account(
         owner = db.query(UserModel).filter(UserModel.id == connection.user_id).first()
         response.owner_display_name = owner.display_name if owner else None
 
-    if is_teller_configured() and connection.enrollment_token:
+    if connection.enrollment_token:
         try:
-            provider = get_teller_provider(access_token=connection.enrollment_token)
+            provider = get_simplefin_provider(connection.enrollment_token)
             balance = provider.get_balance(connection.provider_account_id)
             response.balance_ledger = balance.ledger
             response.balance_available = balance.available
-        except TellerDisconnectedError as exc:
+        except SimpleFINAuthError as exc:
             _mark_connection_error(connection, "disconnected", str(exc), db)
-        except TellerAuthError as exc:
-            _mark_connection_error(connection, "disconnected", str(exc), db)
-        except TellerAPIError as exc:
+        except SimpleFINConnectionError as exc:
             _mark_connection_error(connection, "error", str(exc), db)
         except Exception:
-            pass  # Non-Teller errors: return account without balance
+            pass  # Return account without balance on unexpected errors
 
     return response
 
@@ -1109,10 +1094,10 @@ def _sync_one_connection(
 ) -> tuple[int, int, list]:
     """Fetch and store transactions for one connection.
 
-    Returns (added, skipped, new_txns). Raises TellerAPIError subclasses on provider failure.
+    Returns (added, skipped, new_txns). Raises SimpleFINError subclasses on provider failure.
     Callers are responsible for committing or rolling back.
     """
-    provider = get_teller_provider(access_token=connection.enrollment_token)
+    provider = get_simplefin_provider(connection.enrollment_token)
     external_txns = provider.list_transactions(
         connection.provider_account_id,
         from_date=from_date,
@@ -1135,19 +1120,15 @@ def _sync_one_connection(
             skipped += 1
             continue
 
-        # Teller uses accounting sign convention for credit accounts: purchases
-        # are positive (balance increases) and payments are negative.  Our
-        # internal convention is negative = expense, positive = credit/refund,
-        # which matches depository accounts directly.  Negate for credit accounts.
-        amount = -txn.amount if connection.account_type == "credit" else txn.amount
-
+        # SimpleFIN sign convention: negative = expense, positive = credit — matches our convention.
         new_txn = BankTransaction(
             connection_id=connection.id,
             provider=txn.provider,
+            source="simplefin",
             provider_transaction_id=txn.id,
             transaction_date=txn.date,
             description=txn.description,
-            amount=amount,
+            amount=txn.amount,
             transaction_type=txn.type,
             status=txn.status,
             details=txn.details,
@@ -1176,8 +1157,6 @@ async def sync_all_accounts(
     current_user: User = Depends(get_current_user),
 ):
     """Sync all active, connected accounts for the current user in one request."""
-    if not is_teller_configured():
-        raise HTTPException(status_code=503, detail="Bank provider not configured.")
 
     readable_owner_ids = get_readable_owner_ids(current_user, db, resource="bank_accounts")
     connections = (
@@ -1224,9 +1203,7 @@ async def sync_all_accounts(
                 added=added,
                 skipped=skipped,
             ))
-        except (TellerDisconnectedError, TellerAuthError) as exc:
-            # The error is raised before any DB writes in _sync_one_connection,
-            # so no rollback is needed — just record the failure and move on.
+        except SimpleFINAuthError as exc:
             _mark_connection_error(connection, "disconnected", str(exc), db)
             outcomes.append(AccountSyncOutcome(
                 account_id=str(connection.id),
@@ -1234,7 +1211,7 @@ async def sync_all_accounts(
                 status="disconnected",
                 error=str(exc),
             ))
-        except TellerAPIError as exc:
+        except SimpleFINError as exc:
             _mark_connection_error(connection, "error", str(exc), db)
             outcomes.append(AccountSyncOutcome(
                 account_id=str(connection.id),
@@ -1262,10 +1239,8 @@ async def sync_account_transactions(
     """
     connection = _get_connection_or_404(account_id, current_user, db, operation="write")
 
-    if not is_teller_configured():
-        raise HTTPException(status_code=503, detail="Bank provider not configured.")
     if not connection.enrollment_token:
-        raise HTTPException(status_code=422, detail="Account has no enrollment token. Reconnect via Teller Connect.")
+        raise HTTPException(status_code=422, detail="Account has no access URL. Reconnect via SimpleFIN.")
 
     # Auto-determine from_date when not explicitly provided
     if from_date is None:
@@ -1292,19 +1267,13 @@ async def sync_account_transactions(
 
     try:
         added, skipped, new_txns = _sync_one_connection(connection, from_date, count, current_user, db)
-    except TellerDisconnectedError as exc:
+    except SimpleFINAuthError as exc:
         _mark_connection_error(connection, "disconnected", str(exc), db)
         raise HTTPException(
             status_code=409,
-            detail="Account is disconnected from Teller. Re-connect via the Connect Bank button.",
+            detail="SimpleFIN access URL is invalid or expired. Re-connect via the Connect Bank button.",
         )
-    except TellerAuthError as exc:
-        _mark_connection_error(connection, "disconnected", str(exc), db)
-        raise HTTPException(
-            status_code=409,
-            detail="Enrollment token is invalid or revoked. Re-connect via the Connect Bank button.",
-        )
-    except TellerAPIError as exc:
+    except SimpleFINError as exc:
         _mark_connection_error(connection, "error", str(exc), db)
         raise HTTPException(status_code=422, detail=f"Provider error: {exc}")
 
