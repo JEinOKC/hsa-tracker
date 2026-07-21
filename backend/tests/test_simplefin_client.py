@@ -106,7 +106,7 @@ class TestGetAccounts:
 
         mock_get.assert_called_once_with(
             "https://u:p@bridge.simplefin.org/simplefin/accounts",
-            params={},
+            params={"pending": "1"},
             timeout=30,
         )
         assert result == payload
@@ -121,13 +121,14 @@ class TestGetAccounts:
         ts = int(call_params["start-date"])
         # 2026-01-01 00:00:00 UTC = 1767225600
         assert ts == 1767225600
+        assert call_params["pending"] == "1"
 
-    def test_no_start_date_sends_empty_params(self):
+    def test_no_start_date_sends_pending_param_only(self):
         client = self._make_client()
         with patch("app.providers.simplefin.client.httpx.get") as mock_get:
             mock_get.return_value = _mock_response(200, json_data={"accounts": []})
             client.get_accounts()
-        assert mock_get.call_args[1]["params"] == {}
+        assert mock_get.call_args[1]["params"] == {"pending": "1"}
 
     def test_401_raises_simplefin_auth_error(self):
         client = self._make_client()

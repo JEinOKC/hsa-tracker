@@ -35,19 +35,20 @@ class SimpleFINProvider(BankProvider):
     def name(self) -> str:
         return self.PROVIDER_NAME
 
-    def list_accounts(self) -> list[ExternalAccount]:
-        """Return all accounts accessible via this Access URL."""
-        data = self._client.get_accounts()
+    # ------------------------------------------------------------------
+    # Bulk fetch — one API call for all accounts
+    # ------------------------------------------------------------------
+
+    def fetch_all(self, start_date: Optional[date] = None) -> dict:
+        """Single API call returning the raw SimpleFIN response for all accounts."""
+        return self._client.get_accounts(start_date=start_date)
+
+    def parse_accounts(self, data: dict) -> list[ExternalAccount]:
+        """Parse accounts from a pre-fetched API response."""
         return [self._parse_account(a) for a in data.get("accounts", [])]
 
-    def get_account(self, account_id: str) -> ExternalAccount:
-        for a in self.list_accounts():
-            if a.id == account_id:
-                return a
-        raise ValueError(f"Account {account_id} not found in SimpleFIN response.")
-
-    def get_balance(self, account_id: str) -> ExternalBalance:
-        data = self._client.get_accounts()
+    def parse_balance(self, data: dict, account_id: str) -> ExternalBalance:
+        """Extract one account's balance from a pre-fetched API response."""
         for acct in data.get("accounts", []):
             if acct.get("id") == account_id:
                 ledger = Decimal(str(acct.get("balance") or 0))
@@ -61,6 +62,38 @@ class SimpleFINProvider(BankProvider):
                 )
         raise ValueError(f"Account {account_id} not found.")
 
+    def parse_transactions(
+        self,
+        data: dict,
+        account_id: str,
+        count: int = 100,
+    ) -> list[ExternalTransaction]:
+        """Extract one account's transactions from a pre-fetched API response."""
+        for acct in data.get("accounts", []):
+            if acct.get("id") == account_id:
+                raw_txns = acct.get("transactions", [])
+                txns = [self._parse_transaction(t, account_id) for t in raw_txns]
+                txns.sort(key=lambda t: t.date, reverse=True)
+                return txns[:count]
+        return []
+
+    # ------------------------------------------------------------------
+    # BankProvider interface — single-account convenience methods
+    # ------------------------------------------------------------------
+
+    def list_accounts(self) -> list[ExternalAccount]:
+        """Return all accounts accessible via this Access URL."""
+        return self.parse_accounts(self.fetch_all())
+
+    def get_account(self, account_id: str) -> ExternalAccount:
+        for a in self.list_accounts():
+            if a.id == account_id:
+                return a
+        raise ValueError(f"Account {account_id} not found in SimpleFIN response.")
+
+    def get_balance(self, account_id: str) -> ExternalBalance:
+        return self.parse_balance(self.fetch_all(), account_id)
+
     def list_transactions(
         self,
         account_id: str,
@@ -72,14 +105,9 @@ class SimpleFINProvider(BankProvider):
         SimpleFIN returns all accounts + their transactions in one response,
         so we request everything and filter to the relevant account here.
         """
-        data = self._client.get_accounts(start_date=from_date)
-        for acct in data.get("accounts", []):
-            if acct.get("id") == account_id:
-                raw_txns = acct.get("transactions", [])
-                txns = [self._parse_transaction(t, account_id) for t in raw_txns]
-                txns.sort(key=lambda t: t.date, reverse=True)
-                return txns[:count]
-        return []
+        return self.parse_transactions(
+            self.fetch_all(start_date=from_date), account_id, count
+        )
 
     # ------------------------------------------------------------------
     # Private parsers
@@ -131,6 +159,8 @@ class SimpleFINProvider(BankProvider):
         if memo and memo != description:
             details["memo"] = memo
 
+        status = "pending" if data.get("pending") else "posted"
+
         return ExternalTransaction(
             id=txn_id,
             account_id=account_id,
@@ -138,7 +168,7 @@ class SimpleFINProvider(BankProvider):
             description=description,
             amount=amount,
             type="",
-            status="posted",
+            status=status,
             provider=self.PROVIDER_NAME,
             details=details,
         )

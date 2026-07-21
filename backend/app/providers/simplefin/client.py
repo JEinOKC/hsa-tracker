@@ -82,7 +82,7 @@ class SimpleFINClient:
             SimpleFINAuthError: If credentials are invalid (HTTP 401).
             SimpleFINConnectionError: On network failure.
         """
-        params: dict = {}
+        params: dict = {"pending": "1"}
         if start_date is not None:
             ts = int(
                 datetime.combine(start_date, datetime.min.time())
