@@ -1144,18 +1144,25 @@ def _sync_one_connection(
     count: int,
     current_user: User,
     db: Session,
+    prefetched_txns: list | None = None,
 ) -> tuple[int, int, list]:
     """Fetch and store transactions for one connection.
 
     Returns (added, skipped, new_txns). Raises SimpleFINError subclasses on provider failure.
     Callers are responsible for committing or rolling back.
+
+    When prefetched_txns is provided the provider API is not called — the
+    caller has already fetched in bulk for all accounts.
     """
-    provider = get_simplefin_provider(connection.enrollment_token)
-    external_txns = provider.list_transactions(
-        connection.provider_account_id,
-        from_date=from_date,
-        count=count,
-    )
+    if prefetched_txns is not None:
+        external_txns = prefetched_txns
+    else:
+        provider = get_simplefin_provider(connection.enrollment_token)
+        external_txns = provider.list_transactions(
+            connection.provider_account_id,
+            from_date=from_date,
+            count=count,
+        )
 
     # Overlap-window dedup for Teller→SimpleFIN migrated connections.
     # On migrated connections, Teller transactions share the same connection_id.
@@ -1194,6 +1201,7 @@ def _sync_one_connection(
 
     added = 0
     skipped = 0
+    updated = 0
     new_txns = []
     for txn in external_txns:
         exists = (
@@ -1205,10 +1213,14 @@ def _sync_one_connection(
             .first()
         )
         if exists:
+            if exists.status == "pending" and txn.status == "posted":
+                exists.status = "posted"
+                exists.transaction_date = txn.date
+                exists.description = txn.description
+                updated += 1
             skipped += 1
             continue
 
-        # SimpleFIN sign convention: negative = expense, positive = credit — matches our convention.
         new_txn = BankTransaction(
             connection_id=connection.id,
             provider=txn.provider,
@@ -1244,7 +1256,11 @@ async def sync_all_accounts(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Sync all active, connected accounts for the current user in one request."""
+    """Sync all active, connected accounts for the current user in one request.
+
+    Makes a single API call to SimpleFIN and distributes the response across
+    all connections, rather than one call per account.
+    """
 
     readable_owner_ids = get_readable_owner_ids(current_user, db, resource="bank_accounts")
     connections = (
@@ -1258,16 +1274,20 @@ async def sync_all_accounts(
         .all()
     )
 
-    outcomes = []
+    if not connections:
+        return SyncAllResult(total=0, succeeded=0, failed=0, outcomes=[])
+
+    # Compute per-connection from_date and find the earliest for the bulk fetch.
+    household = _get_user_household(current_user.id, db)
+    hsa_start = _earliest_hsa_start(household.id, db) if household else None
+    from_dates: list[Optional[date]] = []
     for connection in connections:
-        household = _get_user_household(current_user.id, db)
-        hsa_start = _earliest_hsa_start(household.id, db) if household else None
         oldest_in_db = (
             db.query(func.min(BankTransaction.transaction_date))
             .filter(BankTransaction.connection_id == connection.id)
             .scalar()
         )
-        from_date = None
+        from_date: Optional[date] = None
         if hsa_start:
             history_complete = oldest_in_db is not None and oldest_in_db <= hsa_start
             if history_complete:
@@ -1280,9 +1300,63 @@ async def sync_all_accounts(
                 from_date = hsa_start
         elif connection.last_synced_at:
             from_date = connection.last_synced_at.date() - timedelta(days=7)
+        from_dates.append(from_date)
+
+    non_null_dates = [d for d in from_dates if d is not None]
+    earliest_from_date = min(non_null_dates) if non_null_dates else None
+
+    # Single API call for all accounts.
+    access_url = connections[0].enrollment_token
+    from app.providers.simplefin.client import SimpleFINClient
+    from app.providers.simplefin.provider import SimpleFINProvider
+    provider = SimpleFINProvider(client=SimpleFINClient(access_url))
+
+    try:
+        api_data = provider.fetch_all(start_date=earliest_from_date)
+    except SimpleFINAuthError as exc:
+        for connection in connections:
+            _mark_connection_error(connection, "disconnected", str(exc), db)
+        return SyncAllResult(
+            total=len(connections),
+            succeeded=0,
+            failed=len(connections),
+            outcomes=[
+                AccountSyncOutcome(
+                    account_id=str(c.id), account_name=c.account_name,
+                    status="disconnected", error=str(exc),
+                )
+                for c in connections
+            ],
+        )
+    except (SimpleFINConnectionError, SimpleFINError) as exc:
+        for connection in connections:
+            _mark_connection_error(connection, "error", str(exc), db)
+        return SyncAllResult(
+            total=len(connections),
+            succeeded=0,
+            failed=len(connections),
+            outcomes=[
+                AccountSyncOutcome(
+                    account_id=str(c.id), account_name=c.account_name,
+                    status="error", error=str(exc),
+                )
+                for c in connections
+            ],
+        )
+
+    outcomes = []
+    for i, connection in enumerate(connections):
+        conn_from_date = from_dates[i]
+        txns = provider.parse_transactions(api_data, connection.provider_account_id, count)
+
+        if conn_from_date and earliest_from_date and conn_from_date > earliest_from_date:
+            txns = [t for t in txns if t.date >= conn_from_date]
 
         try:
-            added, skipped, _ = _sync_one_connection(connection, from_date, count, current_user, db)
+            added, skipped, _ = _sync_one_connection(
+                connection, conn_from_date, count, current_user, db,
+                prefetched_txns=txns,
+            )
             db.commit()
             outcomes.append(AccountSyncOutcome(
                 account_id=str(connection.id),
@@ -1291,16 +1365,8 @@ async def sync_all_accounts(
                 added=added,
                 skipped=skipped,
             ))
-        except SimpleFINAuthError as exc:
-            _mark_connection_error(connection, "disconnected", str(exc), db)
-            outcomes.append(AccountSyncOutcome(
-                account_id=str(connection.id),
-                account_name=connection.account_name,
-                status="disconnected",
-                error=str(exc),
-            ))
-        except SimpleFINError as exc:
-            _mark_connection_error(connection, "error", str(exc), db)
+        except Exception as exc:
+            db.rollback()
             outcomes.append(AccountSyncOutcome(
                 account_id=str(connection.id),
                 account_name=connection.account_name,

@@ -60,31 +60,27 @@ export function useAutoSync() {
       const stale = accounts.filter(a => a.is_active && isStale(a.last_synced_at))
       if (stale.length === 0) return
 
-      // Sync all stale accounts in parallel, collecting results for batched push
-      const results = await Promise.allSettled(
-        stale.map(account => bankService.syncAccount(account.id))
-      )
+      // Single API call to sync all accounts at once
+      const result = await bankService.syncAll()
 
       // Surface any sync errors as toasts
-      results.forEach((result, i) => {
-        if (result.status === 'rejected') {
-          const status = result.reason?.response?.status
-          const name = stale[i].institution_name || stale[i].account_name
-          const msg = status === 422
-            ? `${name} needs to be reconnected`
-            : `${name} failed to sync`
+      for (const outcome of result.outcomes) {
+        if (outcome.status !== 'ok') {
+          const msg = outcome.status === 'disconnected'
+            ? `${outcome.account_name} needs to be reconnected`
+            : `${outcome.account_name} failed to sync`
           toast(msg, 'error', {
             label: 'Go to Bank Accounts',
             onClick: () => navigate('/bank'),
           })
         }
-      })
+      }
 
       // Send one batched push for all potential HSA transactions found this session,
       // subject to a 12-hour cooldown to avoid alert fatigue.
       if (!isPushCooldownActive()) {
-        const totalPotentialHsa = results.reduce((sum, r) =>
-          r.status === 'fulfilled' ? sum + (r.value?.potential_hsa_count ?? 0) : sum
+        const totalPotentialHsa = result.outcomes.reduce((sum, o) =>
+          o.status === 'ok' ? sum + (o.added ?? 0) : sum
         , 0)
         if (totalPotentialHsa > 0) {
           markPushSent()

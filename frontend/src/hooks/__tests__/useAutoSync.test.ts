@@ -11,6 +11,7 @@ vi.mock('../../services/bank', () => ({
   bankService: {
     listAccounts: vi.fn(),
     syncAccount: vi.fn(),
+    syncAll: vi.fn(),
   },
 }))
 
@@ -57,13 +58,17 @@ const neverSyncedAccount = {
   account_name: 'Savings',
 }
 
+const defaultSyncAllResult = {
+  total: 0, succeeded: 0, failed: 0, outcomes: [],
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.removeItem(STORAGE_KEY)
   localStorage.removeItem(INTERVAL_STORAGE_KEY)
   localStorage.removeItem(PUSH_COOLDOWN_KEY)
   ;(bankService.listAccounts as any).mockResolvedValue([])
-  ;(bankService.syncAccount as any).mockResolvedValue({ added: 0, skipped: 0, account_id: '', potential_hsa_count: 0 })
+  ;(bankService.syncAll as any).mockResolvedValue(defaultSyncAllResult)
 })
 
 afterEach(() => {
@@ -73,27 +78,35 @@ afterEach(() => {
 })
 
 describe('useAutoSync', () => {
-  it('syncs stale accounts on mount', async () => {
+  it('calls sync-all when stale accounts exist', async () => {
     ;(bankService.listAccounts as any).mockResolvedValue([staleAccount])
+    ;(bankService.syncAll as any).mockResolvedValue({
+      total: 1, succeeded: 1, failed: 0,
+      outcomes: [{ account_id: 'acc-1', account_name: 'Checking', status: 'ok', added: 0, skipped: 0 }],
+    })
 
     renderHook(() => useAutoSync())
 
     await waitFor(() => {
-      expect(bankService.syncAccount).toHaveBeenCalledWith('acc-1')
+      expect(bankService.syncAll).toHaveBeenCalled()
     })
   })
 
-  it('syncs accounts with null last_synced_at', async () => {
+  it('calls sync-all when accounts have null last_synced_at', async () => {
     ;(bankService.listAccounts as any).mockResolvedValue([neverSyncedAccount])
+    ;(bankService.syncAll as any).mockResolvedValue({
+      total: 1, succeeded: 1, failed: 0,
+      outcomes: [{ account_id: 'acc-3', account_name: 'Savings', status: 'ok', added: 0, skipped: 0 }],
+    })
 
     renderHook(() => useAutoSync())
 
     await waitFor(() => {
-      expect(bankService.syncAccount).toHaveBeenCalledWith('acc-3')
+      expect(bankService.syncAll).toHaveBeenCalled()
     })
   })
 
-  it('skips fresh accounts', async () => {
+  it('skips sync when all accounts are fresh', async () => {
     ;(bankService.listAccounts as any).mockResolvedValue([freshAccount])
 
     renderHook(() => useAutoSync())
@@ -101,7 +114,7 @@ describe('useAutoSync', () => {
     await waitFor(() => {
       expect(bankService.listAccounts).toHaveBeenCalled()
     })
-    expect(bankService.syncAccount).not.toHaveBeenCalled()
+    expect(bankService.syncAll).not.toHaveBeenCalled()
   })
 
   it('skips inactive accounts', async () => {
@@ -114,7 +127,7 @@ describe('useAutoSync', () => {
     await waitFor(() => {
       expect(bankService.listAccounts).toHaveBeenCalled()
     })
-    expect(bankService.syncAccount).not.toHaveBeenCalled()
+    expect(bankService.syncAll).not.toHaveBeenCalled()
   })
 
   it('does not run again if checked within 24h', async () => {
@@ -127,30 +140,36 @@ describe('useAutoSync', () => {
     expect(bankService.listAccounts).not.toHaveBeenCalled()
   })
 
-  it('shows error toast with action when sync returns 422', async () => {
+  it('shows error toast for disconnected accounts', async () => {
     ;(bankService.listAccounts as any).mockResolvedValue([staleAccount])
-    ;(bankService.syncAccount as any).mockRejectedValue({ response: { status: 422 } })
+    ;(bankService.syncAll as any).mockResolvedValue({
+      total: 1, succeeded: 0, failed: 1,
+      outcomes: [{ account_id: 'acc-1', account_name: 'Checking', status: 'disconnected', error: 'expired' }],
+    })
 
     renderHook(() => useAutoSync())
 
     await waitFor(() => {
       expect(mockToast).toHaveBeenCalledWith(
-        'Chase needs to be reconnected',
+        'Checking needs to be reconnected',
         'error',
         expect.objectContaining({ label: 'Go to Bank Accounts' })
       )
     })
   })
 
-  it('shows error toast with action when sync fails with other error', async () => {
+  it('shows error toast for failed accounts', async () => {
     ;(bankService.listAccounts as any).mockResolvedValue([staleAccount])
-    ;(bankService.syncAccount as any).mockRejectedValue({ response: { status: 500 } })
+    ;(bankService.syncAll as any).mockResolvedValue({
+      total: 1, succeeded: 0, failed: 1,
+      outcomes: [{ account_id: 'acc-1', account_name: 'Checking', status: 'error', error: 'timeout' }],
+    })
 
     renderHook(() => useAutoSync())
 
     await waitFor(() => {
       expect(mockToast).toHaveBeenCalledWith(
-        'Chase failed to sync',
+        'Checking failed to sync',
         'error',
         expect.objectContaining({ label: 'Go to Bank Accounts' })
       )
@@ -159,7 +178,10 @@ describe('useAutoSync', () => {
 
   it('navigates to /bank when toast action is clicked', async () => {
     ;(bankService.listAccounts as any).mockResolvedValue([staleAccount])
-    ;(bankService.syncAccount as any).mockRejectedValue({ response: { status: 422 } })
+    ;(bankService.syncAll as any).mockResolvedValue({
+      total: 1, succeeded: 0, failed: 1,
+      outcomes: [{ account_id: 'acc-1', account_name: 'Checking', status: 'disconnected', error: 'expired' }],
+    })
 
     renderHook(() => useAutoSync())
 
@@ -212,6 +234,10 @@ describe('useAutoSync', () => {
     })
 
     ;(bankService.listAccounts as any).mockResolvedValue([staleAccount])
+    ;(bankService.syncAll as any).mockResolvedValue({
+      total: 1, succeeded: 1, failed: 0,
+      outcomes: [{ account_id: 'acc-1', account_name: 'Checking', status: 'ok', added: 0, skipped: 0 }],
+    })
 
     renderHook(() => useAutoSync())
 
@@ -235,12 +261,15 @@ describe('useAutoSync', () => {
     Object.defineProperty(navigator, 'serviceWorker', { value: undefined, configurable: true })
   })
 
-  it('calls notifyHsaReview with total count batched across multiple accounts', async () => {
-    const staleAccount2 = { ...staleAccount, id: 'acc-4', institution_name: 'Wells Fargo' }
-    ;(bankService.listAccounts as any).mockResolvedValue([staleAccount, staleAccount2])
-    ;(bankService.syncAccount as any)
-      .mockResolvedValueOnce({ added: 1, skipped: 0, account_id: 'acc-1', potential_hsa_count: 2 })
-      .mockResolvedValueOnce({ added: 1, skipped: 0, account_id: 'acc-4', potential_hsa_count: 3 })
+  it('sends push notification based on added count from sync-all outcomes', async () => {
+    ;(bankService.listAccounts as any).mockResolvedValue([staleAccount])
+    ;(bankService.syncAll as any).mockResolvedValue({
+      total: 2, succeeded: 2, failed: 0,
+      outcomes: [
+        { account_id: 'acc-1', account_name: 'Checking', status: 'ok', added: 3, skipped: 5 },
+        { account_id: 'acc-4', account_name: 'Savings', status: 'ok', added: 2, skipped: 3 },
+      ],
+    })
 
     renderHook(() => useAutoSync())
 
@@ -250,13 +279,16 @@ describe('useAutoSync', () => {
     expect(notifyHsaReview).toHaveBeenCalledTimes(1)
   })
 
-  it('does not call notifyHsaReview when all syncs return 0 potential_hsa_count', async () => {
+  it('does not call notifyHsaReview when no transactions added', async () => {
     ;(bankService.listAccounts as any).mockResolvedValue([staleAccount])
-    ;(bankService.syncAccount as any).mockResolvedValue({ added: 1, skipped: 0, account_id: 'acc-1', potential_hsa_count: 0 })
+    ;(bankService.syncAll as any).mockResolvedValue({
+      total: 1, succeeded: 1, failed: 0,
+      outcomes: [{ account_id: 'acc-1', account_name: 'Checking', status: 'ok', added: 0, skipped: 5 }],
+    })
 
     renderHook(() => useAutoSync())
 
-    await waitFor(() => expect(bankService.syncAccount).toHaveBeenCalled())
+    await waitFor(() => expect(bankService.syncAll).toHaveBeenCalled())
     await new Promise(r => setTimeout(r, 50))
     expect(notifyHsaReview).not.toHaveBeenCalled()
   })
@@ -264,11 +296,14 @@ describe('useAutoSync', () => {
   it('does not call notifyHsaReview when push cooldown is active', async () => {
     localStorage.setItem(PUSH_COOLDOWN_KEY, String(Date.now() - 60 * 60 * 1000)) // 1h ago, within 12h cooldown
     ;(bankService.listAccounts as any).mockResolvedValue([staleAccount])
-    ;(bankService.syncAccount as any).mockResolvedValue({ added: 1, skipped: 0, account_id: 'acc-1', potential_hsa_count: 3 })
+    ;(bankService.syncAll as any).mockResolvedValue({
+      total: 1, succeeded: 1, failed: 0,
+      outcomes: [{ account_id: 'acc-1', account_name: 'Checking', status: 'ok', added: 3, skipped: 0 }],
+    })
 
     renderHook(() => useAutoSync())
 
-    await waitFor(() => expect(bankService.syncAccount).toHaveBeenCalled())
+    await waitFor(() => expect(bankService.syncAll).toHaveBeenCalled())
     await new Promise(r => setTimeout(r, 50))
     expect(notifyHsaReview).not.toHaveBeenCalled()
   })
@@ -276,7 +311,10 @@ describe('useAutoSync', () => {
   it('calls notifyHsaReview when push cooldown has expired', async () => {
     localStorage.setItem(PUSH_COOLDOWN_KEY, String(Date.now() - 13 * 60 * 60 * 1000)) // 13h ago, beyond 12h cooldown
     ;(bankService.listAccounts as any).mockResolvedValue([staleAccount])
-    ;(bankService.syncAccount as any).mockResolvedValue({ added: 1, skipped: 0, account_id: 'acc-1', potential_hsa_count: 2 })
+    ;(bankService.syncAll as any).mockResolvedValue({
+      total: 1, succeeded: 1, failed: 0,
+      outcomes: [{ account_id: 'acc-1', account_name: 'Checking', status: 'ok', added: 2, skipped: 0 }],
+    })
 
     renderHook(() => useAutoSync())
 

@@ -240,12 +240,26 @@ class TestParseTransaction:
 
         assert txns[0].provider == "simplefin"
 
-    def test_status_is_posted(self):
+    def test_status_is_posted_when_pending_absent(self):
         provider, client = _make_provider()
         acct = _raw_account(transactions=[_raw_txn()])
         txns = self._get_txns(provider, client, acct)
 
         assert txns[0].status == "posted"
+
+    def test_status_is_posted_when_pending_false(self):
+        provider, client = _make_provider()
+        acct = _raw_account(transactions=[_raw_txn(pending=False)])
+        txns = self._get_txns(provider, client, acct)
+
+        assert txns[0].status == "posted"
+
+    def test_status_is_pending_when_pending_true(self):
+        provider, client = _make_provider()
+        acct = _raw_account(transactions=[_raw_txn(pending=True, posted=0)])
+        txns = self._get_txns(provider, client, acct)
+
+        assert txns[0].status == "pending"
 
     def test_transactions_sorted_newest_first(self):
         provider, client = _make_provider()
@@ -318,3 +332,124 @@ class TestGetBalance:
 
         with pytest.raises(ValueError, match="not found"):
             provider.get_balance("https://bridge.simplefin.org/missing")
+
+
+# ---------------------------------------------------------------------------
+# Bulk methods — fetch_all / parse_*
+# ---------------------------------------------------------------------------
+
+
+class TestBulkMethods:
+    def test_fetch_all_returns_raw_response(self):
+        provider, client = _make_provider()
+        payload = {"accounts": [_raw_account()], "errors": []}
+        client.get_accounts.return_value = payload
+
+        result = provider.fetch_all()
+
+        assert result is payload
+        client.get_accounts.assert_called_once_with(start_date=None)
+
+    def test_fetch_all_passes_start_date(self):
+        provider, client = _make_provider()
+        client.get_accounts.return_value = {"accounts": [], "errors": []}
+
+        provider.fetch_all(start_date=date(2026, 6, 1))
+
+        client.get_accounts.assert_called_once_with(start_date=date(2026, 6, 1))
+
+    def test_parse_accounts_from_prefetched_data(self):
+        provider, client = _make_provider()
+        data = {
+            "accounts": [
+                _raw_account(id="acct1", name="Checking (1234)"),
+                _raw_account(id="acct2", name="Savings (5678)"),
+            ],
+            "errors": [],
+        }
+
+        accounts = provider.parse_accounts(data)
+
+        assert len(accounts) == 2
+        assert accounts[0].id == "acct1"
+        assert accounts[1].id == "acct2"
+        client.get_accounts.assert_not_called()
+
+    def test_parse_balance_from_prefetched_data(self):
+        provider, client = _make_provider()
+        data = {
+            "accounts": [
+                _raw_account(id="acct1", balance="500.00", **{"available-balance": "450.00"}),
+                _raw_account(id="acct2", balance="1000.00"),
+            ],
+            "errors": [],
+        }
+
+        bal = provider.parse_balance(data, "acct1")
+
+        assert bal.ledger == Decimal("500.00")
+        assert bal.available == Decimal("450.00")
+        client.get_accounts.assert_not_called()
+
+    def test_parse_transactions_from_prefetched_data(self):
+        provider, client = _make_provider()
+        data = {
+            "accounts": [
+                _raw_account(
+                    id="acct1",
+                    transactions=[
+                        _raw_txn(id="t1", posted=_ts(date(2026, 7, 10))),
+                        _raw_txn(id="t2", posted=_ts(date(2026, 7, 12))),
+                    ],
+                ),
+                _raw_account(
+                    id="acct2",
+                    transactions=[_raw_txn(id="t3", posted=_ts(date(2026, 7, 11)))],
+                ),
+            ],
+            "errors": [],
+        }
+
+        txns = provider.parse_transactions(data, "acct1")
+
+        assert len(txns) == 2
+        assert txns[0].id == "t2"  # newest first
+        assert txns[1].id == "t1"
+        client.get_accounts.assert_not_called()
+
+    def test_parse_transactions_unknown_account_returns_empty(self):
+        provider, client = _make_provider()
+        data = {"accounts": [_raw_account(id="acct1")], "errors": []}
+
+        assert provider.parse_transactions(data, "missing") == []
+
+    def test_parse_transactions_respects_count(self):
+        provider, client = _make_provider()
+        raw_txns = [_raw_txn(id=f"t{i}", posted=_ts(date(2026, 1, i + 1))) for i in range(10)]
+        data = {"accounts": [_raw_account(id="acct1", transactions=raw_txns)], "errors": []}
+
+        txns = provider.parse_transactions(data, "acct1", count=3)
+        assert len(txns) == 3
+
+    def test_parse_transactions_includes_pending(self):
+        provider, client = _make_provider()
+        data = {
+            "accounts": [
+                _raw_account(
+                    id="acct1",
+                    transactions=[
+                        _raw_txn(id="t1", posted=_ts(date(2026, 7, 10))),
+                        _raw_txn(id="t2", pending=True, posted=0, transacted_at=_ts(date(2026, 7, 12))),
+                    ],
+                ),
+            ],
+            "errors": [],
+        }
+
+        txns = provider.parse_transactions(data, "acct1")
+
+        assert len(txns) == 2
+        posted = next(t for t in txns if t.id == "t1")
+        pending = next(t for t in txns if t.id == "t2")
+        assert posted.status == "posted"
+        assert pending.status == "pending"
