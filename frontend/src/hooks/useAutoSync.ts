@@ -61,7 +61,7 @@ export function useAutoSync() {
       if (stale.length === 0) return
 
       // Single API call to sync all accounts at once
-      const result = await bankService.syncAll()
+      const result = await bankService.syncAllAccounts()
 
       // Surface any sync errors as toasts
       for (const outcome of result.outcomes) {
