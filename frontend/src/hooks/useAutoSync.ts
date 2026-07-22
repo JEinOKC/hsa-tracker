@@ -61,7 +61,7 @@ export function useAutoSync() {
       if (stale.length === 0) return
 
       // Single API call to sync all accounts at once
-      const result = await bankService.syncAll()
+      const result = await bankService.syncAllAccounts()
 
       // Surface any sync errors as toasts
       for (const outcome of result.outcomes) {
@@ -79,7 +79,7 @@ export function useAutoSync() {
       // Send one batched push for all potential HSA transactions found this session,
       // subject to a 12-hour cooldown to avoid alert fatigue.
       if (!isPushCooldownActive()) {
-        const totalPotentialHsa = result.outcomes.reduce((sum, o) =>
+        const totalPotentialHsa = result.outcomes.reduce((sum: number, o: { status: string; added?: number }) =>
           o.status === 'ok' ? sum + (o.added ?? 0) : sum
         , 0)
         if (totalPotentialHsa > 0) {
