@@ -403,17 +403,37 @@ def get_history(
     # func.date() is supported by both SQLite (tests) and PostgreSQL (prod).
     # SQLite returns a string; PostgreSQL returns a datetime.date — str() normalises both.
     date_fn = func.date(HoldingSnapshot.snapshotted_at)
-    rows = (
+
+    # A holding can be snapshotted more than once in a day (e.g. two price
+    # refreshes a few minutes apart).  Summing every row double-counts those
+    # holdings and shows up as phantom growth on the chart, so rank each
+    # holding's snapshots within its day and keep only the most recent.
+    ranked = (
         db.query(
             date_fn.label("snap_date"),
-            func.sum(HoldingSnapshot.value).label("total_value"),
+            HoldingSnapshot.value.label("value"),
+            func.row_number()
+            .over(
+                partition_by=[date_fn, HoldingSnapshot.holding_id],
+                order_by=HoldingSnapshot.snapshotted_at.desc(),
+            )
+            .label("rn"),
         )
         .filter(
             HoldingSnapshot.user_id.in_(owner_ids),
             HoldingSnapshot.snapshotted_at >= cutoff,
         )
-        .group_by(date_fn)
-        .order_by(date_fn)
+        .subquery()
+    )
+
+    rows = (
+        db.query(
+            ranked.c.snap_date,
+            func.sum(ranked.c.value).label("total_value"),
+        )
+        .filter(ranked.c.rn == 1)
+        .group_by(ranked.c.snap_date)
+        .order_by(ranked.c.snap_date)
         .all()
     )
 

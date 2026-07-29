@@ -329,9 +329,10 @@ class TestSyncAll:
         def provider_factory(access_url):
             mock = MagicMock()
             if "good" in access_url:
-                mock.list_transactions.return_value = [_make_external_txn("txn_all_001")]
+                mock.fetch_all.return_value = {"accounts": [], "errors": []}
+                mock.parse_transactions.return_value = [_make_external_txn("txn_all_001")]
             else:
-                mock.list_transactions.side_effect = SimpleFINAuthError("expired")
+                mock.fetch_all.side_effect = SimpleFINAuthError("expired")
             return mock
 
         with patch("app.api.v1.endpoints.bank.get_simplefin_provider", side_effect=provider_factory):
@@ -373,6 +374,52 @@ class TestSyncAll:
         data = resp.json()
         # Only the connected account is attempted
         assert data["total"] == 1
+
+    def test_sync_all_fetches_once_per_distinct_access_url(
+        self, client, auth_headers, db_session, test_user
+    ):
+        """Connections from different setup tokens each need their own fetch.
+
+        Regression: sync-all fetched using connections[0]'s token only, so
+        accounts claimed from any other token silently synced nothing.
+        """
+        _make_connection(
+            db_session, user_id=test_user.id,
+            provider_account_id="https://bridge.simplefin.org/simplefin/accounts/tok_a",
+            token="https://u:p@bridge.com/token-a",
+        )
+        _make_connection(
+            db_session, user_id=test_user.id,
+            provider_account_id="https://bridge.simplefin.org/simplefin/accounts/tok_b",
+            token="https://u:p@bridge.com/token-b",
+        )
+
+        seen_urls = []
+
+        def provider_factory(access_url):
+            seen_urls.append(access_url)
+            mock = MagicMock()
+            mock.fetch_all.return_value = {"accounts": [], "errors": []}
+            suffix = access_url.rsplit("-", 1)[-1]
+            mock.parse_transactions.return_value = [
+                _make_external_txn(f"txn_{suffix}")
+            ]
+            return mock
+
+        with patch("app.api.v1.endpoints.bank.get_simplefin_provider", side_effect=provider_factory):
+            resp = client.post("/api/v1/bank/accounts/sync-all", headers=auth_headers)
+
+        assert resp.status_code == 200
+        data = resp.json()
+
+        # Both tokens fetched — exactly once each, not once per account.
+        assert sorted(seen_urls) == [
+            "https://u:p@bridge.com/token-a",
+            "https://u:p@bridge.com/token-b",
+        ]
+        # Both connections synced their own transaction.
+        assert data["succeeded"] == 2
+        assert all(o["added"] == 1 for o in data["outcomes"])
 
     def test_sync_all_requires_auth(self, client):
         assert client.post("/api/v1/bank/accounts/sync-all").status_code == 401

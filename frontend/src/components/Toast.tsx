@@ -40,11 +40,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
+      {/*
+        Anchored to the bottom so toasts never cover the header's refresh
+        button.  On mobile they sit above the fixed tab bar; from md up the
+        tab bar is hidden, so they drop to the bottom edge.
+      */}
       <div
         role="region"
         aria-label="Notifications"
-        className="fixed left-4 right-4 sm:left-auto sm:right-4 sm:w-80 z-[60] flex flex-col gap-2 pointer-events-none"
-        style={{ top: 'calc(1rem + env(safe-area-inset-top, 0px))' }}
+        className="fixed left-4 right-4 sm:left-auto sm:right-4 sm:w-80 z-[60] flex flex-col gap-2 pointer-events-none bottom-[calc(4.25rem+max(env(safe-area-inset-bottom),0.75rem))] md:bottom-[calc(1rem+env(safe-area-inset-bottom,0px))]"
       >
         {toasts.map(t => (
           <div
