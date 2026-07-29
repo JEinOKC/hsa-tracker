@@ -431,6 +431,50 @@ class TestHoldingSnapshots:
         assert points[1]["date"] == "2026-04-02"
         assert float(points[1]["total_value"]) == pytest.approx(3060.00)
 
+    def test_history_deduplicates_multiple_snapshots_per_holding_per_day(
+        self, client, auth_headers, db_session, test_user
+    ):
+        """Two snapshots of the same holding on one day must not be double-counted.
+
+        Regression: a second price refresh a few minutes after the first left two
+        rows per holding for that date.  Summing every row inflated the day's
+        total and rendered as phantom growth on the dashboard sparkline.
+        """
+        account = _make_account(db_session, test_user.id)
+        held_a = _make_holding(db_session, account.id, ticker="VTI", shares="10")
+        held_b = _make_holding(db_session, account.id, ticker="SPY", shares="5")
+
+        # Holding A is snapshotted twice on the same day; holding B only once.
+        early = datetime(2026, 7, 22, 0, 58, 29)
+        late = datetime(2026, 7, 22, 1, 43, 2)
+        rows = [
+            (held_a, early, Decimal("500.00"), Decimal("10")),
+            (held_a, late, Decimal("504.98"), Decimal("10")),
+            (held_b, late, Decimal("4709.55"), Decimal("5")),
+        ]
+        for holding, snap_at, value, shares in rows:
+            db_session.add(HoldingSnapshot(
+                id=uuid.uuid4(),
+                holding_id=holding.id,
+                account_id=account.id,
+                user_id=test_user.id,
+                ticker=holding.ticker,
+                shares=shares,
+                price=(value / shares),
+                value=value,
+                snapshotted_at=snap_at,
+            ))
+        db_session.commit()
+
+        resp = client.get("/api/v1/portfolio/history?days=365", headers=auth_headers)
+        assert resp.status_code == 200
+        points = resp.json()["points"]
+
+        # One point for the day, using A's *latest* value — not 500.00 + 504.98.
+        assert len(points) == 1
+        assert points[0]["date"] == "2026-07-22"
+        assert float(points[0]["total_value"]) == pytest.approx(5214.53)
+
     def test_history_excludes_other_user_snapshots(self, client, auth_headers, db_session, test_user):
         """Snapshots belonging to other users must not appear in the history."""
         other_user = _make_user(db_session, username="otherusersnap")
