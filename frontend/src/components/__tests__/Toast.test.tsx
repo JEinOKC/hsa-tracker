@@ -60,9 +60,27 @@ describe('Toast', () => {
     expect(screen.getAllByRole('alert')).toHaveLength(2)
   })
 
-  it('accounts for iOS safe area inset', () => {
+  it('anchors to the bottom so it never covers the header refresh button', () => {
+    renderWithProvider('Placement test')
+    const region = screen.getByRole('region', { name: 'Notifications' })
+
+    // Must not be pinned to the top, where it overlapped the header controls.
+    expect(region.style.top).toBe('')
+    expect(region.className).not.toMatch(/(^|\s)top-/)
+    expect(region.className).toMatch(/(^|\s)bottom-\[/)
+  })
+
+  it('clears the mobile tab bar and accounts for iOS safe area inset', () => {
     renderWithProvider('Safe area test')
     const region = screen.getByRole('region', { name: 'Notifications' })
-    expect(region.style.top).toContain('safe-area-inset-top')
+
+    // Mobile: offset by the tab bar height plus the home-indicator inset.
+    expect(region.className).toContain(
+      'bottom-[calc(4.25rem+max(env(safe-area-inset-bottom),0.75rem))]'
+    )
+    // md+: tab bar is hidden, so it drops to the bottom edge.
+    expect(region.className).toContain(
+      'md:bottom-[calc(1rem+env(safe-area-inset-bottom,0px))]'
+    )
   })
 })
