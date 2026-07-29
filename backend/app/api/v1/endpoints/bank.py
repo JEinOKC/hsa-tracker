@@ -1305,51 +1305,53 @@ async def sync_all_accounts(
     non_null_dates = [d for d in from_dates if d is not None]
     earliest_from_date = min(non_null_dates) if non_null_dates else None
 
-    # Single API call for all accounts.
-    access_url = connections[0].enrollment_token
-    from app.providers.simplefin.client import SimpleFINClient
-    from app.providers.simplefin.provider import SimpleFINProvider
-    provider = SimpleFINProvider(client=SimpleFINClient(access_url))
+    # One API call per distinct Access URL — SimpleFIN returns every account
+    # belonging to a token in a single response.  Connections claimed from
+    # different setup tokens have different URLs and each needs its own fetch,
+    # so we group rather than assuming a single shared token.
+    indexes_by_token: dict[str, list[int]] = {}
+    for i, connection in enumerate(connections):
+        indexes_by_token.setdefault(connection.enrollment_token, []).append(i)
 
-    try:
-        api_data = provider.fetch_all(start_date=earliest_from_date)
-    except SimpleFINAuthError as exc:
-        for connection in connections:
-            _mark_connection_error(connection, "disconnected", str(exc), db)
-        return SyncAllResult(
-            total=len(connections),
-            succeeded=0,
-            failed=len(connections),
-            outcomes=[
-                AccountSyncOutcome(
-                    account_id=str(c.id), account_name=c.account_name,
-                    status="disconnected", error=str(exc),
-                )
-                for c in connections
-            ],
-        )
-    except (SimpleFINConnectionError, SimpleFINError) as exc:
-        for connection in connections:
-            _mark_connection_error(connection, "error", str(exc), db)
-        return SyncAllResult(
-            total=len(connections),
-            succeeded=0,
-            failed=len(connections),
-            outcomes=[
-                AccountSyncOutcome(
-                    account_id=str(c.id), account_name=c.account_name,
-                    status="error", error=str(exc),
-                )
-                for c in connections
-            ],
-        )
+    fetched: dict[int, tuple] = {}          # index -> (provider, api_data)
+    fetch_failures: dict[int, tuple] = {}   # index -> (status, error)
+
+    for access_url, indexes in indexes_by_token.items():
+        provider = get_simplefin_provider(access_url)
+        try:
+            api_data = provider.fetch_all(start_date=earliest_from_date)
+        except SimpleFINAuthError as exc:
+            for i in indexes:
+                _mark_connection_error(connections[i], "disconnected", str(exc), db)
+                fetch_failures[i] = ("disconnected", str(exc))
+            continue
+        except (SimpleFINConnectionError, SimpleFINError) as exc:
+            for i in indexes:
+                _mark_connection_error(connections[i], "error", str(exc), db)
+                fetch_failures[i] = ("error", str(exc))
+            continue
+        for i in indexes:
+            fetched[i] = (provider, api_data)
 
     outcomes = []
     for i, connection in enumerate(connections):
+        if i in fetch_failures:
+            status, error = fetch_failures[i]
+            outcomes.append(AccountSyncOutcome(
+                account_id=str(connection.id),
+                account_name=connection.account_name,
+                status=status,
+                error=error,
+            ))
+            continue
+
         conn_from_date = from_dates[i]
+        provider, api_data = fetched[i]
         txns = provider.parse_transactions(api_data, connection.provider_account_id, count)
 
-        if conn_from_date and earliest_from_date and conn_from_date > earliest_from_date:
+        # The bulk fetch used the earliest date across all connections, so trim
+        # anything older than this particular connection needs.
+        if conn_from_date:
             txns = [t for t in txns if t.date >= conn_from_date]
 
         try:
