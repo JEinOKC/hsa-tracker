@@ -1,20 +1,26 @@
 """FastAPI dependencies"""
 
 from typing import Optional
+
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User
 from app.utils.security import decode_token
 
-# Security scheme for JWT
-security = HTTPBearer()
+# Security scheme for JWT.
+#
+# auto_error=False so a missing Authorization header reaches us instead of
+# FastAPI short-circuiting with its default 403.  Absent credentials are a
+# 401 per RFC 7235 — and the frontend only refreshes tokens on 401, so a 403
+# here would silently skip the refresh and log the user out.
+security = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
     """
@@ -30,6 +36,14 @@ async def get_current_user(
     Raises:
         HTTPException: If token is invalid or user not found
     """
+    # No Authorization header at all — unauthenticated, not forbidden.
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     # Extract token
     token = credentials.credentials
 
@@ -145,7 +159,7 @@ async def get_optional_current_user(
         if user_id is None:
             return None
 
-        user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+        user = db.query(User).filter(User.id == user_id, User.is_active.is_(True)).first()
         return user
     except Exception:
         return None
