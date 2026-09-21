@@ -62,6 +62,7 @@ dist-ssr/
 # Frontend build
 frontend/dist/
 frontend/build/
+frontend/dev-dist/
 
 # Database
 *.db
