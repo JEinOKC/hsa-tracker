@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { HsaRule, HsaRuleInput, RuleCondition, RuleAction, PreviewResult } from '../services/rules'
 import { FamilyMember } from '../services/family'
 import { rulesService } from '../services/rules'
@@ -181,12 +182,15 @@ export default function RuleEditor({ rule, members, availableCategories, onSave,
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  return (
+  // Portal to <body>: rendered inside <main> (the app's touch-scroll region),
+  // iOS clips the fixed overlay to <main>, hiding it behind the nav bars.
+  return createPortal(
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[55] p-4"
+      style={{ paddingTop: 'max(env(safe-area-inset-top), 1rem)', paddingBottom: 'max(env(safe-area-inset-bottom), 1rem)' }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-full overflow-y-auto overscroll-contain">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">
             {rule ? 'Edit Rule' : 'New Rule'}
@@ -471,5 +475,7 @@ export default function RuleEditor({ rule, members, availableCategories, onSave,
         </div>
       </div>
     </div>
+  ,
+    document.body,
   )
 }
