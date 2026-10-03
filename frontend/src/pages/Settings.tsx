@@ -9,6 +9,63 @@ import {
 } from '../services/pushNotifications'
 import { registerPeriodicSync } from '../services/periodicSync'
 import { householdService, Household } from '../services/household'
+import { useAppUpdate } from '../hooks/useAppUpdate'
+
+const BUILD_LABEL = new Date(__APP_BUILD_TIME__).toLocaleString(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+})
+
+function AppUpdateSection() {
+  const { needRefresh, checkStatus, checkForUpdate, applyUpdate } = useAppUpdate()
+  const checking = checkStatus === 'checking'
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-6 mt-4">
+      <h2 className="text-lg font-semibold text-gray-900 mb-1">App Updates</h2>
+      <p className="text-sm text-gray-500 mb-4">Version built {BUILD_LABEL}</p>
+
+      {needRefresh ? (
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-amber-700">A new version is ready to install.</p>
+          <button
+            onClick={applyUpdate}
+            className="self-start px-4 py-2 bg-sky-600 text-white text-sm font-medium rounded-md hover:bg-sky-700"
+          >
+            Update now
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={checkForUpdate}
+              disabled={checking}
+              className="px-4 py-2 bg-sky-600 text-white text-sm font-medium rounded-md hover:bg-sky-700 disabled:opacity-50"
+            >
+              {checking ? 'Checking…' : 'Check for updates'}
+            </button>
+            <button
+              onClick={applyUpdate}
+              className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+            >
+              Reload app
+            </button>
+          </div>
+          {checkStatus === 'up_to_date' && (
+            <p className="text-sm text-green-700">You're on the latest version.</p>
+          )}
+          {checkStatus === 'unsupported' && (
+            <p className="text-sm text-gray-500">Update checks aren't available here. Reload to get the latest version.</p>
+          )}
+          {checkStatus === 'error' && (
+            <p className="text-sm text-red-600">Couldn't reach the server to check for updates.</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 type PushState = 'loading' | 'unsupported' | 'denied' | 'not_subscribed' | 'subscribed' | 'error'
 
@@ -251,6 +308,8 @@ export default function Settings() {
           </div>
         )}
       </div>
+
+      <AppUpdateSection />
     </div>
   )
 }
