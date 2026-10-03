@@ -35,6 +35,16 @@ beforeEach(() => {
 })
 
 describe('RuleEditor', () => {
+  it('renders into document.body so the page scroll area cannot clip it', () => {
+    // Regression: inside <main> (overflow-y-auto), iOS clipped the modal
+    // between the header and tab bar, hiding Save and blocking scroll.
+    const { container } = render(<RuleEditor rule={null} members={[]} onSave={noop} onClose={noop} />)
+    const dialogRoot = screen.getByText('New Rule').closest('.fixed')
+    expect(dialogRoot).not.toBeNull()
+    expect(container.contains(dialogRoot)).toBe(false)
+    expect(dialogRoot!.parentElement).toBe(document.body)
+  })
+
   it('renders with empty state for new rule', () => {
     render(<RuleEditor rule={null} members={[]} onSave={noop} onClose={noop} />)
     expect(screen.getByText('New Rule')).toBeInTheDocument()
