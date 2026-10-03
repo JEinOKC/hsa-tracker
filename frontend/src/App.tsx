@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Routes, Route, NavLink, useNavigate } from 'react-router-dom'
 import { ToastProvider } from './components/Toast'
 import UpdatePrompt from './components/UpdatePrompt'
+import { AppUpdateProvider } from './hooks/useAppUpdate'
 import { useAutoSync } from './hooks/useAutoSync'
 import { bankService } from './services/bank'
 import Dashboard from './pages/Dashboard'
@@ -162,6 +163,8 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
       {/* flex column fills the full viewport height; only the middle area scrolls */}
       <div className="flex flex-col h-full">
         <Nav unreviewedCount={unreviewedCount} disconnectedCount={disconnectedCount} />
+        {/* Below the nav so it clears the iOS status bar and stays inside the flex column */}
+        <UpdatePrompt />
         {/* This is the only scrollable region — body stays locked */}
         <main className="flex-1 overflow-y-auto overflow-x-hidden pb-20 md:pb-0" style={{ WebkitOverflowScrolling: 'touch' }}>
           {children}
@@ -180,8 +183,8 @@ function App() {
   }, [])
 
   return (
+    <AppUpdateProvider>
     <ToastProvider>
-    <UpdatePrompt />
     <div className="h-full bg-gray-50">
       <Routes>
         <Route path="/login" element={<Login />} />
@@ -199,6 +202,7 @@ function App() {
       </Routes>
     </div>
     </ToastProvider>
+    </AppUpdateProvider>
   )
 }
 

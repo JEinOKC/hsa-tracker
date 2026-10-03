@@ -1,10 +1,7 @@
-import { useRegisterSW } from 'virtual:pwa-register/react'
+import { useAppUpdate } from '../hooks/useAppUpdate'
 
 export default function UpdatePrompt() {
-  const {
-    needRefresh: [needRefresh],
-    updateServiceWorker,
-  } = useRegisterSW()
+  const { needRefresh, applyUpdate } = useAppUpdate()
 
   if (!needRefresh) return null
 
@@ -14,7 +11,7 @@ export default function UpdatePrompt() {
         <div className="flex items-center justify-between h-10 gap-4">
           <span className="text-sm font-medium">A new version is available.</span>
           <button
-            onClick={() => updateServiceWorker(true)}
+            onClick={applyUpdate}
             className="px-3 py-1 bg-amber-900 text-amber-50 text-sm font-semibold rounded hover:bg-amber-800 transition-colors"
           >
             Reload

@@ -70,6 +70,13 @@ beforeEach(() => {
 })
 
 describe('Settings page', () => {
+  it('always offers a manual update check', async () => {
+    render(<Settings />)
+    expect(await screen.findByText('App Updates')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Check for updates' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reload app' })).toBeInTheDocument()
+  })
+
   it('renders Push Notifications heading', async () => {
     render(<Settings />)
     expect(screen.getByText('Push Notifications')).toBeInTheDocument()
